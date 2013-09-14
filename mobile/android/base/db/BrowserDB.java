@@ -5,8 +5,8 @@
 
 package org.mozilla.gecko.db;
 
-import org.mozilla.gecko.db.BrowserContract.ExpirePriority;
 import org.mozilla.gecko.db.BrowserContract.Bookmarks;
+import org.mozilla.gecko.db.BrowserContract.ExpirePriority;
 
 import android.content.ContentResolver;
 import android.database.ContentObserver;
@@ -57,9 +57,15 @@ public class BrowserDB {
 
         public void removeHistoryEntry(ContentResolver cr, int id);
 
+        public void removeHistoryEntry(ContentResolver cr, String url);
+
         public void clearHistory(ContentResolver cr);
 
         public Cursor getBookmarksInFolder(ContentResolver cr, long folderId);
+
+        public boolean isVisited(ContentResolver cr, String uri);
+
+        public int getReadingListCount(ContentResolver cr);
 
         public boolean isBookmark(ContentResolver cr, String uri);
 
@@ -108,6 +114,8 @@ public class BrowserDB {
         public void unpinAllSites(ContentResolver cr);
 
         public Cursor getPinnedSites(ContentResolver cr, int limit);
+
+        public Cursor getBookmarkForUrl(ContentResolver cr, String url);
     }
 
     static {
@@ -169,6 +177,10 @@ public class BrowserDB {
         sDb.removeHistoryEntry(cr, id);
     }
 
+    public static void removeHistoryEntry(ContentResolver cr, String url) {
+        sDb.removeHistoryEntry(cr, url);
+    }
+
     public static void clearHistory(ContentResolver cr) {
         sDb.clearHistory(cr);
     }
@@ -180,7 +192,15 @@ public class BrowserDB {
     public static String getUrlForKeyword(ContentResolver cr, String keyword) {
         return sDb.getUrlForKeyword(cr, keyword);
     }
-    
+
+    public static boolean isVisited(ContentResolver cr, String uri) {
+        return sDb.isVisited(cr, uri);
+    }
+
+    public static int getReadingListCount(ContentResolver cr) {
+        return sDb.getReadingListCount(cr);
+    }
+
     public static boolean isBookmark(ContentResolver cr, String uri) {
         return sDb.isBookmark(cr, uri);
     }
@@ -277,6 +297,10 @@ public class BrowserDB {
         return sDb.getPinnedSites(cr, limit);
     }
 
+    public static Cursor getBookmarkForUrl(ContentResolver cr, String url) {
+        return sDb.getBookmarkForUrl(cr, url);
+    }
+
     public static class PinnedSite {
         public String title = "";
         public String url = "";
@@ -315,6 +339,8 @@ public class BrowserDB {
                     String title = c.getString(c.getColumnIndex(URLColumns.TITLE));
                     mPinnedSites.put(pos, new PinnedSite(title, url));
                 } while (c.moveToNext());
+            }
+            if (c != null && !c.isClosed()) {
                 c.close();
             }
         }
@@ -349,14 +375,22 @@ public class BrowserDB {
             return numFound;
         }
 
+        @Override
         public int getPosition() { return mIndex; }
+        @Override
         public int getCount() { return mSize; }
+        @Override
         public boolean isAfterLast() { return mIndex >= mSize; }
+        @Override
         public boolean isBeforeFirst() { return mIndex < 0; }
+        @Override
         public boolean isLast() { return mIndex == mSize - 1; }
+        @Override
         public boolean moveToNext() { return moveToPosition(mIndex + 1); }
+        @Override
         public boolean moveToPrevious() { return moveToPosition(mIndex - 1); }
 
+        @Override
         public boolean moveToPosition(int position) {
             mIndex = position;
 
@@ -371,6 +405,7 @@ public class BrowserDB {
             return !(isBeforeFirst() || isAfterLast());
         }
 
+        @Override
         public long getLong(int columnIndex) {
             if (hasPinnedSites()) {
                 PinnedSite site = getPinnedSite(mIndex);
@@ -384,6 +419,7 @@ public class BrowserDB {
             return 0;
         }
 
+        @Override
         public String getString(int columnIndex) {
             if (hasPinnedSites()) {
                 PinnedSite site = getPinnedSite(mIndex);
@@ -402,14 +438,17 @@ public class BrowserDB {
             return "";
         }
 
+        @Override
         public boolean move(int offset) {
             return moveToPosition(mIndex + offset);
         }
 
+        @Override
         public boolean moveToFirst() {
             return moveToPosition(0);
         }
 
+        @Override
         public boolean moveToLast() {
             return moveToPosition(mSize-1);
         }

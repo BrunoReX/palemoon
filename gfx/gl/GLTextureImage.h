@@ -8,6 +8,7 @@
 
 #include "nsAutoPtr.h"
 #include "nsRegion.h"
+#include "nsTArray.h"
 #include "gfxASurface.h"
 #include "GLContextTypes.h"
 #include "gfxPattern.h"
@@ -213,10 +214,10 @@ public:
 
     /**
      * If this TextureImage has a permanent gfxASurface backing,
-     * return it.  Otherwise return NULL.
+     * return it.  Otherwise return nullptr.
      */
     virtual already_AddRefed<gfxASurface> GetBackingSurface()
-    { return NULL; }
+    { return nullptr; }
 
     const nsIntSize& GetSize() const { return mSize; }
     ContentType GetContentType() const { return mContentType; }
@@ -321,7 +322,7 @@ protected:
 
     GLuint mTexture;
     TextureState mTextureState;
-    GLContext* mGLContext;
+    nsRefPtr<GLContext> mGLContext;
     nsRefPtr<gfxASurface> mUpdateSurface;
     nsIntRegion mUpdateRegion;
 
@@ -378,6 +379,18 @@ protected:
     nsIntRegion mUpdateRegion;
     TextureState mTextureState;
 };
+
+/**
+ * Creates a TextureImage of the basic implementation, can be useful in cases
+ * where we know we don't want to use platform-specific TextureImage.
+ * In doubt, use GLContext::CreateTextureImage instead.
+ */
+already_AddRefed<TextureImage>
+CreateBasicTextureImage(GLContext* aGL,
+                        const nsIntSize& aSize,
+                        TextureImage::ContentType aContentType,
+                        GLenum aWrapMode,
+                        TextureImage::Flags aFlags);
 
 } // namespace gl
 } // namespace mozilla

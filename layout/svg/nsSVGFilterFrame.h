@@ -6,6 +6,7 @@
 #ifndef __NS_SVGFILTERFRAME_H__
 #define __NS_SVGFILTERFRAME_H__
 
+#include "mozilla/Attributes.h"
 #include "nsFrame.h"
 #include "nsQueryFrame.h"
 #include "nsRect.h"
@@ -19,9 +20,14 @@ class nsIPresShell;
 class nsRenderingContext;
 class nsStyleContext;
 class nsSVGFilterPaintCallback;
-class nsSVGFilterElement;
 class nsSVGIntegerPair;
 class nsSVGLength2;
+
+namespace mozilla {
+namespace dom {
+class SVGFilterElement;
+}
+}
 
 typedef nsSVGContainerFrame nsSVGFilterFrameBase;
 
@@ -42,15 +48,13 @@ public:
   NS_DECL_FRAMEARENA_HELPERS
 
   // nsIFrame methods:
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) {
-    return NS_OK;
-  }
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE {}
 
   NS_IMETHOD AttributeChanged(int32_t         aNameSpaceID,
                               nsIAtom*        aAttribute,
-                              int32_t         aModType);
+                              int32_t         aModType) MOZ_OVERRIDE;
 
   /**
    * Paint the given filtered frame.
@@ -94,9 +98,9 @@ public:
                              const nsRect *aPreFilterBounds = nullptr);
 
 #ifdef DEBUG
-  NS_IMETHOD Init(nsIContent*      aContent,
-                  nsIFrame*        aParent,
-                  nsIFrame*        aPrevInFlow);
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
 #endif
 
   /**
@@ -104,7 +108,7 @@ public:
    *
    * @see nsGkAtoms::svgFilterFrame
    */
-  virtual nsIAtom* GetType() const;
+  virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 
 private:
   // Parse our xlink:href and set up our nsSVGPaintingProperty if we
@@ -131,8 +135,8 @@ private:
   {
     return GetLengthValue(aIndex, mContent);
   }
-  const nsSVGFilterElement *GetFilterContent(nsIContent *aDefault);
-  const nsSVGFilterElement *GetFilterContent()
+  const mozilla::dom::SVGFilterElement *GetFilterContent(nsIContent *aDefault);
+  const mozilla::dom::SVGFilterElement *GetFilterContent()
   {
     return GetFilterContent(mContent);
   }

@@ -136,6 +136,12 @@ public:
     mBits = 0;
   }
 
+  bool operator==(const nsEventHandler& aOther) const
+  {
+    return
+      Ptr() && aOther.Ptr() &&
+      Ptr()->CallbackPreserveColor() == aOther.Ptr()->CallbackPreserveColor();
+  }
 private:
   void operator=(const nsEventHandler&) MOZ_DELETE;
 
@@ -211,7 +217,7 @@ public:
   // Set a handler for this event listener.  The handler must already
   // be bound to the right target.
   void SetHandler(const nsEventHandler& aHandler, nsIScriptContext* aContext,
-                  JSObject* aScopeObject)
+                  JS::Handle<JSObject*> aScopeObject)
   {
     mHandler.SetHandler(aHandler);
     mContext = aContext;
@@ -259,10 +265,10 @@ protected:
 
   // Update our mScopeObject; we have to make sure we properly handle
   // the hold/drop stuff, so have to do it in nsJSEventListener.
-  virtual void UpdateScopeObject(JSObject* aScopeObject) = 0;
+  virtual void UpdateScopeObject(JS::Handle<JSObject*> aScopeObject) = 0;
 
   nsCOMPtr<nsIScriptContext> mContext;
-  JSObject* mScopeObject;
+  JS::Heap<JSObject*> mScopeObject;
   nsISupports* mTarget;
   nsCOMPtr<nsIAtom> mEventName;
   nsEventHandler mHandler;

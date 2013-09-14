@@ -10,23 +10,10 @@ VPATH     = @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE         = necko
 LIBRARY_NAME   = nkdatachan_s
 LIBXUL_LIBRARY = 1
-XPIDL_MODULE   = necko_datachan
-GRE_MODULE     = 1
 FORCE_STATIC_LIB = 1
-
-EXPORTS_NAMESPACES = mozilla/net
-
-CPPSRCS = \
-  DataChannel.cpp \
-  $(NULL)
-
-EXPORTS_mozilla/net = \
-  DataChannel.h \
-  DataChannelProtocol.h \
-  $(NULL)
+NO_PROFILE_GUIDED_OPTIMIZE = 1 # Don't PGO
 
 LOCAL_INCLUDES = \
   -I$(topsrcdir)/xpcom/ds \
@@ -38,9 +25,12 @@ LOCAL_INCLUDES = \
 
 DEFINES = \
   -DINET=1 \
-  -DINET6=1 \
   -DSCTP_DEBUG=1 \
   $(NULL)
+
+ifneq ($(OS_TARGET),Android)
+DEFINES += -DINET6=1
+endif
 
 ifeq ($(OS_TARGET),WINNT)
 DEFINES += -D__Userspace_os_Windows=1

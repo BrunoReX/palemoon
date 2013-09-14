@@ -13,7 +13,7 @@
 #endif
 
 #include "BrowserElementParent.h"
-#include "nsHTMLIFrameElement.h"
+#include "mozilla/dom/HTMLIFrameElement.h"
 #include "nsOpenWindowEventDetail.h"
 #include "nsEventDispatcher.h"
 #include "nsIDOMCustomEvent.h"
@@ -22,6 +22,7 @@
 #include "nsAsyncScrollEventDetail.h"
 
 using mozilla::dom::Element;
+using mozilla::dom::HTMLIFrameElement;
 using mozilla::dom::TabParent;
 
 namespace {
@@ -30,7 +31,7 @@ namespace {
  * Create an <iframe mozbrowser> owned by the same document as
  * aOpenerFrameElement.
  */
-already_AddRefed<nsHTMLIFrameElement>
+already_AddRefed<HTMLIFrameElement>
 CreateIframe(Element* aOpenerFrameElement, const nsAString& aName, bool aRemote)
 {
   nsNodeInfoManager *nodeInfoManager =
@@ -42,8 +43,8 @@ CreateIframe(Element* aOpenerFrameElement, const nsAString& aName, bool aRemote)
                                  kNameSpaceID_XHTML,
                                  nsIDOMNode::ELEMENT_NODE);
 
-  nsRefPtr<nsHTMLIFrameElement> popupFrameElement =
-    static_cast<nsHTMLIFrameElement*>(
+  nsRefPtr<HTMLIFrameElement> popupFrameElement =
+    static_cast<HTMLIFrameElement*>(
       NS_NewHTMLIFrameElement(nodeInfo.forget(), mozilla::dom::NOT_FROM_PARSER));
 
   popupFrameElement->SetMozbrowser(true);
@@ -81,7 +82,7 @@ DispatchCustomDOMEvent(Element* aFrameElement, const nsAString& aEventName,
   }
 
   nsCOMPtr<nsIDOMEvent> domEvent;
-  nsEventDispatcher::CreateEvent(presContext, nullptr,
+  nsEventDispatcher::CreateEvent(aFrameElement, presContext, nullptr,
                                  NS_LITERAL_STRING("customevent"),
                                  getter_AddRefs(domEvent));
   NS_ENSURE_TRUE(domEvent, false);
@@ -151,7 +152,7 @@ BrowserElementParent::OpenWindowOOP(TabParent* aOpenerTabParent,
   nsCOMPtr<Element> openerFrameElement =
     do_QueryInterface(aOpenerTabParent->GetOwnerElement());
   NS_ENSURE_TRUE(openerFrameElement, false);
-  nsRefPtr<nsHTMLIFrameElement> popupFrameElement =
+  nsRefPtr<HTMLIFrameElement> popupFrameElement =
     CreateIframe(openerFrameElement, aName, /* aRemote = */ true);
 
   // Normally an <iframe> element will try to create a frameLoader when the
@@ -209,7 +210,7 @@ BrowserElementParent::OpenWindowInProcess(nsIDOMWindow* aOpenerWindow,
   nsCOMPtr<Element> openerFrameElement =
     do_QueryInterface(openerFrameDOMElement);
 
-  nsRefPtr<nsHTMLIFrameElement> popupFrameElement =
+  nsRefPtr<HTMLIFrameElement> popupFrameElement =
     CreateIframe(openerFrameElement, aName, /* aRemote = */ false);
   NS_ENSURE_TRUE(popupFrameElement, false);
 
@@ -240,21 +241,49 @@ BrowserElementParent::OpenWindowInProcess(nsIDOMWindow* aOpenerWindow,
   return !!*aReturnWindow;
 }
 
-bool
-BrowserElementParent::DispatchAsyncScrollEvent(TabParent* aTabParent,
-                                               const gfx::Rect& aContentRect,
-                                               const gfx::Size& aContentSize)
+class DispatchAsyncScrollEventRunnable : public nsRunnable
 {
-  nsIDOMElement* element = aTabParent->GetOwnerElement();
+public:
+  DispatchAsyncScrollEventRunnable(TabParent* aTabParent,
+                                   const CSSRect& aContentRect,
+                                   const CSSSize& aContentSize)
+    : mTabParent(aTabParent)
+    , mContentRect(aContentRect)
+    , mContentSize(aContentSize)
+  {}
+
+  NS_IMETHOD Run();
+
+private:
+  nsRefPtr<TabParent> mTabParent;
+  const CSSRect mContentRect;
+  const CSSSize mContentSize;
+};
+
+NS_IMETHODIMP DispatchAsyncScrollEventRunnable::Run()
+{
+  nsIDOMElement* element = mTabParent->GetOwnerElement();
   nsCOMPtr<Element> frameElement = do_QueryInterface(element);
   // Create the event's detail object.
   nsRefPtr<nsAsyncScrollEventDetail> detail =
-    new nsAsyncScrollEventDetail(aContentRect.x, aContentRect.y,
-                                 aContentRect.width, aContentRect.height,
-                                 aContentSize.width, aContentSize.height);
-  return DispatchCustomDOMEvent(frameElement,
-                                NS_LITERAL_STRING("mozbrowserasyncscroll"),
-                                detail);
+    new nsAsyncScrollEventDetail(mContentRect.x, mContentRect.y,
+                                 mContentRect.width, mContentRect.height,
+                                 mContentSize.width, mContentSize.height);
+  DispatchCustomDOMEvent(frameElement,
+                         NS_LITERAL_STRING("mozbrowserasyncscroll"),
+                         detail);
+  return NS_OK;
+}
+
+bool
+BrowserElementParent::DispatchAsyncScrollEvent(TabParent* aTabParent,
+                                               const CSSRect& aContentRect,
+                                               const CSSSize& aContentSize)
+{
+  nsRefPtr<DispatchAsyncScrollEventRunnable> runnable =
+    new DispatchAsyncScrollEventRunnable(aTabParent, aContentRect,
+                                         aContentSize);
+  return NS_SUCCEEDED(NS_DispatchToMainThread(runnable));
 }
 
 } // namespace mozilla

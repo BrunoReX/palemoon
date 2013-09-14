@@ -2,6 +2,7 @@
 package @ANDROID_PACKAGE_NAME@.tests;
 
 import @ANDROID_PACKAGE_NAME@.*;
+import android.net.Uri;
 
 /**
  * A test to ensure that when an input field is focused, it is not obscured by the VKB.
@@ -22,7 +23,13 @@ public class testVkbOverlap extends PixelTest {
 
     public void testVkbOverlap() {
         blockForGeckoReady();
-        loadAndPaint(getAbsoluteUrl("/robocop/robocop_input.html"));
+        testSetup("initial-scale=1.0, user-scalable=no", false);
+        testSetup("initial-scale=1.0", false);
+        testSetup("", "phone".equals(mDevice.type));
+    }
+
+    private void testSetup(String viewport, boolean shouldZoom) {
+        loadAndPaint(getAbsoluteUrl("/robocop/test_viewport.sjs?metadata=" + Uri.encode(viewport)));
 
         // scroll to the bottom of the page and let it settle
         Actions.RepeatedEventExpecter paintExpecter = mActions.expectPaint();
@@ -33,6 +40,7 @@ public class testVkbOverlap extends PixelTest {
         int greenPixelCount = 0;
 
         PaintedSurface painted = waitForPaint(paintExpecter);
+        paintExpecter.unregisterListener();
         try {
             greenPixelCount = countGreenPixels(painted);
         } finally {
@@ -58,13 +66,20 @@ public class testVkbOverlap extends PixelTest {
         // now that the focus is in the text field we will repaint every 500ms as the cursor blinks, so we need to use a smaller
         // "no paints" threshold to consider the page painted
         paintExpecter.blockUntilClear(LESS_THAN_CURSOR_BLINK_PERIOD);
+        paintExpecter.unregisterListener();
         painted = mDriver.getPaintedSurface();
         try {
             // if the vkb scrolled into view as expected, then the number of green pixels now visible should be about the
             // same as it was before, since the green pixels indicate the text input is in view. use a fudge factor of 0.9 to
             // account for borders and such of the text input which might still be out of view.
             int newCount = countGreenPixels(painted);
-            mAsserter.ok(newCount >= (greenPixelCount * 0.9), "testVkbOverlap", "Found " + newCount + " green pixels after tapping; expected " + greenPixelCount);
+
+            // if zooming is allowed, the number of green pixels visible should have increased substatially
+            if (shouldZoom) {
+                mAsserter.ok(newCount > greenPixelCount * 1.5, "testVkbOverlap", "Found " + newCount + " green pixels after tapping; expected " + greenPixelCount);
+            } else {
+                mAsserter.ok((Math.abs(greenPixelCount - newCount) / greenPixelCount < 0.1), "testVkbOverlap", "Found " + newCount + " green pixels after tapping; expected " + greenPixelCount);
+            }
         } finally {
             painted.close();
         }

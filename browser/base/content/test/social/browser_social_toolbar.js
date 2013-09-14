@@ -2,15 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+let manifest = { // normal provider
+  name: "provider 1",
+  origin: "https://example.com",
+  workerURL: "https://example.com/browser/browser/base/content/test/social/social_worker.js",
+  iconURL: "https://example.com/browser/browser/base/content/test/moz.png"
+};
+
 function test() {
   waitForExplicitFinish();
 
-  let manifest = { // normal provider
-    name: "provider 1",
-    origin: "https://example.com",
-    workerURL: "https://example.com/browser/browser/base/content/test/social/social_worker.js",
-    iconURL: "https://example.com/browser/browser/base/content/test/moz.png"
-  };
   runSocialTestWithProvider(manifest, function (finishcb) {
     runSocialTests(tests, undefined, undefined, finishcb);
   });
@@ -23,7 +24,7 @@ var tests = {
     // check dom values
     let portrait = document.getElementsByClassName("social-statusarea-user-portrait")[0].getAttribute("src");
     // this is the default image for the profile area when not logged in.
-    is(portrait, "chrome://global/skin/icons/information-32.png", "portrait is empty");
+    ok(!portrait, "portrait is empty");
     let userDetailsBroadcaster = document.getElementById("socialBroadcaster_userDetails");
     let notLoggedInStatusValue = userDetailsBroadcaster.getAttribute("notLoggedInLabel");
     let userButton = document.getElementsByClassName("social-statusarea-loggedInStatus")[0];
@@ -35,14 +36,19 @@ var tests = {
     this.testProfileNone(next, true);
   },
   testProfileSet: function(next) {
+    let statusIcon = document.getElementById("social-provider-button").style.listStyleImage;
+    is(statusIcon, "url(\"" + manifest.iconURL + "\")", "manifest iconURL is showing");
     let profile = {
       portrait: "https://example.com/portrait.jpg",
       userName: "trickster",
       displayName: "Kuma Lisa",
-      profileURL: "http://en.wikipedia.org/wiki/Kuma_Lisa"
+      profileURL: "http://example.com/Kuma_Lisa",
+      iconURL: "https://example.com/browser/browser/base/content/test/social/moz.png"
     }
     Social.provider.updateUserProfile(profile);
     // check dom values
+    statusIcon = document.getElementById("social-provider-button").style.listStyleImage;
+    is(statusIcon, "url(\"" + profile.iconURL + "\")", "profile iconURL is showing");
     let portrait = document.getElementsByClassName("social-statusarea-user-portrait")[0].getAttribute("src");
     is(profile.portrait, portrait, "portrait is set");
     let userButton = document.getElementsByClassName("social-statusarea-loggedInStatus")[0];
@@ -55,6 +61,7 @@ var tests = {
     if (navigator.platform.contains("Mac")) {
       info("Skipping checking the menubar on Mac OS");
       next();
+      return;
     }
 
     // Test that keyboard accessible menuitem doesn't exist when no ambient icons specified.
@@ -95,6 +102,14 @@ var tests = {
       label: "Test Ambient 3",
       menuURL: "https://example.com/testAmbient3"
     };
+    let ambience4 = {
+      name: "testIcon4",
+      iconURL: "https://example.com/browser/browser/base/content/test/moz.png",
+      contentPanel: "about:blank",
+      counter: 0,
+      label: "Test Ambient 4",
+      menuURL: "https://example.com/testAmbient4"
+    };
     Social.provider.setAmbientNotification(ambience);
 
     // for Bug 813834.  Check preference whether stored data is correct.
@@ -102,23 +117,35 @@ var tests = {
 
     Social.provider.setAmbientNotification(ambience2);
     Social.provider.setAmbientNotification(ambience3);
+    
+    try {
+      Social.provider.setAmbientNotification(ambience4);
+    } catch(e) {}
+    let numIcons = Object.keys(Social.provider.ambientNotificationIcons).length;
+    ok(numIcons == 3, "prevent adding more than 3 ambient notification icons");
 
-    let statusIcon = document.querySelector("#social-toolbar-item > .social-notification-container > .toolbarbutton-1");
+    let statusIcon = document.getElementById("social-provider-button").nextSibling;
     waitForCondition(function() {
-      statusIcon = document.querySelector("#social-toolbar-item > .social-notification-container > .toolbarbutton-1");
+      statusIcon = document.getElementById("social-provider-button").nextSibling;
       return !!statusIcon;
     }, function () {
       let badge = statusIcon.getAttribute("badge");
       is(badge, "42", "status value is correct");
+      // If there is a counter, the aria-label should reflect it.
+      is(statusIcon.getAttribute("aria-label"), "Test Ambient 1 \u2046 (42)");
 
       ambience.counter = 0;
       Social.provider.setAmbientNotification(ambience);
       badge = statusIcon.getAttribute("badge");
       is(badge, "", "status value is correct");
+      // If there is no counter, the aria-label should be the same as the label
+      is(statusIcon.getAttribute("aria-label"), "Test Ambient 1 \u2046");
 
       // The menu bar isn't as easy to instrument on Mac.
-      if (navigator.platform.contains("Mac"))
+      if (navigator.platform.contains("Mac")) {
         next();
+        return;
+      }
 
       // Test that keyboard accessible menuitem was added.
       let toolsPopup = document.getElementById("menu_ToolsPopup");
@@ -153,8 +180,6 @@ var tests = {
     is(toggleDesktopNotificationsMenuitems.length, 2, "Toggle notifications menuitems exist");
     let toggleSocialMenuitems = document.getElementsByClassName("social-toggle-menuitem");
     is(toggleSocialMenuitems.length, 2, "Toggle Social menuitems exist");
-    let removeSocialMenuitems = document.getElementsByClassName("social-remove-menuitem");
-    is(removeSocialMenuitems.length, 2, "Remove Social menuitems exist");
     next();
   },
   testToggleNotifications: function(next) {

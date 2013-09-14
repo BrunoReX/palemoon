@@ -8,14 +8,11 @@ DOM_SRCDIRS = \
   dom/encoding \
   dom/file \
   dom/power \
+  dom/push \
   dom/quota \
   dom/media \
   dom/network/src \
-  dom/settings \
   dom/phonenumberutils \
-  dom/sms/src \
-  dom/contacts \
-  dom/permission \
   dom/alarm \
   dom/src/events \
   dom/src/storage \
@@ -35,7 +32,7 @@ DOM_SRCDIRS = \
   layout/generic \
   layout/style \
   layout/xul/base/src \
-  layout/xul/base/src/tree/src \
+  layout/xul/tree \
   dom/camera \
   $(NULL)
 
@@ -56,6 +53,10 @@ endif
 
 ifdef MOZ_B2G_BT
 DOM_SRCDIRS += dom/bluetooth
+endif
+
+ifdef MOZ_WEBSPEECH
+DOM_SRCDIRS += content/media/webspeech
 endif
 
 LOCAL_INCLUDES += $(DOM_SRCDIRS:%=-I$(topsrcdir)/%)

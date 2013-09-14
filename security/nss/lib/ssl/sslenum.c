@@ -5,7 +5,6 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* $Id: sslenum.c,v 1.19 2012/04/25 14:50:12 gerv%gerv.net Exp $ */
 
 #include "ssl.h"
 #include "sslproto.h"
@@ -26,6 +25,8 @@
  *
  * If new ECC cipher suites are added, also update the ssl3CipherSuite arrays
  * in ssl3ecc.c.
+ *
+ * Finally, update the ssl_V3_SUITES_IMPLEMENTED macro in sslimpl.h.
  */
 const PRUint16 SSL_ImplementedCiphers[] = {
     /* 256-bit */
@@ -36,6 +37,7 @@ const PRUint16 SSL_ImplementedCiphers[] = {
     TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA,
     TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA,
     TLS_DHE_RSA_WITH_AES_256_CBC_SHA,
+    TLS_DHE_RSA_WITH_AES_256_CBC_SHA256,
     TLS_DHE_DSS_WITH_AES_256_CBC_SHA,
 #ifdef NSS_ENABLE_ECC
     TLS_ECDH_RSA_WITH_AES_256_CBC_SHA,
@@ -43,18 +45,22 @@ const PRUint16 SSL_ImplementedCiphers[] = {
 #endif /* NSS_ENABLE_ECC */
     TLS_RSA_WITH_CAMELLIA_256_CBC_SHA,
     TLS_RSA_WITH_AES_256_CBC_SHA,
+    TLS_RSA_WITH_AES_256_CBC_SHA256,
 
     /* 128-bit */
 #ifdef NSS_ENABLE_ECC
     TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
     TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+    TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
     TLS_ECDHE_RSA_WITH_RC4_128_SHA,
     TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+    TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
 #endif /* NSS_ENABLE_ECC */
     TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA,
     TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA,
     TLS_DHE_DSS_WITH_RC4_128_SHA,
     TLS_DHE_RSA_WITH_AES_128_CBC_SHA,
+    TLS_DHE_RSA_WITH_AES_128_CBC_SHA256,
     TLS_DHE_DSS_WITH_AES_128_CBC_SHA,
 #ifdef NSS_ENABLE_ECC
     TLS_ECDH_RSA_WITH_RC4_128_SHA,
@@ -67,6 +73,7 @@ const PRUint16 SSL_ImplementedCiphers[] = {
     SSL_RSA_WITH_RC4_128_SHA,
     SSL_RSA_WITH_RC4_128_MD5,
     TLS_RSA_WITH_AES_128_CBC_SHA,
+    TLS_RSA_WITH_AES_128_CBC_SHA256,
 
     /* 112-bit 3DES */
 #ifdef NSS_ENABLE_ECC
@@ -104,6 +111,7 @@ const PRUint16 SSL_ImplementedCiphers[] = {
     TLS_ECDH_ECDSA_WITH_NULL_SHA,
 #endif /* NSS_ENABLE_ECC */
     SSL_RSA_WITH_NULL_SHA,
+    TLS_RSA_WITH_NULL_SHA256,
     SSL_RSA_WITH_NULL_MD5,
 
     /* SSL2 cipher suites. */

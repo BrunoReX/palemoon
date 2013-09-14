@@ -5,39 +5,12 @@
 //
 
 #include "compiler/OutputGLSLBase.h"
-#include "compiler/compilerdebug.h"
+#include "compiler/compiler_debug.h"
+
+#include <cfloat>
 
 namespace
 {
-TString getTypeName(const TType& type)
-{
-    TInfoSinkBase out;
-    if (type.isMatrix())
-    {
-        out << "mat";
-        out << type.getNominalSize();
-    }
-    else if (type.isVector())
-    {
-        switch (type.getBasicType())
-        {
-            case EbtFloat: out << "vec"; break;
-            case EbtInt: out << "ivec"; break;
-            case EbtBool: out << "bvec"; break;
-            default: UNREACHABLE(); break;
-        }
-        out << type.getNominalSize();
-    }
-    else
-    {
-        if (type.getBasicType() == EbtStruct)
-            out << type.getTypeName();
-        else
-            out << type.getBasicString();
-    }
-    return TString(out.c_str());
-}
-
 TString arrayBrackets(const TType& type)
 {
     ASSERT(type.isArray());
@@ -66,10 +39,18 @@ bool isSingleStatement(TIntermNode* node) {
 }
 }  // namespace
 
-TOutputGLSLBase::TOutputGLSLBase(TInfoSinkBase& objSink)
+TOutputGLSLBase::TOutputGLSLBase(TInfoSinkBase& objSink,
+                                 ShArrayIndexClampingStrategy clampingStrategy,
+                                 ShHashFunction64 hashFunction,
+                                 NameMap& nameMap,
+                                 TSymbolTable& symbolTable)
     : TIntermTraverser(true, true, true),
       mObjSink(objSink),
-      mDeclaringVariables(false)
+      mDeclaringVariables(false),
+      mClampingStrategy(clampingStrategy),
+      mHashFunction(hashFunction),
+      mNameMap(nameMap),
+      mSymbolTable(symbolTable)
 {
 }
 
@@ -101,7 +82,7 @@ void TOutputGLSLBase::writeVariableType(const TType& type)
     if ((type.getBasicType() == EbtStruct) &&
         (mDeclaredStructs.find(type.getTypeName()) == mDeclaredStructs.end()))
     {
-        out << "struct " << type.getTypeName() << "{\n";
+        out << "struct " << hashName(type.getTypeName()) << "{\n";
         const TTypeList* structure = type.getStruct();
         ASSERT(structure != NULL);
         for (size_t i = 0; i < structure->size(); ++i)
@@ -110,7 +91,7 @@ void TOutputGLSLBase::writeVariableType(const TType& type)
             ASSERT(fieldType != NULL);
             if (writeVariablePrecision(fieldType->getPrecision()))
                 out << " ";
-            out << getTypeName(*fieldType) << " " << fieldType->getFieldName();
+            out << getTypeName(*fieldType) << " " << hashName(fieldType->getFieldName());
             if (fieldType->isArray())
                 out << arrayBrackets(*fieldType);
             out << ";\n";
@@ -140,7 +121,7 @@ void TOutputGLSLBase::writeFunctionParameters(const TIntermSequence& args)
 
         const TString& name = arg->getSymbol();
         if (!name.empty())
-            out << " " << name;
+            out << " " << hashName(name);
         if (type.isArray())
             out << arrayBrackets(type);
 
@@ -157,7 +138,7 @@ const ConstantUnion* TOutputGLSLBase::writeConstantUnion(const TType& type,
 
     if (type.getBasicType() == EbtStruct)
     {
-        out << type.getTypeName() << "(";
+        out << hashName(type.getTypeName()) << "(";
         const TTypeList* structure = type.getStruct();
         ASSERT(structure != NULL);
         for (size_t i = 0; i < structure->size(); ++i)
@@ -178,7 +159,7 @@ const ConstantUnion* TOutputGLSLBase::writeConstantUnion(const TType& type,
         {
             switch (pConstUnion->getType())
             {
-                case EbtFloat: out << pConstUnion->getFConst(); break;
+                case EbtFloat: out << std::min(FLT_MAX, std::max(-FLT_MAX, pConstUnion->getFConst())); break;
                 case EbtInt: out << pConstUnion->getIConst(); break;
                 case EbtBool: out << pConstUnion->getBConst(); break;
                 default: UNREACHABLE();
@@ -196,7 +177,7 @@ void TOutputGLSLBase::visitSymbol(TIntermSymbol* node)
     if (mLoopUnroll.NeedsToReplaceSymbolWithValue(node))
         out << mLoopUnroll.GetLoopIndexValue(node);
     else
-        out << node->getSymbol();
+        out << hashVariableName(node->getSymbol());
 
     if (mDeclaringVariables && node->getType().isArray())
         out << arrayBrackets(node->getType());
@@ -242,7 +223,11 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary* node)
             {
                 if (visit == InVisit)
                 {
-                    out << "[webgl_int_clamp(";
+                    if (mClampingStrategy == SH_CLAMP_WITH_CLAMP_INTRINSIC) {
+                        out << "[int(clamp(float(";
+                    } else {
+                        out << "[webgl_int_clamp(";
+                    }
                 }
                 else if (visit == PostVisit)
                 {
@@ -259,7 +244,12 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary* node)
                     {
                         maxSize = leftType.getNominalSize() - 1;
                     }
-                    out << ", 0, " << maxSize << ")]";
+
+                    if (mClampingStrategy == SH_CLAMP_WITH_CLAMP_INTRINSIC) {
+                        out << "), 0.0, float(" << maxSize << ")))]";
+                    } else {
+                        out << ", 0, " << maxSize << ")]";
+                    }
                 }
             }
             else
@@ -272,7 +262,13 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary* node)
             {
                 out << ".";
                 // TODO(alokp): ASSERT
-                out << node->getType().getFieldName();
+                TString fieldName = node->getType().getFieldName();
+
+                const TType& structType = node->getLeft()->getType();
+                if (!mSymbolTable.findBuiltIn(structType.getTypeName()))
+                    fieldName = hashName(fieldName);
+
+                out << fieldName;
                 visitChildren = false;
             }
             break;
@@ -496,7 +492,7 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate* node)
             // Function declaration.
             ASSERT(visit == PreVisit);
             writeVariableType(node->getType());
-            out << " " << node->getName();
+            out << " " << hashName(node->getName());
 
             out << "(";
             writeFunctionParameters(node->getSequence());
@@ -509,7 +505,7 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate* node)
             // Function definition.
             ASSERT(visit == PreVisit);
             writeVariableType(node->getType());
-            out << " " << TFunction::unmangleName(node->getName());
+            out << " " << hashFunctionName(node->getName());
 
             incrementDepth();
             // Function definition node contains one or two children nodes
@@ -539,8 +535,7 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate* node)
             // Function call.
             if (visit == PreVisit)
             {
-                TString functionName = TFunction::unmangleName(node->getName());
-                out << functionName << "(";
+                out << hashFunctionName(node->getName()) << "(";
             }
             else if (visit == InVisit)
             {
@@ -601,7 +596,7 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate* node)
             {
                 const TType& type = node->getType();
                 ASSERT(type.getBasicType() == EbtStruct);
-                out << type.getTypeName() << "(";
+                out << hashName(type.getTypeName()) << "(";
             }
             else if (visit == InVisit)
             {
@@ -746,4 +741,60 @@ void TOutputGLSLBase::visitCodeBlock(TIntermNode* node) {
     {
         out << "{\n}\n";  // Empty code block.
     }
+}
+
+TString TOutputGLSLBase::getTypeName(const TType& type)
+{
+    TInfoSinkBase out;
+    if (type.isMatrix())
+    {
+        out << "mat";
+        out << type.getNominalSize();
+    }
+    else if (type.isVector())
+    {
+        switch (type.getBasicType())
+        {
+            case EbtFloat: out << "vec"; break;
+            case EbtInt: out << "ivec"; break;
+            case EbtBool: out << "bvec"; break;
+            default: UNREACHABLE(); break;
+        }
+        out << type.getNominalSize();
+    }
+    else
+    {
+        if (type.getBasicType() == EbtStruct)
+            out << hashName(type.getTypeName());
+        else
+            out << type.getBasicString();
+    }
+    return TString(out.c_str());
+}
+
+TString TOutputGLSLBase::hashName(const TString& name)
+{
+    if (mHashFunction == NULL || name.empty())
+        return name;
+    NameMap::const_iterator it = mNameMap.find(name.c_str());
+    if (it != mNameMap.end())
+        return it->second.c_str();
+    TString hashedName = TIntermTraverser::hash(name, mHashFunction);
+    mNameMap[name.c_str()] = hashedName.c_str();
+    return hashedName;
+}
+
+TString TOutputGLSLBase::hashVariableName(const TString& name)
+{
+    if (mSymbolTable.findBuiltIn(name) != NULL)
+        return name;
+    return hashName(name);
+}
+
+TString TOutputGLSLBase::hashFunctionName(const TString& mangled_name)
+{
+    TString name = TFunction::unmangleName(mangled_name);
+    if (mSymbolTable.findBuiltIn(mangled_name) != NULL || name == "main")
+        return name;
+    return hashName(name);
 }

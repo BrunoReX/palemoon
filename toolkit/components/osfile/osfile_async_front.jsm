@@ -27,9 +27,7 @@ let LOG = OS.Shared.LOG.bind(OS.Shared, "Controller");
 let isTypedArray = OS.Shared.isTypedArray;
 
 // A simple flag used to control debugging messages.
-// FIXME: Once this library has been battle-tested, this flag will
-// either be removed or replaced with a preference.
-const DEBUG = false;
+let DEBUG = OS.Shared.DEBUG;
 
 // The constructor for file errors.
 let OSError;
@@ -47,16 +45,17 @@ if (OS.Constants.Win) {
 let Type = OS.Shared.Type;
 
 // The library of promises.
-Components.utils.import("resource://gre/modules/commonjs/promise/core.js", this);
+Components.utils.import("resource://gre/modules/commonjs/sdk/core/promise.js", this);
 
 // The implementation of communications
 Components.utils.import("resource://gre/modules/osfile/_PromiseWorker.jsm", this);
+
+Components.utils.import("resource://gre/modules/Services.jsm", this);
 
 // If profileDir is not available, osfile.jsm has been imported before the
 // profile is setup. In this case, we need to observe "profile-do-change"
 // and set OS.Constants.Path.profileDir as soon as it becomes available.
 if (!("profileDir" in OS.Constants.Path) || !("localProfileDir" in OS.Constants.Path)) {
-  Components.utils.import("resource://gre/modules/Services.jsm", this);
   let observer = function observer() {
     Services.obs.removeObserver(observer, "profile-do-change");
 
@@ -70,34 +69,85 @@ if (!("profileDir" in OS.Constants.Path) || !("localProfileDir" in OS.Constants.
 }
 
 /**
+ * A global constant used as a default refs parameter value when cloning.
+ */
+const noRefs = [];
+
+/**
  * Return a shallow clone of the enumerable properties of an object.
  *
- * We use this whenever normalizing options requires making (shallow)
+ * Utility used whenever normalizing options requires making (shallow)
  * changes to an option object. The copy ensures that we do not modify
  * a client-provided object by accident.
+ *
+ * Note: to reference and not copy specific fields, provide an optional
+ * |refs| argument containing their names.
+ *
+ * @param {JSON} object Options to be cloned.
+ * @param {Array} refs An optional array of field names to be passed by
+ * reference instead of copying.
  */
-let clone = function clone(object) {
+let clone = function clone(object, refs = noRefs) {
   let result = {};
+  // Make a reference between result[key] and object[key].
+  let refer = function refer(result, key, object) {
+    Object.defineProperty(result, key, {
+        enumerable: true,
+        get: function() {
+            return object[key];
+        },
+        set: function(value) {
+            object[key] = value;
+        }
+    });
+  };
   for (let k in object) {
-    result[k] = object[k];
+    if (refs.indexOf(k) < 0) {
+      result[k] = object[k];
+    } else {
+      refer(result, k, object);
+    }
   }
   return result;
 };
 
-/**
- * A shared constant used to normalize a set of options to nothing.
- */
-const noOptions = {};
-
-
 let worker = new PromiseWorker(
-  "resource://gre/modules/osfile/osfile_async_worker.js",
-  DEBUG?LOG:null);
+  "resource://gre/modules/osfile/osfile_async_worker.js", LOG);
 let Scheduler = {
   post: function post(...args) {
+    // By convention, the last argument of any message may be an |options| object.
+    let methodArgs = args[1];
+    let options = methodArgs ? methodArgs[methodArgs.length - 1] : null;
     let promise = worker.post.apply(worker, args);
     return promise.then(
-      null,
+      function onSuccess(data) {
+        // Check for duration and return result.
+        if (!options) {
+          return data.ok;
+        }
+        // Check for options.outExecutionDuration.
+        if (typeof options !== "object" ||
+          !("outExecutionDuration" in options)) {
+          return data.ok;
+        }
+        // If data.durationMs is not present, return data.ok (there was an
+        // exception applying the method).
+        if (!("durationMs" in data)) {
+          return data.ok;
+        }
+        // Bug 874425 demonstrates that two successive calls to Date.now()
+        // can actually produce an interval with negative duration.
+        // We assume that this is due to an operation that is so short
+        // that Date.now() is not monotonic, so we round this up to 0.
+        let durationMs = Math.max(0, data.durationMs);
+        // Accumulate (or initialize) outExecutionDuration
+        if (typeof options.outExecutionDuration == "number") {
+          options.outExecutionDuration += durationMs;
+        } else {
+          options.outExecutionDuration = durationMs;
+        }
+        return data.ok;
+      },
       function onError(error) {
         // Decode any serialized error
         if (error instanceof PromiseWorker.WorkerError) {
@@ -109,6 +159,97 @@ let Scheduler = {
     );
   }
 };
+
+// Update worker's DEBUG flag if it's true.
+if (DEBUG === true) {
+  Scheduler.post("SET_DEBUG", [DEBUG]);
+}
+
+// Define a new getter and setter for OS.Shared.DEBUG to be able to watch
+// for changes to it and update worker's DEBUG accordingly.
+Object.defineProperty(OS.Shared, "DEBUG", {
+    configurable: true,
+    get: function () {
+        return DEBUG;
+    },
+    set: function (newVal) {
+        Scheduler.post("SET_DEBUG", [newVal]);
+        DEBUG = newVal;
+    }
+});
+
+// Observer topics used for monitoring shutdown
+const WEB_WORKERS_SHUTDOWN_TOPIC = "web-workers-shutdown";
+const TEST_WEB_WORKERS_SHUTDOWN_TOPIC = "test.osfile.web-workers-shutdown";
+
+// Preference used to configure test shutdown observer.
+const PREF_OSFILE_TEST_SHUTDOWN_OBSERVER =
+  "toolkit.osfile.test.shutdown.observer";
+
+/**
+ * Safely attempt removing a test shutdown observer.
+ */
+let removeTestObserver = function removeTestObserver() {
+  try {
+    Services.obs.removeObserver(webWorkersShutdownObserver,
+      TEST_WEB_WORKERS_SHUTDOWN_TOPIC);
+  } catch (ex) {
+    // There was no observer to remove.
+  }
+};
+
+/**
+ * An observer function to be used to monitor web-workers-shutdown events.
+ */
+let webWorkersShutdownObserver = function webWorkersShutdownObserver(aSubject, aTopic) {
+  if (aTopic == WEB_WORKERS_SHUTDOWN_TOPIC) {
+    Services.obs.removeObserver(webWorkersShutdownObserver, WEB_WORKERS_SHUTDOWN_TOPIC);
+    removeTestObserver();
+  }
+  // Send a "System_shutdown" message to the worker.
+  Scheduler.post("System_shutdown").then(function onSuccess(opened) {
+    let msg = "";
+    if (opened.openedFiles.length > 0) {
+      msg += "The following files are still opened:\n" +
+        opened.openedFiles.join("\n");
+    }
+    if (opened.openedDirectoryIterators.length > 0) {
+      msg += "The following directory iterators are still opened:\n" +
+        opened.openedDirectoryIterators.join("\n");
+    }
+    // Only log if file descriptors leaks detected.
+    if (msg) {
+      LOG("WARNING: File descriptors leaks detected.\n" + msg);
+    }
+  });
+};
+
+Services.obs.addObserver(webWorkersShutdownObserver,
+  WEB_WORKERS_SHUTDOWN_TOPIC, false);
+
+// Attaching an observer for PREF_OSFILE_TEST_SHUTDOWN_OBSERVER to enable or
+// disable the test shutdown event observer.
+// Note: By default the PREF_OSFILE_TEST_SHUTDOWN_OBSERVER is unset.
+// Note: This is meant to be used for testing purposes only.
+Services.prefs.addObserver(PREF_OSFILE_TEST_SHUTDOWN_OBSERVER,
+  function prefObserver() {
+    let addObserver;
+    try {
+      addObserver = Services.prefs.getBoolPref(
+        PREF_OSFILE_TEST_SHUTDOWN_OBSERVER);
+    } catch (x) {
+      // In case PREF_OSFILE_TEST_SHUTDOWN_OBSERVER was cleared.
+      addObserver = false;
+    }
+    if (addObserver) {
+      // Attaching an observer listening to the TEST_WEB_WORKERS_SHUTDOWN_TOPIC.
+      Services.obs.addObserver(webWorkersShutdownObserver,
+        TEST_WEB_WORKERS_SHUTDOWN_TOPIC, false);
+    } else {
+      // Removing the observer.
+      removeTestObserver();
+    }
+  }, false);
 
 /**
  * Representation of a file, with asynchronous methods.
@@ -138,7 +279,7 @@ File.prototype = {
    * @rejects {OS.File.Error}
    */
   close: function close() {
-    if (this._fdmsg) {
+    if (this._fdmsg != null) {
       let msg = this._fdmsg;
       this._fdmsg = null;
       return this._closeResult =
@@ -155,9 +296,6 @@ File.prototype = {
    * @rejects {OS.File.Error}
    */
   stat: function stat() {
-    if (!this._fdmsg) {
-      return Promise.reject(OSError.closed("accessing file"));
-    }
     return Scheduler.post("File_prototype_stat", [this._fdmsg], this).then(
       File.Info.fromMsg
     );
@@ -175,12 +313,14 @@ File.prototype = {
    * @resolves {number} The number of bytes effectively read.
    * @rejects {OS.File.Error}
    */
-  readTo: function readTo(buffer, options) {
+  readTo: function readTo(buffer, options = {}) {
     // If |buffer| is a typed array and there is no |bytes| options, we
     // need to extract the |byteLength| now, as it will be lost by
     // communication
-    if (isTypedArray(buffer) && (!options || !"bytes" in options)) {
-      options = clone(options || noOptions);
+    if (isTypedArray(buffer) && (!options || !("bytes" in options))) {
+      // Preserve the reference to |outExecutionDuration| option if it is
+      // passed.
+      options = clone(options, ["outExecutionDuration"]);
       options.bytes = buffer.byteLength;
     }
     // Note: Type.void_t.out_ptr.toMsg ensures that
@@ -211,12 +351,14 @@ File.prototype = {
    *
    * @return {number} The number of bytes actually written.
    */
-  write: function write(buffer, options) {
+  write: function write(buffer, options = {}) {
     // If |buffer| is a typed array and there is no |bytes| options,
     // we need to extract the |byteLength| now, as it will be lost
     // by communication
-    if (isTypedArray(buffer) && (!options || !"bytes" in options)) {
-      options = clone(options || noOptions);
+    if (isTypedArray(buffer) && (!options || !("bytes" in options))) {
+      // Preserve the reference to |outExecutionDuration| option if it is
+      // passed.
+      options = clone(options, ["outExecutionDuration"]);
       options.bytes = buffer.byteLength;
     }
     // Note: Type.void_t.out_ptr.toMsg ensures that
@@ -240,37 +382,13 @@ File.prototype = {
    * @resolves {Uint8Array} An array containing the bytes read.
    */
   read: function read(nbytes) {
-    // FIXME: Once bug 720949 has landed, we might be able to simplify
-    // the implementation of |readAll|
-    let self = this;
-    let promise;
-    if (nbytes != null) {
-      promise = Promise.resolve(nbytes);
-    } else {
-      promise = this.stat();
-      promise = promise.then(function withStat(stat) {
-        return stat.size;
+    let promise = Scheduler.post("File_prototype_read",
+      [this._fdmsg,
+       nbytes]);
+    return promise.then(
+      function onSuccess(data) {
+        return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
       });
-    }
-    let array;
-    let size;
-    promise = promise.then(
-      function withSize(aSize) {
-        size = aSize;
-        array = new Uint8Array(size);
-        return self.readTo(array);
-      }
-    );
-    promise = promise.then(
-      function afterReadTo(bytes) {
-        if (bytes == size) {
-          return array;
-        } else {
-          return array.subarray(0, bytes);
-        }
-      }
-    );
-    return promise;
   },
 
   /**
@@ -470,13 +588,18 @@ File.makeDir = function makeDir(path, options) {
  * @param {string} path The path to the file.
  * @param {number=} bytes Optionally, an upper bound to the number of bytes
  * to read.
+ * @param {JSON} options Additional options.
  *
  * @resolves {Uint8Array} A buffer holding the bytes
  * read from the file.
  */
-File.read = function read(path, bytes) {
-  return Scheduler.post("read",
-    [Type.path.toMsg(path), bytes], path);
+File.read = function read(path, bytes, options) {
+  let promise = Scheduler.post("read",
+    [Type.path.toMsg(path), bytes, options], path);
+  return promise.then(
+    function onSuccess(data) {
+      return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    });
 };
 
 /**
@@ -498,6 +621,14 @@ File.exists = function exists(path) {
  * until the contents are fully written, the destination file is
  * not modified.
  *
+ * By default, files are flushed for additional safety, i.e. to lower
+ * the risks of losing data in case the device is suddenly removed or
+ * in case of sudden shutdown. This additional safety is important
+ * for user-critical data (e.g. preferences, application data, etc.)
+ * but comes at a performance cost. For non-critical data (e.g. cache,
+ * thumbnails, etc.), you may wish to deactivate flushing by passing
+ * option |flush: false|.
+ *
  * Important note: In the current implementation, option |tmpPath|
  * is required. This requirement should disappear as part of bug 793660.
  *
@@ -510,13 +641,21 @@ File.exists = function exists(path) {
  * - {string} tmpPath The path at which to write the temporary file.
  * - {bool} noOverwrite - If set, this function will fail if a file already
  * exists at |path|. The |tmpPath| is not overwritten if |path| exist.
+ * - {bool} flush - If set to |false|, the function will not flush the
+ * file. This improves performance considerably, but the resulting
+ * behavior is slightly less safe: if the system shuts down improperly
+ * (typically due to a kernel freeze or a power failure) or if the
+ * device is disconnected or removed before the buffer is flushed, the
+ * file may be corrupted.
+ *
  *
  * @return {promise}
  * @resolves {number} The number of bytes actually written.
  */
-File.writeAtomic = function writeAtomic(path, buffer, options) {
-  // Copy |options| to avoid modifying the original object
-  options = clone(options || noOptions);
+File.writeAtomic = function writeAtomic(path, buffer, options = {}) {
+  // Copy |options| to avoid modifying the original object but preserve the
+  // reference to |outExecutionDuration| option if it is passed.
+  options = clone(options, ["outExecutionDuration"]);
   // As options.tmpPath is a path, we need to encode it as |Type.path| message
   if ("tmpPath" in options) {
     options.tmpPath = Type.path.toMsg(options.tmpPath);
@@ -543,8 +682,24 @@ File.writeAtomic = function writeAtomic(path, buffer, options) {
 File.Info = function Info(value) {
   return value;
 };
+if (OS.Constants.Win) {
+  File.Info.prototype = Object.create(OS.Shared.Win.AbstractInfo.prototype);
+} else if (OS.Constants.libc) {
+  File.Info.prototype = Object.create(OS.Shared.Unix.AbstractInfo.prototype);
+} else {
+  throw new Error("I am neither under Windows nor under a Posix system");
+}
+
 File.Info.fromMsg = function fromMsg(value) {
   return new File.Info(value);
+};
+
+/**
+ * Get worker's current DEBUG flag.
+ * Note: This is used for testing purposes.
+ */
+File.GET_DEBUG = function GET_DEBUG() {
+  return Scheduler.post("GET_DEBUG");
 };
 
 /**
@@ -569,6 +724,18 @@ let DirectoryIterator = function DirectoryIterator(path, options) {
   this._isClosed = false;
 };
 DirectoryIterator.prototype = {
+  /**
+   * Determine whether the directory exists.
+   *
+   * @resolves {boolean}
+   */
+  exists: function exists() {
+    return this._itmsg.then(
+      function onSuccess(iterator) {
+        return Scheduler.post("DirectoryIterator_prototype_exists", [iterator]);
+      }
+    );
+  },
   /**
    * Get the next entry in the directory.
    *
@@ -670,7 +837,6 @@ DirectoryIterator.prototype = {
    */
   _next: function _next(iterator) {
     if (this._isClosed) {
-      LOG("DirectoryIterator._next", "closed");
       return this._itmsg;
     }
     let self = this;
@@ -710,6 +876,14 @@ DirectoryIterator.prototype = {
 DirectoryIterator.Entry = function Entry(value) {
   return value;
 };
+if (OS.Constants.Win) {
+  DirectoryIterator.Entry.prototype = Object.create(OS.Shared.Win.AbstractEntry.prototype);
+} else if (OS.Constants.libc) {
+  DirectoryIterator.Entry.prototype = Object.create(OS.Shared.Unix.AbstractEntry.prototype);
+} else {
+  throw new Error("I am neither under Windows nor under a Posix system");
+}
+
 DirectoryIterator.Entry.fromMsg = function fromMsg(value) {
   return new DirectoryIterator.Entry(value);
 };

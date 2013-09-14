@@ -69,6 +69,10 @@ DOMWifiManager.prototype = {
     // Only pages with perm set can use the wifi manager.
     this._hasPrivileges = perm == Ci.nsIPermissionManager.ALLOW_ACTION;
 
+    if (!this._hasPrivileges) {
+      return null;
+    }
+
     // Maintain this state for synchronous APIs.
     this._currentNetwork = null;
     this._connectionStatus = "disconnected";
@@ -81,6 +85,7 @@ DOMWifiManager.prototype = {
                       "WifiManager:forget:Return:OK", "WifiManager:forget:Return:NO",
                       "WifiManager:wps:Return:OK", "WifiManager:wps:Return:NO",
                       "WifiManager:setPowerSavingMode:Return:OK", "WifiManager:setPowerSavingMode:Return:NO",
+                      "WifiManager:setStaticIpMode:Return:OK", "WifiManager:setStaticIpMode:Return:NO",
                       "WifiManager:wifiDown", "WifiManager:wifiUp",
                       "WifiManager:onconnecting", "WifiManager:onassociate",
                       "WifiManager:onconnect", "WifiManager:ondisconnect",
@@ -187,6 +192,16 @@ DOMWifiManager.prototype = {
         Services.DOMRequest.fireError(request, msg.data);
         break;
 
+      case "WifiManager:setStaticIpMode:Return:OK":
+        request = this.takeRequest(msg.rid);
+        Services.DOMRequest.fireSuccess(request, exposeReadOnly(msg.data));
+        break;
+
+      case "WifiManager:setStaticIpMode:Return:NO":
+        request = this.takeRequest(msg.rid);
+        Services.DOMRequest.fireError(request, msg.data);
+        break;
+
       case "WifiManager:wifiDown":
         this._enabled = false;
         this._currentNetwork = null;
@@ -195,6 +210,7 @@ DOMWifiManager.prototype = {
 
       case "WifiManager:wifiUp":
         this._enabled = true;
+        this._macAddress = msg.macAddress;
         this._fireEnabledOrDisabled(true);
         break;
 
@@ -339,6 +355,14 @@ DOMWifiManager.prototype = {
       throw new Components.Exception("Denied", Cr.NS_ERROR_FAILURE);
     var request = this.createRequest();
     this._sendMessageForRequest("WifiManager:setPowerSavingMode", enabled, request);
+    return request;
+  },
+
+  setStaticIpMode: function nsIDOMWifiManager_setStaticIpMode(network, info) {
+    if (!this._hasPrivileges)
+      throw new Components.Exception("Denied", Cr.NS_ERROR_FAILURE);
+    var request = this.createRequest();
+    this._sendMessageForRequest("WifiManager:setStaticIpMode", {network: network,info: info}, request);
     return request;
   },
 

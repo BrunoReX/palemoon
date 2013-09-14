@@ -6,9 +6,9 @@
 #ifndef WEBGLEXTENSIONS_H_
 #define WEBGLEXTENSIONS_H_
 
-#include "WebGLContext.h"
-
 namespace mozilla {
+
+class WebGLContext;
 
 class WebGLExtensionBase
     : public nsISupports
@@ -27,13 +27,14 @@ public:
     NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(WebGLExtensionBase)
 };
 
-#define DECL_WEBGL_EXTENSION_GOOP \
-    JSObject* WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap);
+#define DECL_WEBGL_EXTENSION_GOOP                                           \
+    virtual JSObject* WrapObject(JSContext *cx,                             \
+                                 JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
 #define IMPL_WEBGL_EXTENSION_GOOP(WebGLExtensionType) \
     JSObject* \
-    WebGLExtensionType::WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap) { \
-        return dom::WebGLExtensionType##Binding::Wrap(cx, scope, this, triedToWrap); \
+    WebGLExtensionType::WrapObject(JSContext *cx, JS::Handle<JSObject*> scope) { \
+        return dom::WebGLExtensionType##Binding::Wrap(cx, scope, this); \
     }
 
 class WebGLExtensionCompressedTextureATC
@@ -86,6 +87,16 @@ public:
     DECL_WEBGL_EXTENSION_GOOP
 };
 
+class WebGLExtensionElementIndexUint
+    : public WebGLExtensionBase
+{
+public:
+    WebGLExtensionElementIndexUint(WebGLContext*);
+    virtual ~WebGLExtensionElementIndexUint();
+
+    DECL_WEBGL_EXTENSION_GOOP
+};
+
 class WebGLExtensionLoseContext
     : public WebGLExtensionBase
 {
@@ -125,6 +136,38 @@ class WebGLExtensionTextureFloat
 public:
     WebGLExtensionTextureFloat(WebGLContext*);
     virtual ~WebGLExtensionTextureFloat();
+
+    DECL_WEBGL_EXTENSION_GOOP
+};
+
+class WebGLExtensionTextureFloatLinear
+    : public WebGLExtensionBase
+{
+public:
+    WebGLExtensionTextureFloatLinear(WebGLContext*);
+    virtual ~WebGLExtensionTextureFloatLinear();
+
+    DECL_WEBGL_EXTENSION_GOOP
+};
+
+class WebGLExtensionDrawBuffers
+    : public WebGLExtensionBase
+{
+public:
+    WebGLExtensionDrawBuffers(WebGLContext*);
+    virtual ~WebGLExtensionDrawBuffers();
+
+    void DrawBuffersWEBGL(const dom::Sequence<GLenum>& buffers);
+
+    static bool IsSupported(const WebGLContext*);
+
+    static const size_t sMinColorAttachments = 4;
+    static const size_t sMinDrawBuffers = 4;
+    /*
+     WEBGL_draw_buffers does not give a minal value for GL_MAX_DRAW_BUFFERS. But, we request
+     for GL_MAX_DRAW_BUFFERS = 4 at least to be able to use all requested color attachements.
+     See DrawBuffersWEBGL in WebGLExtensionDrawBuffers.cpp inner comments for more informations.
+     */
 
     DECL_WEBGL_EXTENSION_GOOP
 };

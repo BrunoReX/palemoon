@@ -12,7 +12,6 @@
 #include "nsNetUtil.h"
 #include "nsMimeTypes.h"
 #include "nsDOMMessageEvent.h"
-#include "nsIJSContextStack.h"
 #include "nsIPromptFactory.h"
 #include "nsIWindowWatcher.h"
 #include "nsPresContext.h"
@@ -29,6 +28,7 @@
 #include "nsIChannelPolicy.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "mozilla/Preferences.h"
 #include "xpcpublic.h"
 #include "nsCrossSiteListenerProxy.h"
@@ -62,6 +62,7 @@ EventSource::EventSource() :
   mGoingToDispatchAllMessages(false),
   mWithCredentials(false),
   mWaitingForOnStopRequest(false),
+  mInterrupted(false),
   mLastConvertionResult(NS_OK),
   mReadyState(CONNECTING),
   mScriptLine(0),
@@ -78,8 +79,6 @@ EventSource::~EventSource()
 //-----------------------------------------------------------------------------
 // EventSource::nsISupports
 //-----------------------------------------------------------------------------
-
-NS_IMPL_CYCLE_COLLECTION_CLASS(EventSource)
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(EventSource)
   bool isBlack = tmp->IsBlack();
@@ -203,10 +202,8 @@ EventSource::Init(nsISupports* aOwner,
   mWithCredentials = aWithCredentials;
   BindToOwner(ownerWindow);
 
-  nsCOMPtr<nsIJSContextStack> stack =
-    do_GetService("@mozilla.org/js/xpc/ContextStack;1");
-  JSContext* cx = nullptr;
-  if (stack && NS_SUCCEEDED(stack->Peek(&cx)) && cx) {
+  // The conditional here is historical and not necessarily sane.
+  if (JSContext *cx = nsContentUtils::GetCurrentJSContext()) {
     const char *filename;
     if (nsJSUtils::GetCallingLocation(cx, &filename, &mScriptLine)) {
       mScriptFile.AssignASCII(filename);
@@ -280,18 +277,19 @@ EventSource::Init(nsISupports* aOwner,
 }
 
 /* virtual */ JSObject*
-EventSource::WrapObject(JSContext* aCx, JSObject* aScope, bool* aTriedToWrap)
+EventSource::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 {
-  return EventSourceBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return EventSourceBinding::Wrap(aCx, aScope, this);
 }
 
 /* static */ already_AddRefed<EventSource>
-EventSource::Constructor(nsISupports* aOwner, const nsAString& aURL,
+EventSource::Constructor(const GlobalObject& aGlobal, const nsAString& aURL,
                          const EventSourceInit& aEventSourceInitDict,
                          ErrorResult& aRv)
 {
   nsRefPtr<EventSource> eventSource = new EventSource();
-  aRv = eventSource->Init(aOwner, aURL, aEventSourceInitDict.mWithCredentials);
+  aRv = eventSource->Init(aGlobal.Get(), aURL,
+                          aEventSourceInitDict.mWithCredentials);
   return eventSource.forget();
 }
 
@@ -349,9 +347,23 @@ EventSource::OnStartRequest(nsIRequest *aRequest,
   rv = httpChannel->GetContentType(contentType);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!requestSucceeded || !contentType.EqualsLiteral(TEXT_EVENT_STREAM)) {
+  nsresult status;
+  aRequest->GetStatus(&status);
+
+  if (NS_FAILED(status) || !requestSucceeded ||
+      !contentType.EqualsLiteral(TEXT_EVENT_STREAM)) {
     DispatchFailConnection();
     return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  uint32_t httpStatus;
+  rv = httpChannel->GetResponseStatus(&httpStatus);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (httpStatus != 200) {
+    mInterrupted = true;
+    DispatchFailConnection();
+    return NS_ERROR_ABORT;
   }
 
   nsCOMPtr<nsIPrincipal> principal = mPrincipal;
@@ -456,38 +468,14 @@ EventSource::OnStopRequest(nsIRequest *aRequest,
 
   nsresult rv;
   nsresult healthOfRequestResult = CheckHealthOfRequestCallback(aRequest);
-  if (NS_SUCCEEDED(healthOfRequestResult)) {
-    // check if we had an incomplete UTF8 char at the end of the stream
-    if (mLastConvertionResult == NS_PARTIAL_MORE_INPUT) {
-      rv = ParseCharacter(REPLACEMENT_CHAR);
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
-
-    // once we reach the end of the stream we must
-    // dispatch the current event
-    switch (mStatus)
-    {
-      case PARSE_STATE_CR_CHAR:
-      case PARSE_STATE_COMMENT:
-      case PARSE_STATE_FIELD_NAME:
-      case PARSE_STATE_FIRST_CHAR_OF_FIELD_VALUE:
-      case PARSE_STATE_FIELD_VALUE:
-      case PARSE_STATE_BEGIN_OF_LINE:
-        rv = SetFieldAndClear();
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        rv = DispatchCurrentMessageEvent();  // there is an empty line (CRCR)
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        break;
-
-      // Just for not getting warnings when compiling
-      case PARSE_STATE_OFF:
-      case PARSE_STATE_BEGIN_OF_STREAM:
-      case PARSE_STATE_BOM_WAS_READ:
-        break;
-    }
+  if (NS_SUCCEEDED(healthOfRequestResult) &&
+      mLastConvertionResult == NS_PARTIAL_MORE_INPUT) {
+    // we had an incomplete UTF8 char at the end of the stream
+    rv = ParseCharacter(REPLACEMENT_CHAR);
+    NS_ENSURE_SUCCESS(rv, rv);
   }
+
+  ClearFields();
 
   nsCOMPtr<nsIRunnable> event =
     NS_NewRunnableMethod(this, &EventSource::ReestablishConnection);
@@ -530,15 +518,7 @@ private:
   nsRefPtr<EventSource> mEventSource;
 };
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(AsyncVerifyRedirectCallbackFwr)
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(AsyncVerifyRedirectCallbackFwr)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mEventSource)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(AsyncVerifyRedirectCallbackFwr)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mEventSource)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_1(AsyncVerifyRedirectCallbackFwr, mEventSource)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(AsyncVerifyRedirectCallbackFwr)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
@@ -828,7 +808,7 @@ EventSource::AnnounceConnection()
   }
 
   nsCOMPtr<nsIDOMEvent> event;
-  rv = NS_NewDOMEvent(getter_AddRefs(event), nullptr, nullptr);
+  rv = NS_NewDOMEvent(getter_AddRefs(event), this, nullptr, nullptr);
   if (NS_FAILED(rv)) {
     NS_WARNING("Failed to create the open event!!!");
     return;
@@ -898,7 +878,7 @@ EventSource::ReestablishConnection()
   }
 
   nsCOMPtr<nsIDOMEvent> event;
-  rv = NS_NewDOMEvent(getter_AddRefs(event), nullptr, nullptr);
+  rv = NS_NewDOMEvent(getter_AddRefs(event), this, nullptr, nullptr);
   if (NS_FAILED(rv)) {
     NS_WARNING("Failed to create the error event!!!");
     return;
@@ -1006,7 +986,7 @@ EventSource::ConsoleError()
   NS_ConvertUTF8toUTF16 specUTF16(targetSpec);
   const PRUnichar *formatStrings[] = { specUTF16.get() };
 
-  if (mReadyState == CONNECTING) {
+  if (mReadyState == CONNECTING && !mInterrupted) {
     rv = PrintErrorOnConsole("chrome://global/locale/appstrings.properties",
                              NS_LITERAL_STRING("connectionFailure").get(),
                              formatStrings, ArrayLength(formatStrings));
@@ -1054,7 +1034,7 @@ EventSource::FailConnection()
   }
 
   nsCOMPtr<nsIDOMEvent> event;
-  rv = NS_NewDOMEvent(getter_AddRefs(event), nullptr, nullptr);
+  rv = NS_NewDOMEvent(getter_AddRefs(event), this, nullptr, nullptr);
   if (NS_FAILED(rv)) {
     NS_WARNING("Failed to create the error event!!!");
     return;
@@ -1260,7 +1240,7 @@ EventSource::DispatchAllMessageEvents()
   nsIScriptContext* scriptContext = sgo->GetContext();
   NS_ENSURE_TRUE_VOID(scriptContext);
 
-  JSContext* cx = scriptContext->GetNativeContext();
+  AutoPushJSContext cx(scriptContext->GetNativeContext());
   NS_ENSURE_TRUE_VOID(cx);
 
   while (mMessagesToDispatch.GetSize() > 0) {
@@ -1268,10 +1248,9 @@ EventSource::DispatchAllMessageEvents()
       message(static_cast<Message*>(mMessagesToDispatch.PopFront()));
 
     // Now we can turn our string into a jsval
-    jsval jsData;
+    JS::Rooted<JS::Value> jsData(cx);
     {
       JSString* jsString;
-      JSAutoRequest ar(cx);
       jsString = JS_NewUCStringCopyN(cx,
                                      message->mData.get(),
                                      message->mData.Length());
@@ -1284,7 +1263,7 @@ EventSource::DispatchAllMessageEvents()
     // which does not bubble, is not cancelable, and has no default action
 
     nsCOMPtr<nsIDOMEvent> event;
-    rv = NS_NewDOMMessageEvent(getter_AddRefs(event), nullptr, nullptr);
+    rv = NS_NewDOMMessageEvent(getter_AddRefs(event), this, nullptr, nullptr);
     if (NS_FAILED(rv)) {
       NS_WARNING("Failed to create the message event!!!");
       return;
@@ -1308,6 +1287,8 @@ EventSource::DispatchAllMessageEvents()
       NS_WARNING("Failed to dispatch the message event!!!");
       return;
     }
+
+    mLastEventID.Assign(message->mLastEventID);
   }
 }
 
@@ -1358,7 +1339,6 @@ EventSource::SetFieldAndClear()
     case PRUnichar('i'):
       if (mLastFieldName.EqualsLiteral("id")) {
         mCurrentMessage.mLastEventID.Assign(mLastFieldValue);
-        mLastEventID.Assign(mLastFieldValue);
       }
       break;
 

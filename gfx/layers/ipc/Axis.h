@@ -10,6 +10,8 @@
 #include "nsGUIEvent.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/gfx/2D.h"
+#include "nsTArray.h"
+#include "Units.h"
 
 namespace mozilla {
 namespace layers {
@@ -124,13 +126,13 @@ public:
    * That is to say, if the given displacement is applied, this will tell you
    * whether or not it will overscroll, and in what direction.
    */
-  Overscroll DisplacementWillOverscroll(int32_t aDisplacement);
+  Overscroll DisplacementWillOverscroll(float aDisplacement);
 
   /**
    * If a displacement will overscroll the axis, this returns the amount and in
    * what direction. Similar to getExcess() but takes a displacement to apply.
    */
-  float DisplacementWillOverscrollAmount(int32_t aDisplacement);
+  float DisplacementWillOverscrollAmount(float aDisplacement);
 
   /**
    * Gets the overscroll state of the axis given a scaling of the page. That is
@@ -141,7 +143,7 @@ public:
    * scroll offset in such a way that it remains in the same place on the page
    * relative.
    */
-  Overscroll ScaleWillOverscroll(float aScale, int32_t aFocus);
+  Overscroll ScaleWillOverscroll(float aScale, float aFocus);
 
   /**
    * If a scale will overscroll the axis, this returns the amount and in what
@@ -151,7 +153,7 @@ public:
    * scroll offset in such a way that it remains in the same place on the page
    * relative.
    */
-  float ScaleWillOverscrollAmount(float aScale, int32_t aFocus);
+  float ScaleWillOverscrollAmount(float aScale, float aFocus);
 
   /**
    * Checks if an axis will overscroll in both directions by computing the
@@ -169,9 +171,9 @@ public:
   float GetCompositionEnd();
   float GetPageEnd();
 
-  virtual float GetPointOffset(const gfx::Point& aPoint) = 0;
-  virtual float GetRectLength(const gfx::Rect& aRect) = 0;
-  virtual float GetRectOffset(const gfx::Rect& aRect) = 0;
+  virtual float GetPointOffset(const CSSPoint& aPoint) = 0;
+  virtual float GetRectLength(const CSSRect& aRect) = 0;
+  virtual float GetRectOffset(const CSSRect& aRect) = 0;
 
 protected:
   int32_t mPos;
@@ -183,23 +185,24 @@ protected:
   // they are flinging multiple times in a row very quickly, probably trying to
   // reach one of the extremes of the page.
   int32_t mAcceleration;
-  nsRefPtr<AsyncPanZoomController> mAsyncPanZoomController;
+  AsyncPanZoomController* mAsyncPanZoomController;
+  nsTArray<float> mVelocityQueue;
 };
 
 class AxisX : public Axis {
 public:
   AxisX(AsyncPanZoomController* mAsyncPanZoomController);
-  virtual float GetPointOffset(const gfx::Point& aPoint);
-  virtual float GetRectLength(const gfx::Rect& aRect);
-  virtual float GetRectOffset(const gfx::Rect& aRect);
+  virtual float GetPointOffset(const CSSPoint& aPoint);
+  virtual float GetRectLength(const CSSRect& aRect);
+  virtual float GetRectOffset(const CSSRect& aRect);
 };
 
 class AxisY : public Axis {
 public:
   AxisY(AsyncPanZoomController* mAsyncPanZoomController);
-  virtual float GetPointOffset(const gfx::Point& aPoint);
-  virtual float GetRectLength(const gfx::Rect& aRect);
-  virtual float GetRectOffset(const gfx::Rect& aRect);
+  virtual float GetPointOffset(const CSSPoint& aPoint);
+  virtual float GetRectLength(const CSSRect& aRect);
+  virtual float GetRectOffset(const CSSRect& aRect);
 };
 
 }

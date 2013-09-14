@@ -27,11 +27,13 @@ window.addEventListener('load', function() {
   }
 
   runAppObj = new AppRunner(appname);
-  Services.obs.addObserver(runAppObj, 'webapps-registry-ready', false);
+  Services.obs.addObserver(runAppObj, 'browser-ui-startup-complete', false);
 });
 
 window.addEventListener('unload', function() {
-  Services.obs.removeObserver(runAppObj, 'webapps-registry-ready');
+  if (runAppObj) {
+    Services.obs.removeObserver(runAppObj, 'browser-ui-startup-complete');
+  }
 });
 
 function AppRunner(aName) {
@@ -40,7 +42,7 @@ function AppRunner(aName) {
 }
 AppRunner.prototype = {
   observe: function(aSubject, aTopic, aData) {
-    if (aTopic == 'webapps-registry-ready') {
+    if (aTopic == 'browser-ui-startup-complete') {
       this.doRunApp();
     }
   },

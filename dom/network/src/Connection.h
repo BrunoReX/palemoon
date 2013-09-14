@@ -26,10 +26,10 @@ class Connection : public nsDOMEventTargetHelper
                  , public NetworkObserver
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIDOMMOZCONNECTION
 
-  NS_FORWARD_NSIDOMEVENTTARGET(nsDOMEventTargetHelper::)
+  NS_REALLY_FORWARD_NSIDOMEVENTTARGET(nsDOMEventTargetHelper)
 
   Connection();
 
@@ -38,9 +38,6 @@ public:
 
   // For IObserver
   void Notify(const hal::NetworkInformation& aNetworkInfo);
-
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(Connection,
-                                           nsDOMEventTargetHelper)
 
 private:
   /**

@@ -34,6 +34,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 static char *RCSSTRING __UNUSED__="$Id: nr_socket.c,v 1.2 2008/04/28 17:59:02 ekr Exp $";
 
+#include <assert.h>
 #include <nr_api.h>
 #include "nr_socket.h"
 
@@ -65,10 +66,12 @@ int nr_socket_destroy(nr_socket **sockp)
     sock=*sockp;
     *sockp=0;
 
-    sock->vtbl->destroy(&sock->obj);
+    assert(sock->vtbl);
+    if (sock->vtbl)
+      sock->vtbl->destroy(&sock->obj);
 
     RFREE(sock);
-    
+
     return(0);
   }
 
@@ -89,7 +92,7 @@ int nr_socket_getfd(nr_socket *sock, NR_SOCKET *fd)
   {
     return sock->vtbl->getfd(sock->obj, fd);
   }
-  
+
 int nr_socket_getaddr(nr_socket *sock, nr_transport_addr *addrp)
   {
     return sock->vtbl->getaddr(sock->obj, addrp);

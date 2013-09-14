@@ -1,0 +1,36 @@
+***************
+*** 148,164 ****
+  #include browser-feeds.js
+  #include browser-fullScreen.js
+  #include browser-fullZoom.js
+  #include browser-places.js
+  #include browser-plugins.js
+  #include browser-safebrowsing.js
+  #include browser-social.js
+  #include browser-tabPreviews.js
+- #include browser-tabview.js
+  #include browser-thumbnails.js
+  #include browser-webrtcUI.js
+  
+  #ifdef MOZ_DATA_REPORTING
+  #include browser-data-submission-info-bar.js
+  
+  let gDataNotificationInfoBar = new DataNotificationInfoBar();
+  #endif
+--- 148,163 ----
+  #include browser-feeds.js
+  #include browser-fullScreen.js
+  #include browser-fullZoom.js
+  #include browser-places.js
+  #include browser-plugins.js
+  #include browser-safebrowsing.js
+  #include browser-social.js
+  #include browser-tabPreviews.js
+  #include browser-thumbnails.js
+  #include browser-webrtcUI.js
+  
+  #ifdef MOZ_DATA_REPORTING
+  #include browser-data-submission-info-bar.js
+  
+  let gDataNotificationInfoBar = new DataNotificationInfoBar();
+  #endif

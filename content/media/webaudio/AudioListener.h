@@ -14,6 +14,8 @@
 #include "nsAutoPtr.h"
 #include "ThreeDPoint.h"
 #include "AudioContext.h"
+#include "PannerNode.h"
+#include "WebAudioUtils.h"
 
 struct JSContext;
 
@@ -37,8 +39,8 @@ public:
     return mContext;
   }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope,
-                               bool* aTriedToWrap);
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
   double DopplerFactor() const
   {
@@ -46,7 +48,11 @@ public:
   }
   void SetDopplerFactor(double aDopplerFactor)
   {
+    if (WebAudioUtils::FuzzyEqual(mDopplerFactor, aDopplerFactor)) {
+      return;
+    }
     mDopplerFactor = aDopplerFactor;
+    SendDoubleParameterToStream(PannerNode::LISTENER_DOPPLER_FACTOR, mDopplerFactor);
   }
 
   double SpeedOfSound() const
@@ -55,35 +61,80 @@ public:
   }
   void SetSpeedOfSound(double aSpeedOfSound)
   {
+    if (WebAudioUtils::FuzzyEqual(mSpeedOfSound, aSpeedOfSound)) {
+      return;
+    }
     mSpeedOfSound = aSpeedOfSound;
+    SendDoubleParameterToStream(PannerNode::LISTENER_SPEED_OF_SOUND, mSpeedOfSound);
   }
 
-  void SetPosition(float aX, float aY, float aZ)
+  void SetPosition(double aX, double aY, double aZ)
   {
+    if (WebAudioUtils::FuzzyEqual(mPosition.x, aX) &&
+        WebAudioUtils::FuzzyEqual(mPosition.y, aY) &&
+        WebAudioUtils::FuzzyEqual(mPosition.z, aZ)) {
+      return;
+    }
     mPosition.x = aX;
     mPosition.y = aY;
     mPosition.z = aZ;
+    SendThreeDPointParameterToStream(PannerNode::LISTENER_POSITION, mPosition);
   }
 
-  void SetOrientation(float aX, float aY, float aZ,
-                      float aXUp, float aYUp, float aZUp)
+  const ThreeDPoint& Position() const
   {
+    return mPosition;
+  }
+
+  void SetOrientation(double aX, double aY, double aZ,
+                      double aXUp, double aYUp, double aZUp)
+  {
+    if (WebAudioUtils::FuzzyEqual(mOrientation.x, aX) &&
+        WebAudioUtils::FuzzyEqual(mOrientation.y, aY) &&
+        WebAudioUtils::FuzzyEqual(mOrientation.z, aZ) &&
+        WebAudioUtils::FuzzyEqual(mUpVector.x, aX) &&
+        WebAudioUtils::FuzzyEqual(mUpVector.y, aY) &&
+        WebAudioUtils::FuzzyEqual(mUpVector.z, aZ)) {
+      return;
+    }
     mOrientation.x = aX;
     mOrientation.y = aY;
     mOrientation.z = aZ;
     mUpVector.x = aXUp;
     mUpVector.y = aYUp;
     mUpVector.z = aZUp;
+    SendThreeDPointParameterToStream(PannerNode::LISTENER_ORIENTATION, mOrientation);
+    SendThreeDPointParameterToStream(PannerNode::LISTENER_UPVECTOR, mUpVector);
   }
 
-  void SetVelocity(float aX, float aY, float aZ)
+  const ThreeDPoint& Velocity() const
   {
+    return mVelocity;
+  }
+
+  void SetVelocity(double aX, double aY, double aZ)
+  {
+    if (WebAudioUtils::FuzzyEqual(mVelocity.x, aX) &&
+        WebAudioUtils::FuzzyEqual(mVelocity.y, aY) &&
+        WebAudioUtils::FuzzyEqual(mVelocity.z, aZ)) {
+      return;
+    }
     mVelocity.x = aX;
     mVelocity.y = aY;
     mVelocity.z = aZ;
+    SendThreeDPointParameterToStream(PannerNode::LISTENER_VELOCITY, mVelocity);
+    UpdatePannersVelocity();
   }
 
+  void RegisterPannerNode(PannerNode* aPannerNode);
+
 private:
+  void SendDoubleParameterToStream(uint32_t aIndex, double aValue);
+  void SendThreeDPointParameterToStream(uint32_t aIndex, const ThreeDPoint& aValue);
+  void UpdatePannersVelocity();
+
+private:
+  friend class PannerNode;
   nsRefPtr<AudioContext> mContext;
   ThreeDPoint mPosition;
   ThreeDPoint mOrientation;
@@ -91,6 +142,7 @@ private:
   ThreeDPoint mVelocity;
   double mDopplerFactor;
   double mSpeedOfSound;
+  nsTArray<WeakPtr<PannerNode> > mPanners;
 };
 
 }

@@ -7,10 +7,10 @@
 
 #include "Accessible-inl.h"
 #include "ApplicationAccessible.h"
+#include "ARIAMap.h"
 #include "DocAccessible-inl.h"
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
-#include "nsARIAMap.h"
 #include "RootAccessibleWrap.h"
 #include "States.h"
 
@@ -20,11 +20,11 @@
 
 #include "nsCURILoader.h"
 #include "nsDocShellLoadTypes.h"
+#include "nsDOMEvent.h"
 #include "nsIChannel.h"
 #include "nsIContentViewer.h"
 #include "nsIDOMDocument.h"
 #include "nsEventListenerManager.h"
-#include "nsIDOMEventTarget.h"
 #include "nsIDOMWindow.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIWebNavigation.h"
@@ -32,6 +32,7 @@
 
 using namespace mozilla;
 using namespace mozilla::a11y;
+using namespace mozilla::dom;
 
 ////////////////////////////////////////////////////////////////////////////////
 // DocManager
@@ -195,7 +196,8 @@ DocManager::OnStateChange(nsIWebProgress* aWebProgress,
   if (loadType == LOAD_RELOAD_NORMAL ||
       loadType == LOAD_RELOAD_BYPASS_CACHE ||
       loadType == LOAD_RELOAD_BYPASS_PROXY ||
-      loadType == LOAD_RELOAD_BYPASS_PROXY_AND_CACHE) {
+      loadType == LOAD_RELOAD_BYPASS_PROXY_AND_CACHE ||
+      loadType == LOAD_RELOAD_ALLOW_MIXED_CONTENT) {
     isReloading = true;
   }
 
@@ -251,10 +253,8 @@ DocManager::HandleEvent(nsIDOMEvent* aEvent)
   nsAutoString type;
   aEvent->GetType(type);
 
-  nsCOMPtr<nsIDOMEventTarget> target;
-  aEvent->GetTarget(getter_AddRefs(target));
-
-  nsCOMPtr<nsIDocument> document(do_QueryInterface(target));
+  nsCOMPtr<nsIDocument> document =
+    do_QueryInterface(aEvent->InternalDOMEvent()->GetTarget());
   NS_ASSERTION(document, "pagehide or DOMContentLoaded for non document!");
   if (!document)
     return NS_OK;
@@ -326,8 +326,8 @@ void
 DocManager::AddListeners(nsIDocument* aDocument,
                          bool aAddDOMContentLoadedListener)
 {
-  nsPIDOMWindow *window = aDocument->GetWindow();
-  nsIDOMEventTarget *target = window->GetChromeEventHandler();
+  nsPIDOMWindow* window = aDocument->GetWindow();
+  EventTarget* target = window->GetChromeEventHandler();
   nsEventListenerManager* elm = target->GetListenerManager(true);
   elm->AddEventListenerByType(this, NS_LITERAL_STRING("pagehide"),
                               dom::TrustedEventsAtCapture());
@@ -347,12 +347,29 @@ DocManager::AddListeners(nsIDocument* aDocument,
   }
 }
 
+void
+DocManager::RemoveListeners(nsIDocument* aDocument)
+{
+  nsPIDOMWindow* window = aDocument->GetWindow();
+  if (!window)
+    return;
+
+  EventTarget* target = window->GetChromeEventHandler();
+  nsEventListenerManager* elm = target->GetListenerManager(true);
+  elm->RemoveEventListenerByType(this, NS_LITERAL_STRING("pagehide"),
+                                 dom::TrustedEventsAtCapture());
+
+  elm->RemoveEventListenerByType(this, NS_LITERAL_STRING("DOMContentLoaded"),
+                                 dom::TrustedEventsAtCapture());
+}
+
 DocAccessible*
 DocManager::CreateDocOrRootAccessible(nsIDocument* aDocument)
 {
   // Ignore temporary, hiding, resource documents and documents without
   // docshell.
-  if (aDocument->IsInitialDocument() || !aDocument->IsVisible() ||
+  if (aDocument->IsInitialDocument() ||
+      !aDocument->IsVisibleConsideringAncestors() ||
       aDocument->IsResourceDoc() || !aDocument->IsActive())
     return nullptr;
 

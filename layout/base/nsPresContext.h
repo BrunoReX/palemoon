@@ -25,6 +25,7 @@
 #include "nsRefPtrHashtable.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsChangeHint.h"
+#include <algorithm>
 // This also pulls in gfxTypes.h, which we cannot include directly.
 #include "gfxRect.h"
 #include "nsTArray.h"
@@ -516,7 +517,7 @@ public:
    */
   int32_t MinFontSize(nsIAtom *aLanguage) const {
     const LangGroupFontPrefs *prefs = GetFontPrefsForLang(aLanguage);
-    return NS_MAX(mMinFontSize, prefs->mMinimumFontSize);
+    return std::max(mMinFontSize, prefs->mMinimumFontSize);
   }
 
   void SetMinFontSize(int32_t aMinFontSize) {
@@ -550,7 +551,7 @@ public:
   float ScreenWidthInchesForFontInflation(bool* aChanged = nullptr);
 
   static int32_t AppUnitsPerCSSPixel() { return nsDeviceContext::AppUnitsPerCSSPixel(); }
-  uint32_t AppUnitsPerDevPixel() const  { return mDeviceContext->AppUnitsPerDevPixel(); }
+  int32_t AppUnitsPerDevPixel() const  { return mDeviceContext->AppUnitsPerDevPixel(); }
   static int32_t AppUnitsPerCSSInch() { return nsDeviceContext::AppUnitsPerCSSInch(); }
 
   static nscoord CSSPixelsToAppUnits(int32_t aPixels)
@@ -611,10 +612,10 @@ public:
 
   // Margin-specific version, since they often need TwipsToAppUnits
   static nsMargin CSSTwipsToAppUnits(const nsIntMargin &marginInTwips)
-  { return nsMargin(CSSTwipsToAppUnits(float(marginInTwips.left)), 
-                    CSSTwipsToAppUnits(float(marginInTwips.top)),
+  { return nsMargin(CSSTwipsToAppUnits(float(marginInTwips.top)),
                     CSSTwipsToAppUnits(float(marginInTwips.right)),
-                    CSSTwipsToAppUnits(float(marginInTwips.bottom))); }
+                    CSSTwipsToAppUnits(float(marginInTwips.bottom)),
+                    CSSTwipsToAppUnits(float(marginInTwips.left))); }
 
   static nscoord CSSPointsToAppUnits(float aPoints)
   { return NSToCoordRound(aPoints * nsDeviceContext::AppUnitsPerCSSInch() /
@@ -912,7 +913,7 @@ public:
    */
   class InterruptPreventer;
   friend class InterruptPreventer;
-  class NS_STACK_CLASS InterruptPreventer {
+  class MOZ_STACK_CLASS InterruptPreventer {
   public:
     InterruptPreventer(nsPresContext* aCtx) :
       mCtx(aCtx),
@@ -1434,7 +1435,7 @@ protected:
   public:
     RunWillPaintObservers(nsRootPresContext* aPresContext) : mPresContext(aPresContext) {}
     void Revoke() { mPresContext = nullptr; }
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() MOZ_OVERRIDE
     {
       if (mPresContext) {
         mPresContext->FlushWillPaintObservers();

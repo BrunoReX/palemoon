@@ -5,9 +5,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "mozilla/Preferences.h"
 #include "mozilla/TimeStamp.h"
-#include "nsTimeRanges.h"
+#include "mozilla/dom/TimeRanges.h"
 #include "MediaResource.h"
-#include "nsHTMLMediaElement.h"
+#include "mozilla/dom/HTMLMediaElement.h"
 #include "MediaPluginHost.h"
 #include "nsXPCOMStrings.h"
 #include "nsISeekableStream.h"
@@ -15,6 +15,7 @@
 #include "MediaPluginReader.h"
 #include "nsIGfxInfo.h"
 #include "gfxCrashReporterUtils.h"
+#include "prmem.h"
 
 #include "MPAPI.h"
 
@@ -179,30 +180,30 @@ static const char* GetOmxLibraryName()
        device.Find("IS12", false) == 0 ||
        device.Find("MT27", false) == 0)) {
     // Sony Ericsson devices running ICS
-    return "lib/libomxpluginsony.so";
+    return "libomxpluginsony.so";
   }
   else if (version == 13 || version == 12 || version == 11) {
-    return "lib/libomxpluginhc.so";
+    return "libomxpluginhc.so";
   }
   else if (version == 10 && release_version >= NS_LITERAL_STRING("2.3.6")) {
     // Gingerbread versions from 2.3.6 and above have a different DataSource
     // layout to those on 2.3.5 and below.
-    return "lib/libomxplugingb.so";
+    return "libomxplugingb.so";
   }
   else if (version == 10 && release_version >= NS_LITERAL_STRING("2.3.4") &&
            device.Find("HTC") == 0) {
     // HTC devices running Gingerbread 2.3.4+ (HTC Desire HD, HTC Evo Design, etc) seem to
     // use a newer version of Gingerbread libstagefright than other 2.3.4 devices.
-    return "lib/libomxplugingb.so";
+    return "libomxplugingb.so";
   }
   else if (version == 9 || (version == 10 && release_version <= NS_LITERAL_STRING("2.3.5"))) {
     // Gingerbread versions from 2.3.5 and below have a different DataSource
     // than 2.3.6 and above.
-    return "lib/libomxplugingb235.so";
+    return "libomxplugingb235.so";
   }
   else if (version == 8) {
     // Froyo
-    return "lib/libomxpluginfroyo.so";
+    return "libomxpluginfroyo.so";
   }
   else if (version < 8) {
     // Below Froyo not supported
@@ -210,7 +211,7 @@ static const char* GetOmxLibraryName()
   }
 
   // Default libomxplugin for non-gingerbread devices
-  return "lib/libomxplugin.so";
+  return "libomxplugin.so";
 
 #elif defined(ANDROID) && defined(MOZ_WIDGET_GONK)
   return "libomxplugin.so";
@@ -225,7 +226,21 @@ MediaPluginHost::MediaPluginHost() {
   const char* name = GetOmxLibraryName();
   ALOG("Loading OMX Plugin: %s", name ? name : "nullptr");
   if (name) {
-    PRLibrary *lib = PR_LoadLibrary(name);
+    char *path = PR_GetLibraryFilePathname("libxul.so", (PRFuncPtr) GetOmxLibraryName);
+    PRLibrary *lib = NULL;
+    if (path) {
+      nsAutoCString libpath(path);
+      PR_Free(path);
+      int32_t slash = libpath.RFindChar('/');
+      if (slash != kNotFound) {
+        libpath.Truncate(slash + 1);
+        libpath.Append(name);
+        lib = PR_LoadLibrary(libpath.get());
+      }
+    }
+    if (!lib)
+      lib = PR_LoadLibrary(name);
+
     if (lib) {
       Manifest *manifest = static_cast<Manifest *>(PR_FindSymbol(lib, "MPAPI_MANIFEST"));
       if (manifest) {
@@ -258,15 +273,16 @@ bool MediaPluginHost::FindDecoder(const nsACString& aMimeType, const char* const
 
 MPAPI::Decoder *MediaPluginHost::CreateDecoder(MediaResource *aResource, const nsACString& aMimeType)
 {
-  const char *chars;
-  size_t len = NS_CStringGetData(aMimeType, &chars, nullptr);
+  NS_ENSURE_TRUE(aResource, nullptr);
 
-  Decoder *decoder = new Decoder();
+  nsAutoPtr<Decoder> decoder(new Decoder());
   if (!decoder) {
     return nullptr;
   }
   decoder->mResource = aResource;
 
+  const char *chars;
+  size_t len = NS_CStringGetData(aMimeType, &chars, nullptr);
   for (size_t n = 0; n < mPlugins.Length(); ++n) {
     Manifest *plugin = mPlugins[n];
     const char* const *codecs;
@@ -274,7 +290,8 @@ MPAPI::Decoder *MediaPluginHost::CreateDecoder(MediaResource *aResource, const n
       continue;
     }
     if (plugin->CreateDecoder(&sPluginHost, decoder, chars, len)) {
-      return decoder;
+      aResource->AddRef();
+      return decoder.forget();
     }
   }
 
@@ -284,6 +301,12 @@ MPAPI::Decoder *MediaPluginHost::CreateDecoder(MediaResource *aResource, const n
 void MediaPluginHost::DestroyDecoder(Decoder *aDecoder)
 {
   aDecoder->DestroyDecoder(aDecoder);
+  MediaResource* resource = GetResource(aDecoder);
+  if (resource) {
+    // resource *shouldn't* be null, but check anyway just in case the plugin
+    // decoder does something stupid.
+    resource->Release();
+  }
   delete aDecoder;
 }
 

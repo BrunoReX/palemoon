@@ -6,7 +6,7 @@
 
 "use strict";
 
-importScripts("libhardware_legacy.js", "systemlibs.js");
+importScripts("systemlibs.js", "libhardware_legacy.js");
 
 var cbuf = ctypes.char.array(4096)();
 var hwaddr = ctypes.uint8_t.array(6)();
@@ -59,7 +59,7 @@ self.onmessage = function(e) {
         else if (reply_len !== 4096)
           cbuf[reply_len] = 0;
 
-        reply = cbuf.readString();
+        reply = cbuf.readStringReplaceMalformed();
       }
 
       // Else if reply_len was 0, use the empty reply, set above.

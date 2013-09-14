@@ -74,6 +74,8 @@ static const char kPrintBGColors[]      = "print_bgcolor";
 static const char kPrintBGImages[]      = "print_bgimages";
 static const char kPrintShrinkToFit[]   = "print_shrink_to_fit";
 static const char kPrintScaling[]       = "print_scaling";
+static const char kPrintResolution[]    = "print_resolution";
+static const char kPrintDuplex[]        = "print_duplex";
 
 static const char kJustLeft[]   = "left";
 static const char kJustCenter[] = "center";
@@ -151,12 +153,12 @@ nsPrintOptions::GetPrefName(const char * aPrefName,
     return aPrefName;
   }
 
-  mPrefName.Truncate(); /* mPrefName = ""; */
+  mPrefName.AssignLiteral("print.");
 
   if (aPrinterName.Length()) {
-    mPrefName.Append("printer_");
+    mPrefName.AppendLiteral("printer_");
     AppendUTF16toUTF8(aPrinterName, mPrefName);
-    mPrefName.Append(".");
+    mPrefName.AppendLiteral(".");
   }
   mPrefName += aPrefName;
 
@@ -493,6 +495,20 @@ nsPrintOptions::ReadPrefs(nsIPrintSettings* aPS, const nsAString& aPrinterName,
     }
   }
 
+  if (aFlags & nsIPrintSettings::kInitSaveResolution) {
+    if (GETINTPREF(kPrintResolution, &iVal)) {
+      aPS->SetResolution(iVal);
+      DUMP_INT(kReadStr, kPrintResolution, iVal);
+    }
+  }
+
+  if (aFlags & nsIPrintSettings::kInitSaveDuplex) {
+    if (GETINTPREF(kPrintDuplex, &iVal)) {
+      aPS->SetDuplex(iVal);
+      DUMP_INT(kReadStr, kPrintDuplex, iVal);
+    }
+  }
+
   // Not Reading In:
   //   Number of Copies
 
@@ -789,6 +805,20 @@ nsPrintOptions::WritePrefs(nsIPrintSettings *aPS, const nsAString& aPrinterName,
     }
   }
 
+  if (aFlags & nsIPrintSettings::kInitSaveResolution) {
+    if (NS_SUCCEEDED(aPS->GetResolution(&iVal))) {
+      DUMP_INT(kWriteStr, kPrintResolution, iVal);
+      Preferences::SetInt(GetPrefName(kPrintResolution, aPrinterName), iVal);
+    }
+  }
+
+  if (aFlags & nsIPrintSettings::kInitSaveDuplex) {
+    if (NS_SUCCEEDED(aPS->GetDuplex(&iVal))) {
+      DUMP_INT(kWriteStr, kPrintDuplex, iVal);
+      Preferences::SetInt(GetPrefName(kPrintDuplex, aPrinterName), iVal);
+    }
+  }
+
   // Not Writing Out:
   //   Number of Copies
 
@@ -1017,6 +1047,9 @@ nsPrintOptions::InitPrintSettingsFromPrefs(nsIPrintSettings* aPS,
   nsresult rv = ReadPrefs(aPS, prtName, aFlags);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // Do not use printer name in Linux because GTK backend does not support
+  // per printer settings.
+#ifndef MOZ_X11
   // Get the Printer Name from the PrintSettings
   // to use as a prefix for Pref Names
   rv = GetAdjustedPrinterName(aPS, aUsePNP, prtName);
@@ -1031,6 +1064,7 @@ nsPrintOptions::InitPrintSettingsFromPrefs(nsIPrintSettings* aPS,
   rv = ReadPrefs(aPS, prtName, aFlags);
   if (NS_SUCCEEDED(rv))
     aPS->SetIsInitializedFromPrefs(true);
+#endif
 
   return NS_OK;
 }
@@ -1047,9 +1081,13 @@ nsPrintOptions::SavePrintSettingsToPrefs(nsIPrintSettings *aPS,
   NS_ENSURE_ARG_POINTER(aPS);
   nsAutoString prtName;
 
+  // Do not use printer name in Linux because GTK backend does not support
+  // per printer settings.
+#ifndef MOZ_X11
   // Get the printer name from the PrinterSettings for an optional prefix.
   nsresult rv = GetAdjustedPrinterName(aPS, aUsePrinterNamePrefix, prtName);
   NS_ENSURE_SUCCESS(rv, rv);
+#endif
 
   // Write the prefs, with or without a printer name prefix.
   return WritePrefs(aPS, prtName, aFlags);

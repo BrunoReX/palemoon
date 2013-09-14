@@ -14,7 +14,6 @@
 #include "nsIURI.h"
 #include "nsNetUtil.h"
 #include "nsIDocShell.h"
-#include "nsIDocShellTreeItem.h"
 #include "nsIStyleSheetLinkingElement.h"
 #include "nsIDOMComment.h"
 #include "nsIDOMCDATASection.h"
@@ -57,6 +56,10 @@
 #include "mozAutoDocUpdate.h"
 #include "nsMimeTypes.h"
 #include "nsHtml5SVGLoadDispatcher.h"
+#include "nsTextNode.h"
+#include "mozilla/dom/CDATASection.h"
+#include "mozilla/dom/Comment.h"
+#include "mozilla/dom/ProcessingInstruction.h"
 
 using namespace mozilla::dom;
 
@@ -136,8 +139,6 @@ NS_INTERFACE_MAP_END_INHERITING(nsContentSink)
 
 NS_IMPL_ADDREF_INHERITED(nsXMLContentSink, nsContentSink)
 NS_IMPL_RELEASE_INHERITED(nsXMLContentSink, nsContentSink)
-
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsXMLContentSink)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsXMLContentSink,
                                                   nsContentSink)
@@ -528,10 +529,8 @@ nsXMLContentSink::CloseElement(nsIContent* aContent)
   if ((nodeInfo->NamespaceID() == kNameSpaceID_XHTML &&
        (nodeInfo->NameAtom() == nsGkAtoms::select ||
         nodeInfo->NameAtom() == nsGkAtoms::textarea ||
-#ifdef MOZ_MEDIA
         nodeInfo->NameAtom() == nsGkAtoms::video ||
         nodeInfo->NameAtom() == nsGkAtoms::audio ||
-#endif
         nodeInfo->NameAtom() == nsGkAtoms::object ||
         nodeInfo->NameAtom() == nsGkAtoms::applet))
       || nodeInfo->NameAtom() == nsGkAtoms::title
@@ -803,10 +802,7 @@ nsXMLContentSink::FlushText(bool aReleaseTextNode)
         mTextLength = 0;
       }
     } else {
-      nsCOMPtr<nsIContent> textContent;
-      rv = NS_NewTextNode(getter_AddRefs(textContent),
-                          mNodeInfoManager);
-      NS_ENSURE_SUCCESS(rv, rv);
+      nsRefPtr<nsTextNode> textContent = new nsTextNode(mNodeInfoManager);
 
       mLastTextNode = textContent;
       
@@ -987,7 +983,6 @@ nsXMLContentSink::HandleStartElement(const PRUnichar *aName,
   nsCOMPtr<nsINodeInfo> nodeInfo;
   nodeInfo = mNodeInfoManager->GetNodeInfo(localName, prefix, nameSpaceID,
                                            nsIDOMNode::ELEMENT_NODE);
-  NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
 
   result = CreateElement(aAtts, aAttsCount, nodeInfo, aLineNumber,
                          getter_AddRefs(content), &appendContent,
@@ -1031,13 +1026,9 @@ nsXMLContentSink::HandleStartElement(const PRUnichar *aName,
   if (nodeInfo->NamespaceID() == kNameSpaceID_XHTML) {
     if (nodeInfo->NameAtom() == nsGkAtoms::input ||
         nodeInfo->NameAtom() == nsGkAtoms::button ||
-        nodeInfo->NameAtom() == nsGkAtoms::menuitem
-#ifdef MOZ_MEDIA
-        ||
+        nodeInfo->NameAtom() == nsGkAtoms::menuitem ||
         nodeInfo->NameAtom() == nsGkAtoms::audio ||
-        nodeInfo->NameAtom() == nsGkAtoms::video
-#endif
-        ) {
+        nodeInfo->NameAtom() == nsGkAtoms::video) {
       content->DoneCreatingElement();
     } else if (nodeInfo->NameAtom() == nsGkAtoms::head && !mCurrentHead) {
       mCurrentHead = content;
@@ -1144,13 +1135,10 @@ nsXMLContentSink::HandleComment(const PRUnichar *aName)
 {
   FlushText();
 
-  nsCOMPtr<nsIContent> comment;
-  nsresult rv = NS_NewCommentNode(getter_AddRefs(comment), mNodeInfoManager);
-  if (comment) {
-    comment->SetText(nsDependentString(aName), false);
-    rv = AddContentAsLeaf(comment);
-    DidAddContent();
-  }
+  nsRefPtr<Comment> comment = new Comment(mNodeInfoManager);
+  comment->SetText(nsDependentString(aName), false);
+  nsresult rv = AddContentAsLeaf(comment);
+  DidAddContent();
 
   return NS_SUCCEEDED(rv) ? DidProcessATokenImpl() : rv;
 }
@@ -1167,13 +1155,10 @@ nsXMLContentSink::HandleCDataSection(const PRUnichar *aData,
 
   FlushText();
   
-  nsCOMPtr<nsIContent> cdata;
-  nsresult rv = NS_NewXMLCDATASection(getter_AddRefs(cdata), mNodeInfoManager);
-  if (cdata) {
-    cdata->SetText(aData, aLength, false);
-    rv = AddContentAsLeaf(cdata);
-    DidAddContent();
-  }
+  nsRefPtr<CDATASection> cdata = new CDATASection(mNodeInfoManager);
+  cdata->SetText(aData, aLength, false);
+  nsresult rv = AddContentAsLeaf(cdata);
+  DidAddContent();
 
   return NS_SUCCEEDED(rv) ? DidProcessATokenImpl() : rv;
 }
@@ -1259,11 +1244,8 @@ nsXMLContentSink::HandleProcessingInstruction(const PRUnichar *aTarget,
   const nsDependentString target(aTarget);
   const nsDependentString data(aData);
 
-  nsCOMPtr<nsIContent> node;
-
-  nsresult rv = NS_NewXMLProcessingInstruction(getter_AddRefs(node),
-                                               mNodeInfoManager, target, data);
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsCOMPtr<nsIContent> node =
+    NS_NewXMLProcessingInstruction(mNodeInfoManager, target, data);
 
   nsCOMPtr<nsIStyleSheetLinkingElement> ssle(do_QueryInterface(node));
   if (ssle) {
@@ -1272,7 +1254,7 @@ nsXMLContentSink::HandleProcessingInstruction(const PRUnichar *aTarget,
     mPrettyPrintXML = false;
   }
 
-  rv = AddContentAsLeaf(node);
+  nsresult rv = AddContentAsLeaf(node);
   NS_ENSURE_SUCCESS(rv, rv);
   DidAddContent();
 

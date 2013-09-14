@@ -37,6 +37,12 @@ class gfxTextRun;
 class nsIURI;
 class nsIAtom;
 
+namespace mozilla {
+namespace gl {
+class GLContext;
+}
+}
+
 extern cairo_user_data_key_t kDrawTarget;
 
 // pref lang id's for font prefs
@@ -133,7 +139,7 @@ GetBackendName(mozilla::gfx::BackendType aBackend)
   MOZ_NOT_REACHED("Incomplete switch");
 }
 
-class THEBES_API gfxPlatform {
+class gfxPlatform {
 public:
     /**
      * Return a pointer to the current active platform.
@@ -217,9 +223,28 @@ public:
       CreateDrawTargetForData(unsigned char* aData, const mozilla::gfx::IntSize& aSize, 
                               int32_t aStride, mozilla::gfx::SurfaceFormat aFormat);
 
+    virtual mozilla::RefPtr<mozilla::gfx::DrawTarget>
+      CreateDrawTargetForFBO(unsigned int aFBOID, mozilla::gl::GLContext* aGLContext,
+                             const mozilla::gfx::IntSize& aSize, mozilla::gfx::SurfaceFormat aFormat);
+
+    /**
+     * Returns true if we will render content using Azure using a gfxPlatform
+     * provided DrawTarget.
+     */
     bool SupportsAzureContent() {
       return GetContentBackend() != mozilla::gfx::BACKEND_NONE;
     }
+
+    /**
+     * Returns true if we should use Azure to render content with aTarget. For
+     * example, it is possible that we are using Direct2D for rendering and thus
+     * using Azure. But we want to render to a CairoDrawTarget, in which case
+     * SupportsAzureContent will return true but SupportsAzureContentForDrawTarget
+     * will return false.
+     */
+    bool SupportsAzureContentForDrawTarget(mozilla::gfx::DrawTarget* aTarget);
+
+    virtual bool UseAcceleratedSkiaCanvas();
 
     void GetAzureBackendInfo(mozilla::widget::InfoObject &aObj) {
       aObj.DefineProperty("AzureCanvasBackend", GetBackendName(mPreferredCanvasBackend));
@@ -316,11 +341,6 @@ public:
     bool DownloadableFontsEnabled();
 
     /**
-     * Whether to sanitize downloaded fonts using the OTS library
-     */
-    bool SanitizeDownloadedFonts();
-
-    /**
      * True when hinting should be enabled.  This setting shouldn't
      * change per gecko process, while the process is live.  If so the
      * results are not defined.
@@ -328,6 +348,22 @@ public:
      * NB: this bit is only honored by the FT2 backend, currently.
      */
     virtual bool FontHintingEnabled() { return true; }
+
+    /**
+     * True when zooming should not require reflow, so glyph metrics and
+     * positioning should not be adjusted for device pixels.
+     * If this is TRUE, then FontHintingEnabled() should be FALSE,
+     * but the converse is not necessarily required; in particular,
+     * B2G always has FontHintingEnabled FALSE, but RequiresLinearZoom
+     * is only true for the browser process, not Gaia or other apps.
+     *
+     * Like FontHintingEnabled (above), this setting shouldn't
+     * change per gecko process, while the process is live.  If so the
+     * results are not defined.
+     *
+     * NB: this bit is only honored by the FT2 backend, currently.
+     */
+    virtual bool RequiresLinearZoom() { return false; }
 
     bool UsesSubpixelAATextRendering() {
 #ifdef MOZ_GFX_OPTIMIZE_MOBILE
@@ -341,13 +377,16 @@ public:
      */
     bool UseCmapsDuringSystemFallback();
 
-#ifdef MOZ_GRAPHITE
+    /**
+     * Whether to render SVG glyphs within an OpenType font wrapper
+     */
+    bool OpenTypeSVGEnabled();
+
     /**
      * Whether to use the SIL Graphite rendering engine
      * (for fonts that include Graphite tables)
      */
     bool UseGraphiteShaping();
-#endif
 
     /**
      * Whether to use the harfbuzz shaper (depending on script complexity).
@@ -417,6 +456,17 @@ public:
     static bool UseReusableTileStore();
 
     static bool OffMainThreadCompositingEnabled();
+
+    /** Use gfxPlatform::GetPref* methods instead of direct calls to Preferences
+     * to get the values for layers preferences.  These will only be evaluated
+     * only once, and remain the same until restart.
+     */
+    static bool GetPrefLayersOffMainThreadCompositionEnabled();
+    static bool GetPrefLayersOffMainThreadCompositionForceEnabled();
+    static bool GetPrefLayersAccelerationForceEnabled();
+    static bool GetPrefLayersAccelerationDisabled();
+    static bool GetPrefLayersPreferOpenGL();
+    static bool GetPrefLayersPreferD3D9();
 
     /**
      * Are we going to try color management?
@@ -499,6 +549,8 @@ public:
 
     uint32_t GetOrientationSyncMillis() const;
 
+    static bool DrawLayerBorders();
+
 protected:
     gfxPlatform();
     virtual ~gfxPlatform();
@@ -554,10 +606,8 @@ protected:
     }
 
     int8_t  mAllowDownloadableFonts;
-    int8_t  mDownloadableFontsSanitize;
-#ifdef MOZ_GRAPHITE
     int8_t  mGraphiteShapingEnabled;
-#endif
+    int8_t  mOpenTypeSVGEnabled;
 
     int8_t  mBidiNumeralOption;
 
@@ -574,7 +624,13 @@ private:
      */
     static void Init();
 
+    static void CreateCMSOutputProfile();
+
+    friend int RecordingPrefChanged(const char *aPrefName, void *aClosure);
+
     virtual qcms_profile* GetPlatformCMSOutputProfile();
+
+    virtual bool SupportsOffMainThreadCompositing() { return true; }
 
     nsRefPtr<gfxASurface> mScreenReferenceSurface;
     nsTArray<uint32_t> mCJKPrefLangs;
@@ -588,6 +644,8 @@ private:
     mozilla::gfx::BackendType mFallbackCanvasBackend;
     // The backend to use for content
     mozilla::gfx::BackendType mContentBackend;
+    // Bitmask of backend types we can use to render content
+    uint32_t mContentBackendBitmask;
 
     mozilla::widget::GfxInfoCollector<gfxPlatform> mAzureCanvasBackendCollector;
     bool mWorkAroundDriverBugs;

@@ -26,6 +26,7 @@ nestegg_track_type
 nestegg_track_video_params
 nestegg_tstamp_scale
 nestegg_has_cues
+nestegg_sniff
 #endif
 #ifdef MOZ_VP8
 #ifndef MOZ_NATIVE_LIBVPX
@@ -43,6 +44,7 @@ vpx_codec_enc_init_ver
 vpx_codec_vp8_cx
 #endif
 vpx_img_set_rect
+vpx_img_wrap
 vpx_codec_get_cx_data
 vpx_codec_enc_config_default
 vpx_img_alloc
@@ -55,9 +57,13 @@ ogg_page_granulepos
 ogg_page_serialno
 ogg_stream_check
 ogg_stream_clear
+ogg_stream_eos
+ogg_stream_flush
 ogg_stream_init
+ogg_stream_packetin
 ogg_stream_packetout
 ogg_stream_pagein
+ogg_stream_pageout
 ogg_stream_reset
 ogg_sync_buffer
 ogg_sync_clear
@@ -80,19 +86,6 @@ vorbis_synthesis_init
 vorbis_synthesis_pcmout
 vorbis_synthesis_read
 vorbis_synthesis_restart
-#endif
-#ifdef MOZ_SYDNEYAUDIO
-sa_stream_create_pcm
-sa_stream_destroy
-sa_stream_drain
-sa_stream_get_min_write
-sa_stream_get_position
-sa_stream_get_write_size
-sa_stream_open
-sa_stream_pause
-sa_stream_resume
-sa_stream_write
-sa_stream_set_stream_type
 #endif
 #ifdef MOZ_SPEEX_RESAMPLER
 speex_resampler_init
@@ -121,6 +114,7 @@ speex_resampler_strerror
 #ifdef MOZ_CUBEB
 cubeb_destroy
 cubeb_init
+cubeb_get_max_channel_count
 cubeb_stream_destroy
 cubeb_stream_get_position
 cubeb_stream_init
@@ -221,6 +215,7 @@ MOZ_PNG_get_tRNS
 MOZ_PNG_get_valid
 MOZ_PNG_longjmp
 MOZ_PNG_process_data
+MOZ_PNG_process_data_pause
 MOZ_PNG_progressive_combine_row
 MOZ_PNG_read_update_info
 MOZ_PNG_set_cHRM
@@ -543,6 +538,7 @@ hb_buffer_set_script
 hb_buffer_set_unicode_funcs
 hb_face_create_for_tables
 hb_face_destroy
+hb_face_reference
 hb_font_create
 hb_font_destroy
 hb_font_funcs_create
@@ -554,7 +550,26 @@ hb_font_set_funcs
 hb_font_set_ppem
 hb_font_set_scale
 hb_language_from_string
+hb_ot_layout_collect_lookups
+hb_ot_layout_feature_get_lookups
+hb_ot_layout_has_positioning
+hb_ot_layout_has_substitution
+hb_ot_layout_language_get_feature_indexes
+hb_ot_layout_language_get_feature_tags
+hb_ot_layout_language_get_required_feature_index
+hb_ot_layout_lookup_collect_glyphs
+hb_ot_layout_script_get_language_tags
+hb_ot_layout_table_choose_script
+hb_ot_layout_table_get_script_tags
 hb_ot_tag_to_language
+hb_ot_tags_from_script
+hb_set_add
+hb_set_clear
+hb_set_create
+hb_set_destroy
+hb_set_has
+hb_set_is_empty
+hb_set_next
 hb_shape
 hb_unicode_funcs_create
 hb_unicode_funcs_get_empty
@@ -565,3 +580,11 @@ hb_unicode_funcs_set_eastasian_width_func
 hb_unicode_funcs_set_general_category_func
 hb_unicode_funcs_set_mirroring_func
 hb_unicode_funcs_set_script_func
+webvtt_create_parser
+webvtt_delete_parser
+webvtt_finish_parsing
+webvtt_parse_chunk
+webvtt_ref_node
+webvtt_release_node
+webvtt_strerror
+webvtt_string_text

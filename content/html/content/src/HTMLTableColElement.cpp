@@ -12,7 +12,6 @@
 #include "mozilla/dom/HTMLTableColElementBinding.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(TableCol)
-DOMCI_NODE_DATA(HTMLTableColElement, mozilla::dom::HTMLTableColElement)
 
 namespace mozilla {
 namespace dom {
@@ -26,10 +25,9 @@ HTMLTableColElement::~HTMLTableColElement()
 }
 
 JSObject*
-HTMLTableColElement::WrapNode(JSContext *aCx, JSObject *aScope,
-                              bool *aTriedToWrap)
+HTMLTableColElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return HTMLTableColElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return HTMLTableColElementBinding::Wrap(aCx, aScope, this);
 }
 
 NS_IMPL_ADDREF_INHERITED(HTMLTableColElement, Element)
@@ -37,11 +35,11 @@ NS_IMPL_RELEASE_INHERITED(HTMLTableColElement, Element)
 
 // QueryInterface implementation for HTMLTableColElement
 NS_INTERFACE_TABLE_HEAD(HTMLTableColElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE1(HTMLTableColElement,
-                                   nsIDOMHTMLTableColElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(HTMLTableColElement,
-                                               nsGenericHTMLElement)
-NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLTableColElement)
+  NS_HTML_CONTENT_INTERFACES(nsGenericHTMLElement)
+  NS_INTERFACE_TABLE_INHERITED1(HTMLTableColElement,
+                                nsIDOMHTMLTableColElement)
+  NS_INTERFACE_TABLE_TO_MAP_SEGUE
+NS_ELEMENT_INTERFACE_MAP_END
 
 NS_IMPL_ELEMENT_CLONE(HTMLTableColElement)
 

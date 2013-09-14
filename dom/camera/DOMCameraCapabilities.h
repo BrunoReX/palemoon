@@ -5,20 +5,19 @@
 #ifndef DOM_CAMERA_DOMCAMERACAPABILITIES_H
 #define DOM_CAMERA_DOMCAMERACAPABILITIES_H
 
-#include "nsCycleCollectionParticipant.h"
 #include "ICameraControl.h"
 #include "nsAutoPtr.h"
 #include "CameraCommon.h"
 
 namespace mozilla {
 
-typedef nsresult (*ParseItemAndAddFunc)(JSContext* aCx, JSObject* aArray, uint32_t aIndex, const char* aStart, char** aEnd);
+typedef nsresult (*ParseItemAndAddFunc)(JSContext* aCx, JS::Handle<JSObject*> aArray,
+                                        uint32_t aIndex, const char* aStart, char** aEnd);
 
 class DOMCameraCapabilities MOZ_FINAL : public nsICameraCapabilities
 {
 public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS(DOMCameraCapabilities)
+  NS_DECL_ISUPPORTS
   NS_DECL_NSICAMERACAPABILITIES
 
   DOMCameraCapabilities(ICameraControl* aCamera)
@@ -29,7 +28,7 @@ public:
 
   nsresult ParameterListToNewArray(
     JSContext* cx,
-    JSObject** aArray,
+    JS::MutableHandle<JSObject*> aArray,
     uint32_t aKey,
     ParseItemAndAddFunc aParseItemAndAdd
   );

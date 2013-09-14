@@ -9,15 +9,16 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ErrorResult.h"
 #include "nsIAppsService.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIDOMApplicationRegistry.h"
 #include "nsIPermissionManager.h"
+#include "GeckoProfiler.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsGenericHTMLFrameElement)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsGenericHTMLFrameElement,
                                                   nsGenericHTMLElement)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFrameLoader)
@@ -50,69 +51,79 @@ nsresult
 nsGenericHTMLFrameElement::GetContentDocument(nsIDOMDocument** aContentDocument)
 {
   NS_PRECONDITION(aContentDocument, "Null out param");
-  *aContentDocument = nullptr;
+  nsCOMPtr<nsIDOMDocument> document = do_QueryInterface(GetContentDocument());
+  document.forget(aContentDocument);
+  return NS_OK;
+}
 
-  nsCOMPtr<nsIDOMWindow> win;
-  GetContentWindow(getter_AddRefs(win));
-
+nsIDocument*
+nsGenericHTMLFrameElement::GetContentDocument()
+{
+  nsCOMPtr<nsPIDOMWindow> win = GetContentWindow();
   if (!win) {
-    return NS_OK;
+    return nullptr;
   }
 
-  return win->GetDocument(aContentDocument);
+  nsIDocument *doc = win->GetDoc();
+
+  // Return null for cross-origin contentDocument.
+  if (!nsContentUtils::GetSubjectPrincipal()->Subsumes(doc->NodePrincipal())) {
+    return nullptr;
+  }
+  return doc;
 }
 
 nsresult
 nsGenericHTMLFrameElement::GetContentWindow(nsIDOMWindow** aContentWindow)
 {
   NS_PRECONDITION(aContentWindow, "Null out param");
-  *aContentWindow = nullptr;
+  nsCOMPtr<nsPIDOMWindow> window = GetContentWindow();
+  window.forget(aContentWindow);
+  return NS_OK;
+}
 
-  nsresult rv = EnsureFrameLoader();
-  NS_ENSURE_SUCCESS(rv, rv);
+already_AddRefed<nsPIDOMWindow>
+nsGenericHTMLFrameElement::GetContentWindow()
+{
+  EnsureFrameLoader();
 
   if (!mFrameLoader) {
-    return NS_OK;
+    return nullptr;
   }
 
   bool depthTooGreat = false;
   mFrameLoader->GetDepthTooGreat(&depthTooGreat);
   if (depthTooGreat) {
     // Claim to have no contentWindow
-    return NS_OK;
+    return nullptr;
   }
 
   nsCOMPtr<nsIDocShell> doc_shell;
   mFrameLoader->GetDocShell(getter_AddRefs(doc_shell));
 
-  nsCOMPtr<nsPIDOMWindow> win(do_GetInterface(doc_shell));
+  nsCOMPtr<nsPIDOMWindow> win = do_GetInterface(doc_shell);
 
   if (!win) {
-    return NS_OK;
+    return nullptr;
   }
 
   NS_ASSERTION(win->IsOuterWindow(),
                "Uh, this window should always be an outer window!");
 
-  return CallQueryInterface(win, aContentWindow);
+  return win.forget();
 }
 
-nsresult
+void
 nsGenericHTMLFrameElement::EnsureFrameLoader()
 {
   if (!GetParent() || !IsInDoc() || mFrameLoader || mFrameLoaderCreationDisallowed) {
     // If frame loader is there, we just keep it around, cached
-    return NS_OK;
+    return;
   }
 
+  // Strangely enough, this method doesn't actually ensure that the
+  // frameloader exists.  It's more of a best-effort kind of thing.
   mFrameLoader = nsFrameLoader::Create(this, mNetworkCreated);
-  if (!mFrameLoader) {
-    // Strangely enough, this method doesn't actually ensure that the
-    // frameloader exists.  It's more of a best-effort kind of thing.
-    return NS_OK;
-  }
-
-  return NS_OK;
 }
 
 nsresult
@@ -149,14 +160,13 @@ nsGenericHTMLFrameElement::SwapFrameLoaders(nsIFrameLoaderOwner* aOtherOwner)
 nsresult
 nsGenericHTMLFrameElement::LoadSrc()
 {
-  nsresult rv = EnsureFrameLoader();
-  NS_ENSURE_SUCCESS(rv, rv);
+  EnsureFrameLoader();
 
   if (!mFrameLoader) {
     return NS_OK;
   }
 
-  rv = mFrameLoader->LoadFrame();
+  nsresult rv = mFrameLoader->LoadFrame();
 #ifdef DEBUG
   if (NS_FAILED(rv)) {
     NS_WARNING("failed to load URL");
@@ -180,6 +190,9 @@ nsGenericHTMLFrameElement::BindToTree(nsIDocument* aDocument,
   if (aDocument) {
     NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
                  "Missing a script blocker!");
+
+    PROFILER_LABEL("nsGenericHTMLFrameElement", "BindToTree");
+
     // We're in a document now.  Kick off the frame load.
     LoadSrc();
   }
@@ -220,6 +233,35 @@ nsGenericHTMLFrameElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
     // Don't propagate error here. The attribute was successfully set, that's
     // what we should reflect.
     LoadSrc();
+  } else if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::name) {
+    // Propagate "name" to the docshell to make browsing context names live,
+    // per HTML5.
+    nsIDocShell *docShell = mFrameLoader ? mFrameLoader->GetExistingDocShell()
+                                         : nullptr;
+    if (docShell) {
+      docShell->SetName(aValue);
+    }
+  }
+
+  return NS_OK;
+}
+
+nsresult
+nsGenericHTMLFrameElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
+                                     bool aNotify)
+{
+  // Invoke on the superclass.
+  nsresult rv = nsGenericHTMLElement::UnsetAttr(aNameSpaceID, aAttribute, aNotify);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (aNameSpaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::name) {
+    // Propagate "name" to the docshell to make browsing context names live,
+    // per HTML5.
+    nsIDocShell *docShell = mFrameLoader ? mFrameLoader->GetExistingDocShell()
+                                         : nullptr;
+    if (docShell) {
+      docShell->SetName(EmptyString());
+    }
   }
 
   return NS_OK;
@@ -318,6 +360,19 @@ nsGenericHTMLFrameElement::GetReallyIsApp(bool *aOut)
   return NS_OK;
 }
 
+/* [infallible] */ NS_IMETHODIMP
+nsGenericHTMLFrameElement::GetIsExpectingSystemMessage(bool *aOut)
+{
+  *aOut = false;
+
+  if (!nsIMozBrowserFrame::GetReallyIsApp()) {
+    return NS_OK;
+  }
+
+  *aOut = HasAttr(kNameSpaceID_None, nsGkAtoms::expectingSystemMessage);
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 nsGenericHTMLFrameElement::GetAppManifestURL(nsAString& aOut)
 {
@@ -378,3 +433,11 @@ nsGenericHTMLFrameElement::AllowCreateFrameLoader()
   mFrameLoaderCreationDisallowed = false;
   return NS_OK;
 }
+
+void
+nsGenericHTMLFrameElement::SwapFrameLoaders(nsXULElement& aOtherOwner,
+                                            ErrorResult& aError)
+{
+  aError.Throw(NS_ERROR_NOT_IMPLEMENTED);
+}
+

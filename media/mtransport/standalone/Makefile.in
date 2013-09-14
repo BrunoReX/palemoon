@@ -12,34 +12,10 @@ include $(srcdir)/../objs.mk
 
 EXTRA_DEPS += $(srcdir)/../objs.mk
 
-MODULE = mtransport_s
-LIBRARY_NAME = mtransport_s
 FORCE_STATIC_LIB= 1
 ifeq (WINNT,$(OS_TARGET))
 VISIBILITY_FLAGS =
 endif
-
-SRCS_IN_OBJDIR	= 1
-
-EXPORTS_NAMESPACES = mtransport
-
-EXPORTS_mtransport = \
-  ../dtlsidentity.h \
-  ../nricectx.h \
-  ../nricemediastream.h \
-  ../transportflow.h \
-  ../transportlayer.h \
-  ../transportlayerdtls.h \
-  ../transportlayerice.h \
-  ../transportlayerlog.h \
-  ../transportlayerloopback.h \
-  ../transportlayerprsock.h \
-  $(NULL)
-
-CPPSRCS = \
-	$(MTRANSPORT_LCPPSRCS) \
-	$(NULL)
-
 
 # Make a copy into the local directory for dual compilation
 export:: $(MTRANSPORT_CPPSRCS)

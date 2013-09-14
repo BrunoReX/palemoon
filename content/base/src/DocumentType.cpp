@@ -8,8 +8,6 @@
  */
 
 #include "mozilla/dom/DocumentType.h"
-#include "nsDOMAttributeMap.h"
-#include "nsIDOMNamedNodeMap.h"
 #include "nsGkAtoms.h"
 #include "nsCOMPtr.h"
 #include "nsDOMString.h"
@@ -18,8 +16,6 @@
 #include "xpcpublic.h"
 #include "nsWrapperCacheInlines.h"
 #include "mozilla/dom/DocumentTypeBinding.h"
-
-DOMCI_NODE_DATA(DocumentType, mozilla::dom::DocumentType)
 
 nsresult
 NS_NewDOMDocumentType(nsIDOMDocumentType** aDocType,
@@ -54,10 +50,6 @@ NS_NewDOMDocumentType(nsNodeInfoManager* aNodeInfoManager,
                                   kNameSpaceID_None,
                                   nsIDOMNode::DOCUMENT_TYPE_NODE,
                                   aName);
-  if (!ni) {
-    rv.Throw(NS_ERROR_OUT_OF_MEMORY);
-    return nullptr;
-  }
 
   nsRefPtr<mozilla::dom::DocumentType> docType =
     new mozilla::dom::DocumentType(ni.forget(), aPublicId, aSystemId, aInternalSubset);
@@ -68,9 +60,9 @@ namespace mozilla {
 namespace dom {
 
 JSObject*
-DocumentType::WrapNode(JSContext *cx, JSObject *scope, bool *triedToWrap)
+DocumentType::WrapNode(JSContext *cx, JS::Handle<JSObject*> scope)
 {
-  return DocumentTypeBinding::Wrap(cx, scope, this, triedToWrap);
+  return DocumentTypeBinding::Wrap(cx, scope, this);
 }
 
 DocumentType::DocumentType(already_AddRefed<nsINodeInfo> aNodeInfo,
@@ -91,16 +83,8 @@ DocumentType::~DocumentType()
 {
 }
 
-// QueryInterface implementation for DocumentType
-NS_INTERFACE_TABLE_HEAD(DocumentType)
-  NS_NODE_INTERFACE_TABLE2(DocumentType, nsIDOMNode, nsIDOMDocumentType)
-  NS_INTERFACE_MAP_ENTRIES_CYCLE_COLLECTION(DocumentType)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(DocumentType)
-NS_INTERFACE_MAP_END_INHERITING(nsGenericDOMDataNode)
-
-
-NS_IMPL_ADDREF_INHERITED(DocumentType, nsGenericDOMDataNode)
-NS_IMPL_RELEASE_INHERITED(DocumentType, nsGenericDOMDataNode)
+NS_IMPL_ISUPPORTS_INHERITED2(DocumentType, nsGenericDOMDataNode, nsIDOMNode,
+                             nsIDOMDocumentType)
 
 bool
 DocumentType::IsNodeOfType(uint32_t aFlags) const
@@ -145,6 +129,13 @@ NS_IMETHODIMP
 DocumentType::GetInternalSubset(nsAString& aInternalSubset)
 {
   aInternalSubset = mInternalSubset;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+DocumentType::MozRemove()
+{
+  Remove();
   return NS_OK;
 }
 

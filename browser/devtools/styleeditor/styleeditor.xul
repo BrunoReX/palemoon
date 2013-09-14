@@ -7,13 +7,13 @@
  %styleEditorDTD;
 ]>
 <?xml-stylesheet href="chrome://global/skin/global.css" type="text/css"?>
-<?xml-stylesheet href="chrome://browser/content/splitview.css" type="text/css"?>
+<?xml-stylesheet href="chrome://browser/content/devtools/splitview.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/devtools/common.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/devtools/splitview.css" type="text/css"?>
-<?xml-stylesheet href="chrome://browser/content/styleeditor.css" type="text/css"?>
+<?xml-stylesheet href="chrome://browser/content/devtools/styleeditor.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/devtools/styleeditor.css" type="text/css"?>
 <?xul-overlay href="chrome://global/content/editMenuOverlay.xul"?>
-<?xul-overlay href="chrome://browser/content/source-editor-overlay.xul"?>
+<?xul-overlay href="chrome://browser/content/devtools/source-editor-overlay.xul"?>
 <xul:window xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns="http://www.w3.org/1999/xhtml"
         id="style-editor-chrome-window">
@@ -51,17 +51,15 @@
           <xul:toolbarbutton class="style-editor-newButton devtools-toolbarbutton"
                       accesskey="&newButton.accesskey;"
                       tooltiptext="&newButton.tooltip;"
-                      label="&newButton.label;"
-                      disabled="true"/>
+                      label="&newButton.label;"/>
           <xul:toolbarbutton class="style-editor-importButton devtools-toolbarbutton"
                       accesskey="&importButton.accesskey;"
                       tooltiptext="&importButton.tooltip;"
-                      label="&importButton.label;"
-                      disabled="true"/>
+                      label="&importButton.label;"/>
         </xul:toolbar>
       </xul:box>
       <xul:box id="splitview-resizer-target" class="splitview-nav-container"
-              persist="width height">
+              persist="height">
         <ol class="splitview-nav" tabindex="0"></ol>
         <div class="splitview-nav placeholder empty">
           <p><strong>&noStyleSheet.label;</strong></p>
@@ -72,6 +70,7 @@
         </div>
       </xul:box> <!-- .splitview-nav-container -->
     </xul:box>   <!-- .splitview-controller -->
+    <xul:splitter class="devtools-side-splitter splitview-landscape-splitter"/>
     <xul:box class="splitview-side-details"/>
 
     <div id="splitview-templates" hidden="true">
@@ -80,13 +79,13 @@
           title="&visibilityToggle.tooltip;"
           accesskey="&saveButton.accesskey;"></a>
         <hgroup class="stylesheet-info">
-          <h1><a class="stylesheet-name" href="#"><xul:label crop="start"/></a></h1>
+          <h1><a class="stylesheet-name" tabindex="0"><xul:label crop="start"/></a></h1>
           <div class="stylesheet-more">
             <h3 class="stylesheet-title"></h3>
             <h3 class="stylesheet-rule-count"></h3>
             <h3 class="stylesheet-error-message"></h3>
             <xul:spacer/>
-            <h3><a class="stylesheet-saveButton" href="#"
+            <h3><a class="stylesheet-saveButton"
                   title="&saveButton.tooltip;"
                   accesskey="&saveButton.accesskey;">&saveButton.label;</a></h3>
           </div>
@@ -97,11 +96,6 @@
         <xul:resizer class="splitview-portrait-resizer"
                     dir="bottom"
                     element="splitview-resizer-target"/>
-        <xul:toolbar id="splitview-details-toolbar" class="devtools-toolbar">
-          <xul:resizer class="splitview-landscape-resizer"
-                      dir="bottomend"
-                      element="splitview-resizer-target"/>
-        </xul:toolbar>
         <xul:box class="stylesheet-editor-input textbox"
                 data-placeholder="&editorTextbox.placeholder;"/>
       </xul:box>

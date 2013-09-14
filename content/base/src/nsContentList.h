@@ -12,6 +12,8 @@
 #ifndef nsContentList_h___
 #define nsContentList_h___
 
+#include "mozilla/Attributes.h"
+#include "nsContentListDeclarations.h"
 #include "nsISupports.h"
 #include "nsTArray.h"
 #include "nsStringGlue.h"
@@ -25,21 +27,6 @@
 #include "nsWrapperCache.h"
 #include "nsHashKeys.h"
 #include "mozilla/HashFunctions.h"
-
-// Magic namespace id that means "match all namespaces".  This is
-// negative so it won't collide with actual namespace constants.
-#define kNameSpaceID_Wildcard INT32_MIN
-
-// This is a callback function type that can be used to implement an
-// arbitrary matching algorithm.  aContent is the content that may
-// match the list, while aNamespaceID, aAtom, and aData are whatever
-// was passed to the list's constructor.
-typedef bool (*nsContentListMatchFunc)(nsIContent* aContent,
-                                         int32_t aNamespaceID,
-                                         nsIAtom* aAtom,
-                                         void* aData);
-
-typedef void (*nsContentListDestroyFunc)(void* aData);
 
 namespace mozilla {
 namespace dom {
@@ -63,8 +50,8 @@ public:
   NS_DECL_NSIDOMNODELIST
 
   // nsINodeList
-  virtual int32_t IndexOf(nsIContent* aContent);
-  virtual nsIContent* Item(uint32_t aIndex);
+  virtual int32_t IndexOf(nsIContent* aContent) MOZ_OVERRIDE;
+  virtual nsIContent* Item(uint32_t aIndex) MOZ_OVERRIDE;
 
   uint32_t Length() const { 
     return mElements.Length();
@@ -105,8 +92,8 @@ public:
 
   virtual int32_t IndexOf(nsIContent *aContent, bool aDoFlush);
 
-  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap) = 0;
+  virtual JSObject* WrapObject(JSContext *cx, JS::Handle<JSObject*> scope)
+    MOZ_OVERRIDE = 0;
 
 protected:
   nsTArray< nsCOMPtr<nsIContent> > mElements;
@@ -125,26 +112,16 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsSimpleContentList,
                                            nsBaseContentList)
 
-  virtual nsINode* GetParentObject()
+  virtual nsINode* GetParentObject() MOZ_OVERRIDE
   {
     return mRoot;
   }
-  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap);
+  virtual JSObject* WrapObject(JSContext *cx,
+                               JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
 private:
   // This has to be a strong reference, the root might go away before the list.
   nsCOMPtr<nsINode> mRoot;
-};
-
-// This class is used only by form element code and this is a static
-// list of elements. NOTE! This list holds strong references to
-// the elements in the list.
-class nsFormContentList : public nsSimpleContentList
-{
-public:
-  nsFormContentList(nsIContent *aForm,
-                    nsBaseContentList& aContentList);
 };
 
 /**
@@ -261,25 +238,25 @@ public:
 
   // nsWrapperCache
   using nsWrapperCache::GetWrapperPreserveColor;
-  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap);
+  virtual JSObject* WrapObject(JSContext *cx,
+                               JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
   // nsIDOMHTMLCollection
   NS_DECL_NSIDOMHTMLCOLLECTION
 
   // nsBaseContentList overrides
-  virtual int32_t IndexOf(nsIContent *aContent, bool aDoFlush);
-  virtual int32_t IndexOf(nsIContent* aContent);
-  virtual nsINode* GetParentObject()
+  virtual int32_t IndexOf(nsIContent *aContent, bool aDoFlush) MOZ_OVERRIDE;
+  virtual int32_t IndexOf(nsIContent* aContent) MOZ_OVERRIDE;
+  virtual nsINode* GetParentObject() MOZ_OVERRIDE
   {
     return mRootNode;
   }
 
-  virtual nsIContent* Item(uint32_t aIndex);
-  virtual mozilla::dom::Element* GetElementAt(uint32_t index);
+  virtual nsIContent* Item(uint32_t aIndex) MOZ_OVERRIDE;
+  virtual mozilla::dom::Element* GetElementAt(uint32_t index) MOZ_OVERRIDE;
   virtual JSObject* NamedItem(JSContext* cx, const nsAString& name,
-                              mozilla::ErrorResult& error);
-  virtual void GetSupportedNames(nsTArray<nsString>& aNames);
+                              mozilla::ErrorResult& error) MOZ_OVERRIDE;
+  virtual void GetSupportedNames(nsTArray<nsString>& aNames) MOZ_OVERRIDE;
 
   // nsContentList public methods
   NS_HIDDEN_(uint32_t) Length(bool aDoFlush);
@@ -450,7 +427,7 @@ protected:
  */
 class nsCacheableFuncStringContentList;
 
-class NS_STACK_CLASS nsFuncStringCacheKey {
+class MOZ_STACK_CLASS nsFuncStringCacheKey {
 public:
   nsFuncStringCacheKey(nsINode* aRootNode,
                        nsContentListMatchFunc aFunc,
@@ -473,14 +450,6 @@ private:
   const nsContentListMatchFunc mFunc;
   const nsAString& mString;
 };
-
-/**
- * A function that allocates the matching data for this
- * FuncStringContentList.  Returning aString is perfectly fine; in
- * that case the destructor function should be a no-op.
- */
-typedef void* (*nsFuncStringContentListDataAllocator)(nsINode* aRootNode,
-                                                      const nsString* aString);
 
 // aDestroyFunc is allowed to be null
 // aDataAllocator must always return a non-null pointer
@@ -514,7 +483,7 @@ protected:
     MOZ_ASSERT(mData);
   }
 
-  virtual void RemoveFromCaches() {
+  virtual void RemoveFromCaches() MOZ_OVERRIDE {
     RemoveFromFuncStringHashtable();
   }
   void RemoveFromFuncStringHashtable();
@@ -539,8 +508,8 @@ public:
 #endif
   }
 
-  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap);
+  virtual JSObject* WrapObject(JSContext *cx,
+                               JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
 #ifdef DEBUG
   static const ContentListType sType;
@@ -564,34 +533,12 @@ public:
 #endif
   }
 
-  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap);
+  virtual JSObject* WrapObject(JSContext *cx,
+                               JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
 #ifdef DEBUG
   static const ContentListType sType;
 #endif
 };
 
-// If aMatchNameSpaceId is kNameSpaceID_Unknown, this will return a
-// content list which matches ASCIIToLower(aTagname) against HTML
-// elements in HTML documents and aTagname against everything else.
-// For any other value of aMatchNameSpaceId, the list will match
-// aTagname against all elements.
-already_AddRefed<nsContentList>
-NS_GetContentList(nsINode* aRootNode,
-                  int32_t aMatchNameSpaceId,
-                  const nsAString& aTagname);
-
-already_AddRefed<nsContentList>
-NS_GetFuncStringNodeList(nsINode* aRootNode,
-                         nsContentListMatchFunc aFunc,
-                         nsContentListDestroyFunc aDestroyFunc,
-                         nsFuncStringContentListDataAllocator aDataAllocator,
-                         const nsAString& aString);
-already_AddRefed<nsContentList>
-NS_GetFuncStringHTMLCollection(nsINode* aRootNode,
-                               nsContentListMatchFunc aFunc,
-                               nsContentListDestroyFunc aDestroyFunc,
-                               nsFuncStringContentListDataAllocator aDataAllocator,
-                               const nsAString& aString);
 #endif // nsContentList_h___

@@ -11,6 +11,7 @@
 
 #include "AccessibleWrap.h"
 #include "Accessible-inl.h"
+#include "IUnknownImpl.h"
 
 using namespace mozilla::a11y;
 
@@ -19,7 +20,7 @@ using namespace mozilla::a11y;
 STDMETHODIMP
 ia2AccessibleValue::QueryInterface(REFIID iid, void** ppv)
 {
-  *ppv = NULL;
+  *ppv = nullptr;
 
   if (IID_IAccessibleValue == iid) {
     AccessibleWrap* valueAcc = static_cast<AccessibleWrap*>(this);

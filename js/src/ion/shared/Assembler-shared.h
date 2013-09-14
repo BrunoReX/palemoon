@@ -1,16 +1,16 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_assembler_shared_h__
-#define jsion_assembler_shared_h__
+#ifndef ion_shared_Assembler_shared_h
+#define ion_shared_Assembler_shared_h
 
 #include <limits.h>
 
 #include "mozilla/DebugOnly.h"
+#include "mozilla/PodOperations.h"
 
 #include "ion/IonAllocPolicy.h"
 #include "ion/Registers.h"
@@ -24,14 +24,33 @@ namespace js {
 namespace ion {
 
 enum Scale {
-    TimesOne,
-    TimesTwo,
-    TimesFour,
-    TimesEight
+    TimesOne = 0,
+    TimesTwo = 1,
+    TimesFour = 2,
+    TimesEight = 3
 };
 
+static inline unsigned
+ScaleToShift(Scale scale)
+{
+    return unsigned(scale);
+}
+
+static inline bool
+IsShiftInScaleRange(int i)
+{
+    return i >= TimesOne && i <= TimesEight;
+}
+
 static inline Scale
-ScaleFromShift(int shift)
+ShiftToScale(int i)
+{
+    JS_ASSERT(IsShiftInScaleRange(i));
+    return Scale(i);
+}
+
+static inline Scale
+ScaleFromElemWidth(int shift)
 {
     switch (shift) {
       case 1:
@@ -100,13 +119,23 @@ struct ImmGCPtr
     uintptr_t value;
 
     explicit ImmGCPtr(const gc::Cell *ptr) : value(reinterpret_cast<uintptr_t>(ptr))
-    { }
+    {
+        JS_ASSERT(!IsPoisonedPtr(ptr));
+        JS_ASSERT_IF(ptr, ptr->isTenured());
+    }
 
-    // ImmGCPtr is rooted so we can convert safely directly from Unrooted<T>.
-    template <typename T>
-    explicit ImmGCPtr(Unrooted<T> ptr)
-      : value(reinterpret_cast<uintptr_t>(static_cast<T>(ptr)))
-    { }
+  protected:
+    ImmGCPtr() : value(0) {}
+};
+
+// Used for immediates which require relocation and may be traced during minor GC.
+struct ImmMaybeNurseryPtr : public ImmGCPtr
+{
+    explicit ImmMaybeNurseryPtr(gc::Cell *ptr)
+    {
+        this->value = reinterpret_cast<uintptr_t>(ptr);
+        JS_ASSERT(!IsPoisonedPtr(ptr));
+    }
 };
 
 // Specifies a hardcoded, absolute address.
@@ -132,11 +161,11 @@ struct Address
     Address(Register base, int32_t offset) : base(base), offset(offset)
     { }
 
-    Address() { PodZero(this); }
+    Address() { mozilla::PodZero(this); }
 };
 
-// Specifies an address computed in the form of a register base and a constant,
-// 32-bit offset.
+// Specifies an address computed in the form of a register base, a register
+// index with a scale, and a constant, 32-bit offset.
 struct BaseIndex
 {
     Register base;
@@ -148,7 +177,7 @@ struct BaseIndex
       : base(base), index(index), scale(scale), offset(offset)
     { }
 
-    BaseIndex() { PodZero(this); }
+    BaseIndex() { mozilla::PodZero(this); }
 };
 
 class Relocation {
@@ -242,10 +271,20 @@ class Label : public LabelBase
     { }
     ~Label()
     {
-        // Note: the condition is a hack to avoid this assert when OOM testing,
+#ifdef DEBUG
+        // Note: the condition is a hack to silence this assert when OOM testing,
         // see bug 756614.
-        JS_ASSERT_IF(OOM_counter < OOM_maxAllocations, !used());
+        if (!js_IonOptions.parallelCompilation)
+            JS_ASSERT_IF(MaybeGetIonContext() && !GetIonContext()->runtime->hadOutOfMemory, !used());
+#endif
     }
+};
+
+// Wrapper around Label, on the heap, to avoid a bogus assert with OOM.
+struct HeapLabel
+  : public TempObject,
+    public Label
+{
 };
 
 class RepatchLabel
@@ -315,7 +354,7 @@ struct AbsoluteLabel : public LabelBase
 
 // A code label contains an absolute reference to a point in the code
 // Thus, it cannot be patched until after linking
-class CodeLabel : public TempObject
+class CodeLabel
 {
     // The destination position, where the absolute reference should get patched into
     AbsoluteLabel dest_;
@@ -327,42 +366,15 @@ class CodeLabel : public TempObject
   public:
     CodeLabel()
     { }
+    CodeLabel(const AbsoluteLabel &dest)
+       : dest_(dest)
+    { }
     AbsoluteLabel *dest() {
         return &dest_;
     }
     Label *src() {
         return &src_;
     }
-};
-
-// Deferred data is a chunk of data that cannot be computed until an assembly
-// buffer has been fully allocated, but should be attached to the final code
-// stream. At the time deferred data is emitted, the code buffer has been
-// completely allocated.
-class DeferredData : public TempObject
-{
-    // Label, which before linking is unbound.
-    AbsoluteLabel label_;
-
-    // Offset from the start of the data section.
-    int32_t offset_;
-
-  public:
-    DeferredData() : offset_(-1)
-    { }
-    int32_t offset() const {
-        JS_ASSERT(offset_ > -1);
-        return offset_;
-    }
-    void setOffset(int32_t offset) {
-        offset_ = offset;
-    }
-    AbsoluteLabel *label() {
-        return &label_;
-    }
-
-    // Must copy pending data into the buffer.
-    virtual void copy(IonCode *code, uint8_t *buffer) const = 0;
 };
 
 // Location of a jump or label in a generated IonCode block, relative to the
@@ -390,7 +402,7 @@ class CodeOffsetJump
 #endif
 
     CodeOffsetJump() {
-        PodZero(this);
+        mozilla::PodZero(this);
     }
 
     size_t offset() const {
@@ -422,14 +434,33 @@ class CodeOffsetLabel
 class CodeLocationJump
 {
     uint8_t *raw_;
-    mozilla::DebugOnly<bool> absolute_;
+#ifdef DEBUG
+    bool absolute_;
+    void setAbsolute() {
+        absolute_ = true;
+    }
+    void setRelative() {
+        absolute_ = false;
+    }
+#else
+    void setAbsolute() const {
+    }
+    void setRelative() const {
+    }
+#endif
 
 #ifdef JS_SMALL_BRANCH
     uint8_t *jumpTableEntry_;
 #endif
 
   public:
-    CodeLocationJump() {}
+    CodeLocationJump() {
+        raw_ = (uint8_t *) 0xdeadc0de;
+        setAbsolute();
+#ifdef JS_SMALL_BRANCH
+        jumpTableEntry_ = (uint8_t *) 0xdeadab1e;
+#endif
+    }
     CodeLocationJump(IonCode *code, CodeOffsetJump base) {
         *this = base;
         repoint(code);
@@ -437,7 +468,7 @@ class CodeLocationJump
 
     void operator = (CodeOffsetJump base) {
         raw_ = (uint8_t *) base.offset();
-        absolute_ = false;
+        setRelative();
 #ifdef JS_SMALL_BRANCH
         jumpTableEntry_ = (uint8_t *) base.jumpTableIndex();
 #endif
@@ -445,12 +476,16 @@ class CodeLocationJump
 
     void repoint(IonCode *code, MacroAssembler* masm = NULL);
 
+    bool isSet() const {
+        return raw_ != (uint8_t *) 0xdeadc0de;
+    }
+
     uint8_t *raw() const {
-        JS_ASSERT(absolute_);
+        JS_ASSERT(absolute_ && isSet());
         return raw_;
     }
     uint8_t *offset() const {
-        JS_ASSERT(!absolute_);
+        JS_ASSERT(!absolute_ && isSet());
         return raw_;
     }
 
@@ -465,26 +500,42 @@ class CodeLocationJump
 class CodeLocationLabel
 {
     uint8_t *raw_;
-    mozilla::DebugOnly<bool> absolute_;
+#ifdef DEBUG
+    bool absolute_;
+    void setAbsolute() {
+        absolute_ = true;
+    }
+    void setRelative() {
+        absolute_ = false;
+    }
+#else
+    void setAbsolute() const {
+    }
+    void setRelative() const {
+    }
+#endif
 
   public:
-    CodeLocationLabel() {}
+    CodeLocationLabel() {
+        raw_ = (uint8_t *) 0xdeadc0de;
+        setAbsolute();
+    }
     CodeLocationLabel(IonCode *code, CodeOffsetLabel base) {
         *this = base;
         repoint(code);
     }
     CodeLocationLabel(IonCode *code) {
         raw_ = code->raw();
-        absolute_ = true;
+        setAbsolute();
     }
     CodeLocationLabel(uint8_t *raw) {
         raw_ = raw;
-        absolute_ = true;
+        setAbsolute();
     }
 
     void operator = (CodeOffsetLabel base) {
         raw_ = (uint8_t *)base.offset();
-        absolute_ = false;
+        setRelative();
     }
     ptrdiff_t operator - (const CodeLocationLabel &other) {
         return raw_ - other.raw_;
@@ -492,12 +543,16 @@ class CodeLocationLabel
 
     void repoint(IonCode *code, MacroAssembler *masm = NULL);
 
+    bool isSet() {
+        return raw_ != (uint8_t *) 0xdeadc0de;
+    }
+
     uint8_t *raw() {
-        JS_ASSERT(absolute_);
+        JS_ASSERT(absolute_ && isSet());
         return raw_;
     }
     uint8_t *offset() {
-        JS_ASSERT(!absolute_);
+        JS_ASSERT(!absolute_ && isSet());
         return raw_;
     }
 };
@@ -506,5 +561,4 @@ class CodeLocationLabel
 } // namespace ion
 } // namespace js
 
-#endif // jsion_assembler_shared_h__
-
+#endif /* ion_shared_Assembler_shared_h */

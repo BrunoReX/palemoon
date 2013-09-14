@@ -280,12 +280,19 @@ nsSVGMarkerProperty::DoUpdate()
   if (!(mFrame->GetStateBits() & NS_FRAME_IN_REFLOW)) {
     // XXXjwatt: We need to unify SVG into standard reflow so we can just use
     // nsChangeHint_NeedReflow | nsChangeHint_NeedDirtyReflow here.
-    nsSVGUtils::InvalidateBounds(mFrame, false);
+    nsSVGEffects::InvalidateRenderingObservers(mFrame);
     // XXXSDL KILL THIS!!!
     nsSVGUtils::ScheduleReflowSVG(mFrame);
   }
   mFramePresShell->FrameConstructor()->PostRestyleEvent(
     mFrame->GetContent()->AsElement(), nsRestyleHint(0), changeHint);
+}
+
+bool
+nsSVGTextPathProperty::TargetIsValid()
+{
+  Element* target = GetTarget();
+  return target && target->IsSVG(nsGkAtoms::path);
 }
 
 void
@@ -295,15 +302,31 @@ nsSVGTextPathProperty::DoUpdate()
   if (!mFrame)
     return;
 
-  NS_ASSERTION(mFrame->IsFrameOfType(nsIFrame::eSVG), "SVG frame expected");
+  NS_ASSERTION(mFrame->IsFrameOfType(nsIFrame::eSVG) || mFrame->IsSVGText(),
+               "SVG frame expected");
 
-  if (mFrame->GetType() == nsGkAtoms::svgTextPathFrame) {
-    // Repaint asynchronously in case the path frame is being torn down
-    nsChangeHint changeHint =
-      nsChangeHint(nsChangeHint_RepaintFrame | nsChangeHint_UpdateTextPath);
-    mFramePresShell->FrameConstructor()->PostRestyleEvent(
-      mFrame->GetContent()->AsElement(), nsRestyleHint(0), changeHint);
+  // Avoid getting into an infinite loop of reflows if the <textPath> is
+  // pointing to one of its ancestors.  TargetIsValid returns true iff
+  // the target element is a <path> element, and we would not have this
+  // nsSVGTextPathProperty if this <textPath> were a descendant of the
+  // target <path>.
+  //
+  // Note that we still have to post the restyle event when we
+  // change from being valid to invalid, so that mPositions on the
+  // nsSVGTextFrame2 gets updated, skipping the <textPath>, ensuring
+  // that nothing gets painted for that element.
+  bool nowValid = TargetIsValid();
+  if (!mValid && !nowValid) {
+    // Just return if we were previously invalid, and are still invalid.
+    return;
   }
+  mValid = nowValid;
+
+  // Repaint asynchronously in case the path frame is being torn down
+  nsChangeHint changeHint =
+    nsChangeHint(nsChangeHint_RepaintFrame | nsChangeHint_UpdateTextPath);
+  mFramePresShell->FrameConstructor()->PostRestyleEvent(
+    mFrame->GetContent()->AsElement(), nsRestyleHint(0), changeHint);
 }
 
 void
@@ -314,7 +337,8 @@ nsSVGPaintingProperty::DoUpdate()
     return;
 
   if (mFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT) {
-    nsSVGUtils::InvalidateBounds(mFrame);
+    nsSVGEffects::InvalidateRenderingObservers(mFrame);
+    mFrame->InvalidateFrameSubtree();
   } else {
     InvalidateAllContinuations(mFrame);
   }
@@ -424,7 +448,7 @@ nsSVGEffects::GetEffectProperties(nsIFrame *aFrame)
   NS_ASSERTION(!aFrame->GetPrevContinuation(), "aFrame should be first continuation");
 
   EffectProperties result;
-  const nsStyleSVGReset *style = aFrame->GetStyleSVGReset();
+  const nsStyleSVGReset *style = aFrame->StyleSVGReset();
   result.mFilter = static_cast<nsSVGFilterProperty*>
     (GetEffectProperty(style->mFilter, aFrame, FilterProperty(),
                        CreateFilterProperty));
@@ -502,13 +526,13 @@ nsSVGEffects::UpdateEffects(nsIFrame *aFrame)
 
   // Ensure that the filter is repainted correctly
   // We can't do that in DoUpdate as the referenced frame may not be valid
-  GetEffectProperty(aFrame->GetStyleSVGReset()->mFilter,
+  GetEffectProperty(aFrame->StyleSVGReset()->mFilter,
                     aFrame, FilterProperty(), CreateFilterProperty);
 
   if (aFrame->GetType() == nsGkAtoms::svgPathGeometryFrame &&
       static_cast<nsSVGPathGeometryElement*>(aFrame->GetContent())->IsMarkable()) {
     // Set marker properties here to avoid reference loops
-    const nsStyleSVG *style = aFrame->GetStyleSVG();
+    const nsStyleSVG *style = aFrame->StyleSVG();
     GetEffectProperty(style->mMarkerStart, aFrame, MarkerBeginProperty(),
                       CreateMarkerProperty);
     GetEffectProperty(style->mMarkerMid, aFrame, MarkerMiddleProperty(),
@@ -523,7 +547,7 @@ nsSVGEffects::GetFilterProperty(nsIFrame *aFrame)
 {
   NS_ASSERTION(!aFrame->GetPrevContinuation(), "aFrame should be first continuation");
 
-  if (!aFrame->GetStyleSVGReset()->mFilter)
+  if (!aFrame->StyleSVGReset()->mFilter)
     return nullptr;
 
   return static_cast<nsSVGFilterProperty *>

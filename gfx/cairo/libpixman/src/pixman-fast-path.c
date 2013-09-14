@@ -1513,6 +1513,7 @@ fast_composite_tiled_repeat (pixman_implementation_t *imp,
 	    if (src_bpp == 32)
 	    {
 		PIXMAN_IMAGE_GET_LINE (src_image, 0, sy, uint32_t, src_stride, src_line, 1);
+
 		for (i = 0; i < src_width; )
 		{
 		    for (j = 0; j < src_image->bits.width; j++, i++)
@@ -1526,6 +1527,7 @@ fast_composite_tiled_repeat (pixman_implementation_t *imp,
 		PIXMAN_IMAGE_GET_LINE (src_image, 0, sy, uint16_t, src_stride,
 				       src_line_16, 1);
 		src_line = (uint32_t*)src_line_16;
+
 		for (i = 0; i < src_width; )
 		{
 		    for (j = 0; j < src_image->bits.width; j++, i++)
@@ -1539,6 +1541,7 @@ fast_composite_tiled_repeat (pixman_implementation_t *imp,
 		PIXMAN_IMAGE_GET_LINE (src_image, 0, sy, uint8_t, src_stride,
 				       src_line_8, 1);
 		src_line = (uint32_t*)src_line_8;
+
 		for (i = 0; i < src_width; )
 		{
 		    for (j = 0; j < src_image->bits.width; j++, i++)

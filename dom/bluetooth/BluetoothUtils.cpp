@@ -12,6 +12,8 @@
 #include "mozilla/Scoped.h"
 #include "mozilla/dom/bluetooth/BluetoothTypes.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
+#include "nsIScriptContext.h"
 #include "nsISystemMessagesInternal.h"
 #include "nsString.h"
 #include "nsTArray.h"
@@ -20,34 +22,51 @@ BEGIN_BLUETOOTH_NAMESPACE
 
 bool
 SetJsObject(JSContext* aContext,
-            JSObject* aObj,
-            const InfallibleTArray<BluetoothNamedValue>& aData)
+            const BluetoothValue& aValue,
+            JSObject* aObj)
 {
-  for (uint32_t i = 0; i < aData.Length(); i++) {
-    jsval v;
-    if (aData[i].value().type() == BluetoothValue::TnsString) {
-      nsString data = aData[i].value().get_nsString();
-      JSString* JsData = JS_NewUCStringCopyN(aContext,
-                                             data.BeginReading(),
-                                             data.Length());
-      NS_ENSURE_TRUE(JsData, false);
-      v = STRING_TO_JSVAL(JsData);
-    } else if (aData[i].value().type() == BluetoothValue::Tuint32_t) {
-      int data = aData[i].value().get_uint32_t();
-      v = INT_TO_JSVAL(data);
-    } else if (aData[i].value().type() == BluetoothValue::Tbool) {
-      bool data = aData[i].value().get_bool();
-      v = BOOLEAN_TO_JSVAL(data);
-    } else {
-      NS_WARNING("SetJsObject: Parameter is not handled");
+  MOZ_ASSERT(aContext && aObj);
+
+  if (aValue.type() != BluetoothValue::TArrayOfBluetoothNamedValue) {
+    NS_WARNING("SetJsObject: Invalid parameter type");
+    return false;
+  }
+
+  const nsTArray<BluetoothNamedValue>& arr =
+    aValue.get_ArrayOfBluetoothNamedValue();
+
+  for (uint32_t i = 0; i < arr.Length(); i++) {
+    JS::Value val;
+    const BluetoothValue& v = arr[i].value();
+    JSString* jsData;
+
+    switch(v.type()) {
+      case BluetoothValue::TnsString:
+        jsData = JS_NewUCStringCopyN(aContext,
+                                     v.get_nsString().BeginReading(),
+                                     v.get_nsString().Length());
+        NS_ENSURE_TRUE(jsData, false);
+        val = STRING_TO_JSVAL(jsData);
+        break;
+      case BluetoothValue::Tuint32_t:
+        val = INT_TO_JSVAL(v.get_uint32_t());
+        break;
+      case BluetoothValue::Tbool:
+        val = BOOLEAN_TO_JSVAL(v.get_bool());
+        break;
+      default:
+        NS_WARNING("SetJsObject: Parameter is not handled");
+        break;
     }
 
     if (!JS_SetProperty(aContext, aObj,
-                        NS_ConvertUTF16toUTF8(aData[i].name()).get(),
-                        &v)) {
+                        NS_ConvertUTF16toUTF8(arr[i].name()).get(),
+                        &val)) {
+      NS_WARNING("Failed to set property");
       return false;
     }
   }
+
   return true;
 }
 
@@ -86,29 +105,24 @@ bool
 BroadcastSystemMessage(const nsAString& aType,
                        const InfallibleTArray<BluetoothNamedValue>& aData)
 {
-  JSContext* cx = nsContentUtils::GetSafeJSContext();
+  mozilla::AutoSafeJSContext cx;
   NS_ASSERTION(!::JS_IsExceptionPending(cx),
       "Shouldn't get here when an exception is pending!");
 
-  JSAutoRequest jsar(cx);
   JSObject* obj = JS_NewObject(cx, NULL, NULL, NULL);
   if (!obj) {
     NS_WARNING("Failed to new JSObject for system message!");
     return false;
   }
 
-  if (!SetJsObject(cx, obj, aData)) {
+  if (!SetJsObject(cx, aData, obj)) {
     NS_WARNING("Failed to set properties of system message!");
     return false;
   }
 
   nsCOMPtr<nsISystemMessagesInternal> systemMessenger =
     do_GetService("@mozilla.org/system-message-internal;1");
-
-  if (!systemMessenger) {
-    NS_WARNING("Failed to get SystemMessenger service!");
-    return false;
-  }
+  NS_ENSURE_TRUE(systemMessenger, false);
 
   systemMessenger->BroadcastMessage(aType, OBJECT_TO_JSVAL(obj));
 

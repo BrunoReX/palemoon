@@ -1,10 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsprf_h___
-#define jsprf_h___
+#ifndef jsprf_h
+#define jsprf_h
 
 /*
 ** API for PR printf like routines. Supports the following formats
@@ -74,4 +75,4 @@ extern JS_PUBLIC_API(char*) JS_vsmprintf(const char *fmt, va_list ap);
 extern JS_PUBLIC_API(char*) JS_vsprintf_append(char *last, const char *fmt, va_list ap);
 extern JS_PUBLIC_API(uint32_t) JS_vsxprintf(JSStuffFunc f, void *arg, const char *fmt, va_list ap);
 
-#endif /* jsprf_h___ */
+#endif /* jsprf_h */

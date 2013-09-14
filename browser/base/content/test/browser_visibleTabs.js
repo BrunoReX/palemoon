@@ -27,13 +27,6 @@ function test() {
   gBrowser.selectedTab = testTab;
   gBrowser.showOnlyTheseTabs([testTab]);
 
-  // if the tabview frame is initialized, we need to move the orignal tab to
-  // another group; otherwise, selecting a tab would make all three tabs in 
-  // the same group to display.
-  let tabViewWindow = TabView.getContentWindow();
-  if (tabViewWindow)
-    tabViewWindow.GroupItems.moveTabToGroupItem(origTab, null);
-
   visible = gBrowser.visibleTabs;
   is(visible.length, 2, "2 tabs should be visible including the pinned");
   is(visible[0], pinned, "first is pinned");
@@ -97,7 +90,4 @@ function test() {
   is(gBrowser.tabs.length, 1, "sanity check that it matches");
   is(gBrowser.selectedTab, origTab, "got the orig tab");
   is(origTab.hidden, false, "and it's not hidden -- visible!");
-
-  if (tabViewWindow)
-    tabViewWindow.GroupItems.groupItems[0].close();
 }

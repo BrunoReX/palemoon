@@ -6,32 +6,16 @@
 #include "mozilla/dom/SVGAnimateTransformElement.h"
 #include "mozilla/dom/SVGAnimateTransformElementBinding.h"
 
-DOMCI_NODE_DATA(SVGAnimateTransformElement, mozilla::dom::SVGAnimateTransformElement)
-
 NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(AnimateTransform)
 
 namespace mozilla {
 namespace dom {
 
 JSObject*
-SVGAnimateTransformElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+SVGAnimateTransformElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return SVGAnimateTransformElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return SVGAnimateTransformElementBinding::Wrap(aCx, aScope, this);
 }
-
-//----------------------------------------------------------------------
-// nsISupports methods
-
-NS_IMPL_ADDREF_INHERITED(SVGAnimateTransformElement, SVGAnimationElement)
-NS_IMPL_RELEASE_INHERITED(SVGAnimateTransformElement, SVGAnimationElement)
-
-NS_INTERFACE_TABLE_HEAD(SVGAnimateTransformElement)
-  NS_NODE_INTERFACE_TABLE5(SVGAnimateTransformElement, nsIDOMNode,
-                           nsIDOMElement, nsIDOMSVGElement,
-                           nsIDOMSVGAnimationElement,
-                           nsIDOMSVGAnimateTransformElement)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGAnimateTransformElement)
-NS_INTERFACE_MAP_END_INHERITING(SVGAnimationElement)
 
 //----------------------------------------------------------------------
 // Implementation
@@ -73,26 +57,11 @@ SVGAnimateTransformElement::ParseAttribute(int32_t aNamespaceID,
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGAnimateTransformElement)
 
 //----------------------------------------------------------------------
-// nsISMILAnimationElement methods
 
 nsSMILAnimationFunction&
 SVGAnimateTransformElement::AnimationFunction()
 {
   return mAnimationFunction;
-}
-
-bool
-SVGAnimateTransformElement::GetTargetAttributeName(int32_t *aNamespaceID,
-                                                   nsIAtom **aLocalName) const
-{
-  if (SVGAnimationElement::GetTargetAttributeName(aNamespaceID,
-                                                  aLocalName)) {
-    return *aNamespaceID == kNameSpaceID_None &&
-           (*aLocalName == nsGkAtoms::transform ||
-            *aLocalName == nsGkAtoms::patternTransform ||
-            *aLocalName == nsGkAtoms::gradientTransform);
-  }
-  return false;
 }
 
 } // namespace dom

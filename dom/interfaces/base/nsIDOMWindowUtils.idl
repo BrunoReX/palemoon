@@ -40,8 +40,9 @@ interface nsIDOMTouch;
 interface nsIDOMClientRect;
 interface nsIURI;
 interface nsIDOMEventTarget;
+interface nsIRunnable;
 
-[scriptable, uuid(7cd26372-d2e2-463a-bce3-3f02d4b23fa8)]
+[scriptable, uuid(cbe333d7-5b2c-4a9b-b99b-e6e388afa62b)]
 interface nsIDOMWindowUtils : nsISupports {
 
   /**
@@ -194,6 +195,8 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   attribute boolean isFirstPaint;
 
+  void getPresShellId(out uint32_t aPresShellId);
+
   /**
    * Following modifiers are for sent*Event() except sendNative*Event().
    * NOTE: MODIFIER_ALT, MODIFIER_CONTROL, MODIFIER_SHIFT and MODIFIER_META
@@ -213,7 +216,8 @@ interface nsIDOMWindowUtils : nsISupports {
   const long MODIFIER_OS         = 0x0400;
 
   /** Synthesize a mouse event. The event types supported are:
-   *    mousedown, mouseup, mousemove, mouseover, mouseout, contextmenu
+   *    mousedown, mouseup, mousemove, mouseover, mouseout, contextmenu,
+   *    MozMouseHitTest
    *
    * Events are sent in coordinates offset by aX and aY from the window.
    *
@@ -244,16 +248,18 @@ interface nsIDOMWindowUtils : nsISupports {
    * @param aPressure touch input pressure: 0.0 -> 1.0
    * @param aInputSourceArg input source, see nsIDOMMouseEvent for values,
    *        defaults to mouse input.
+   *
+   * returns true if the page called prevent default on this event
    */
-  void sendMouseEvent(in AString aType,
-                      in float aX,
-                      in float aY,
-                      in long aButton,
-                      in long aClickCount,
-                      in long aModifiers,
-                      [optional] in boolean aIgnoreRootScrollFrame,
-                      [optional] in float aPressure,
-                      [optional] in unsigned short aInputSourceArg);
+  boolean sendMouseEvent(in AString aType,
+                         in float aX,
+                         in float aY,
+                         in long aButton,
+                         in long aClickCount,
+                         in long aModifiers,
+                         [optional] in boolean aIgnoreRootScrollFrame,
+                         [optional] in float aPressure,
+                         [optional] in unsigned short aInputSourceArg);
 
   /** Synthesize a touch event. The event types supported are:
    *    touchstart, touchend, touchmove, and touchcancel
@@ -536,7 +542,8 @@ interface nsIDOMWindowUtils : nsISupports {
                     [optional] in long aExtraForgetSkippableCalls);
 
   /** Synthesize a simple gesture event for a window. The event types
-   *  supported are: MozSwipeGesture, MozMagnifyGestureStart,
+   *  supported are: MozSwipeGestureStart, MozSwipeGestureUpdate,
+   *  MozSwipeGestureEnd, MozSwipeGesture, MozMagnifyGestureStart,
    *  MozMagnifyGestureUpdate, MozMagnifyGesture, MozRotateGestureStart,
    *  MozRotateGestureUpdate, MozRotateGesture, MozPressTapGesture,
    *  MozTapGesture, and MozEdgeUIGesture.
@@ -643,6 +650,18 @@ interface nsIDOMWindowUtils : nsISupports {
    * @see nsIDOMWindow::scrollX/Y
    */
   void getScrollXY(in boolean aFlushLayout, out long aScrollX, out long aScrollY);
+
+  /**
+   * Returns the scrollbar width of the window's scroll frame.
+   *
+   * @param aFlushLayout flushes layout if true. Otherwise, no flush occurs.
+   */
+  void getScrollbarSize(in boolean aFlushLayout, out long aWidth, out long aHeight);
+
+  /**
+   * Returns the given element's bounds without flushing pending layout changes.
+   */
+  nsIDOMClientRect getBoundsWithoutFlushing(in nsIDOMElement aElement);
 
   /**
    * Returns the bounds of the window's currently loaded document. This will
@@ -1052,11 +1071,41 @@ interface nsIDOMWindowUtils : nsISupports {
    * error if there is no widget associated with this window.
    */
   readonly attribute AString layerManagerType;
+  
+  /**
+   * True if the layer manager for the widget associated with this window is
+   * forwarding layers to a remote compositor, false otherwise. Throws an
+   * error if there is no widget associated with this window.
+   */
+  readonly attribute boolean layerManagerRemote;
 
-  void startFrameTimeRecording();
-  void stopFrameTimeRecording([optional, array, size_is(frameCount)] out float paintTimes,
+  /**
+   * Record (and return) frame-intervals and paint-times for frames which were presented
+   *   between calling StartFrameTimeRecording and StopFrameTimeRecording.
+   *
+   * - Uses a cyclic buffer and serves concurrent consumers, so if Stop is called too late
+   *     (elements were overwritten since Start), result is considered invalid and hence empty.
+   * - Buffer is capable of holding 10 seconds @ 60fps (or more if frames were less frequent).
+   *     Can be changed (up to 1 hour) via pref: toolkit.framesRecording.bufferSize.
+   * - Note: the first frame-interval may be longer than expected because last frame
+   *     might have been presented some time before calling StartFrameTimeRecording.
+   */
+
+  /**
+   * Returns a handle which represents current recording start position.
+   */
+   void startFrameTimeRecording([retval] out unsigned long startIndex);
+
+  /**
+   * Returns number of recorded frames since startIndex was issued,
+   *   and allocates+populates 2 arraye with the recorded data.
+   * - Allocation is infallible. Should be released even if size is 0.
+   */
+   void stopFrameTimeRecording(in unsigned long startIndex,
+                              [optional, array, size_is(frameCount)] out float paintTimes,
                               [optional] out unsigned long frameCount,
                               [retval, array, size_is(frameCount)] out float frameIntervals);
+
   /**
    * Signals that we're begining to tab switch. This is used by painting code to
    * determine total tab switch time.
@@ -1070,6 +1119,7 @@ interface nsIDOMWindowUtils : nsISupports {
 
   /**
    * Return the outer window with the given ID, if any.  Can return null.
+   * @deprecated Use nsIWindowMediator.getOuterWindowWithId.  See bug 865664.
    */
   nsIDOMWindow getOuterWindowWithId(in unsigned long long aOuterWindowID);
 
@@ -1103,6 +1153,12 @@ interface nsIDOMWindowUtils : nsISupports {
    * Undoes the effects of advanceTimeAndRefresh.
    */
   void restoreNormalRefresh();
+
+  /**
+   * Reports whether the current state is test-controlled refreshes
+   * (see advanceTimeAndRefresh and restoreNormalRefresh above).
+   */
+  readonly attribute bool isTestControllingRefreshes;
 
   /**
    * Method for testing nsStyleAnimation::ComputeDistance.
@@ -1256,6 +1312,19 @@ interface nsIDOMWindowUtils : nsISupports {
   void setScrollPositionClampingScrollPortSize(in float aWidth, in float aHeight);
 
   /**
+   * Set margins for the layout of fixed position elements in the content
+   * document. These are used on mobile, where the viewable area can be
+   * temporarily obscured by the browser chrome. In this situation, we're ok
+   * with scrollable page content being obscured, but fixed position content
+   * cannot be revealed without removing the obscuring chrome, so we use these
+   * margins so that it can remain visible.
+   *
+   * The caller of this method must have chrome privileges.
+   */
+  void setContentDocumentFixedPositionMargins(in float aTop, in float aRight,
+                                              in float aBottom, in float aLeft);
+
+  /**
    * Prevent this window (and any child windows) from displaying any further
    * dialogs (e.g. window.alert()).
    */
@@ -1297,10 +1366,57 @@ interface nsIDOMWindowUtils : nsISupports {
    */
    void allowScriptsToClose();
 
+  /**
+   * Is the parent window's main widget visible?  If it isn't, we probably
+   * don't want to display any dialogs etc it may request.  This corresponds
+   * to the visibility check in nsWindowWatcher::OpenWindowInternal().
+   *
+   * Will throw a DOM security error if called without chrome privileges or
+   * NS_ERROR_NOT_AVAILABLE in the unlikely event that the parent window's
+   * main widget can't be reached.
+   */
+  readonly attribute boolean isParentWindowMainWidgetVisible;
+
    /**
     * In certain cases the event handling of nodes, form controls in practice,
     * may be disabled. Such cases are for example the existence of disabled
     * attribute or -moz-user-input: none/disabled.
     */
    boolean isNodeDisabledForEvents(in nsIDOMNode aNode);
+
+   /**
+    * Setting paintFlashing to true will flash newly painted area.
+    */
+   attribute boolean paintFlashing;
+
+   /**
+    * Allows running of a "synchronous section", in the form of an nsIRunnable
+    * once the event loop has reached a "stable state". We've reached a stable
+    * state when the currently executing task/event has finished, see:
+    * http://www.whatwg.org/specs/web-apps/current-work/multipage/webappapis.html#synchronous-section
+    * In practice this runs aRunnable once the currently executing event
+    * finishes. If called multiple times per task/event, all the runnables will
+    * be executed, in the order in which runInStableState() was called.
+    *
+    * XXX - This can wreak havoc if you're not using this for very simple
+    * purposes, eg testing or setting a flag.
+    */
+   void runInStableState(in nsIRunnable runnable);
+
+   /**
+    * Run the given runnable before the next iteration of the event loop (this
+    * includes native events too). If a nested loop is spawned within the current
+    * event then the runnable will not be run until that loop has terminated.
+    *
+    * XXX - This can wreak havoc if you're not using this for very simple
+    * purposes, eg testing or setting a flag.
+    */
+   void runBeforeNextEvent(in nsIRunnable runnable);
+
+   /*
+    * Returns the value of a given property.  If the property is animated off the
+    * main thread, this function will fetch the correct value from the compositor.
+    */
+   AString getOMTAOrComputedStyle(in nsIDOMNode aNode,
+                                  in AString aProperty);
 };

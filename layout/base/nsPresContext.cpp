@@ -13,7 +13,6 @@
 #include "nsPresContext.h"
 #include "nsIPresShell.h"
 #include "nsILinkHandler.h"
-#include "nsIDocShellTreeItem.h"
 #include "nsIDocShell.h"
 #include "nsIContentViewer.h"
 #include "nsPIDOMWindow.h"
@@ -57,7 +56,6 @@
 #include "nsStyleStructInlines.h"
 #include "nsIAppShell.h"
 #include "prenv.h"
-#include "nsIDOMEventTarget.h"
 #include "nsObjectFrame.h"
 #include "nsTransitionManager.h"
 #include "nsAnimationManager.h"
@@ -75,6 +73,7 @@
 #endif // IBMBIDI
 
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsPIWindowRoot.h"
 #include "mozilla/Preferences.h"
 
@@ -314,8 +313,6 @@ nsPresContext::~nsPresContext()
                                   "layout.css.devPixelsPerPx",
                                   this);
 }
-
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsPresContext)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsPresContext)
    NS_INTERFACE_MAP_ENTRY(nsISupports)
@@ -951,7 +948,14 @@ nsPresContext::Init(nsDeviceContext* aDeviceContext)
         nsCOMPtr<nsIDocShellTreeItem> parentItem;
         ourItem->GetSameTypeParent(getter_AddRefs(parentItem));
         if (parentItem) {
-          mRefreshDriver = parent->GetShell()->GetPresContext()->RefreshDriver();
+          Element* containingElement =
+            parent->FindContentForSubDocument(mDocument);
+          if (!containingElement->IsXUL() ||
+              !containingElement->
+                HasAttr(kNameSpaceID_None,
+                        nsGkAtoms::forceOwnRefreshDriver)) {
+            mRefreshDriver = parent->GetShell()->GetPresContext()->RefreshDriver();
+          }
         }
       }
     }
@@ -1155,11 +1159,21 @@ nsPresContext::GetParentPresContext()
 {
   nsIPresShell* shell = GetPresShell();
   if (shell) {
-    nsIFrame* rootFrame = shell->FrameManager()->GetRootFrame();
-    if (rootFrame) {
-      nsIFrame* f = nsLayoutUtils::GetCrossDocParentFrame(rootFrame);
-      if (f)
-        return f->PresContext();
+    nsViewManager* viewManager = shell->GetViewManager();
+    if (viewManager) {
+      nsView* view = viewManager->GetRootView();
+      if (view) {
+        view = view->GetParent(); // anonymous inner view
+        if (view) {
+          view = view->GetParent(); // subdocumentframe's view
+          if (view) {
+            nsIFrame* f = view->GetFrame();
+            if (f) {
+              return f->PresContext();
+            }
+          }
+        }
+      }
     }
   }
   return nullptr;
@@ -1447,11 +1461,8 @@ nsPresContext::SetContainer(nsISupports* aHandler)
 already_AddRefed<nsISupports>
 nsPresContext::GetContainerInternal() const
 {
-  nsISupports *result = nullptr;
-  if (mContainer)
-    CallQueryReferent(mContainer.get(), &result);
-
-  return result;
+  nsCOMPtr<nsISupports> result = do_QueryReferent(mContainer);
+  return result.forget();
 }
 
 already_AddRefed<nsISupports>
@@ -1663,7 +1674,7 @@ nsPresContext::UIResolutionChangedInternal()
   mPendingUIResolutionChanged = false;
 
   mDeviceContext->CheckDPIChange();
-  if (uint32_t(mCurAppUnitsPerDevPixel) != AppUnitsPerDevPixel()) {
+  if (mCurAppUnitsPerDevPixel != AppUnitsPerDevPixel()) {
     AppUnitsPerDevPixelChanged();
   }
 
@@ -1682,7 +1693,6 @@ nsPresContext::RebuildAllStyleData(nsChangeHint aExtraHint)
   mUsesRootEMUnits = false;
   mUsesViewportUnits = false;
   RebuildUserFontSet();
-  AnimationManager()->KeyframesListIsDirty();
 
   mShell->FrameConstructor()->RebuildAllStyleData(aExtraHint);
 }
@@ -1754,7 +1764,7 @@ nsPresContext::MediaFeatureValuesChanged(StyleRebuildType aShouldRebuild,
 
     if (!notifyList.IsEmpty()) {
       nsPIDOMWindow *win = mDocument->GetInnerWindow();
-      nsCOMPtr<nsIDOMEventTarget> et = do_QueryInterface(win);
+      nsCOMPtr<EventTarget> et = do_QueryInterface(win);
       nsCxPusher pusher;
 
       for (uint32_t i = 0, i_end = notifyList.Length(); i != i_end; ++i) {
@@ -1893,7 +1903,7 @@ nsPresContext::InvalidateIsChromeCacheExternal()
 nsPresContext::HasAuthorSpecifiedRules(nsIFrame *aFrame, uint32_t ruleTypeMask) const
 {
   return
-    nsRuleNode::HasAuthorSpecifiedRules(aFrame->GetStyleContext(),
+    nsRuleNode::HasAuthorSpecifiedRules(aFrame->StyleContext(),
                                         ruleTypeMask,
                                         UseDocumentColors());
 }
@@ -2064,8 +2074,8 @@ nsPresContext::FireDOMPaintEvent(nsInvalidateRequestList* aList)
   if (!ourWindow)
     return;
 
-  nsCOMPtr<nsIDOMEventTarget> dispatchTarget = do_QueryInterface(ourWindow);
-  nsCOMPtr<nsIDOMEventTarget> eventTarget = dispatchTarget;
+  nsCOMPtr<EventTarget> dispatchTarget = do_QueryInterface(ourWindow);
+  nsCOMPtr<EventTarget> eventTarget = dispatchTarget;
   if (!IsChrome() && !mSendAfterPaintToContent) {
     // Don't tell the window about this event, it should not know that
     // something happened in a subdocument. Tell only the chrome event handler.
@@ -2082,7 +2092,7 @@ nsPresContext::FireDOMPaintEvent(nsInvalidateRequestList* aList)
   // This will empty our list in case dispatching the event causes more damage
   // (hopefully it won't, or we're likely to get an infinite loop! At least
   // it won't be blocking app execution though).
-  NS_NewDOMNotifyPaintEvent(getter_AddRefs(event), this, nullptr,
+  NS_NewDOMNotifyPaintEvent(getter_AddRefs(event), eventTarget, this, nullptr,
                             NS_AFTERPAINT, aList);
   if (!event) {
     return;
@@ -2122,7 +2132,7 @@ MayHavePaintEventListener(nsPIDOMWindow* aInnerWindow)
   if (aInnerWindow->HasPaintEventListeners())
     return true;
 
-  nsIDOMEventTarget* parentTarget = aInnerWindow->GetParentTarget();
+  EventTarget* parentTarget = aInnerWindow->GetParentTarget();
   if (!parentTarget)
     return false;
 
@@ -2152,7 +2162,7 @@ MayHavePaintEventListener(nsPIDOMWindow* aInnerWindow)
     return MayHavePaintEventListener(window);
 
   nsCOMPtr<nsPIWindowRoot> root = do_QueryInterface(parentTarget);
-  nsIDOMEventTarget* tabChildGlobal;
+  EventTarget* tabChildGlobal;
   return root &&
          (tabChildGlobal = root->GetParentTarget()) &&
          (manager = tabChildGlobal->GetListenerManager(false)) &&
@@ -2352,9 +2362,11 @@ enum InterruptMode {
 // "random" (except on Windows) or "counter".  If neither is used, the mode is
 // ModeEvent.
 static InterruptMode sInterruptMode = ModeEvent;
+#ifndef XP_WIN
 // Used for the "random" mode.  Controlled by the GECKO_REFLOW_INTERRUPT_SEED
 // env var.
 static uint32_t sInterruptSeed = 1;
+#endif
 // Used for the "counter" mode.  This is the number of unskipped interrupt
 // checks that have to happen before we interrupt.  Controlled by the
 // GECKO_REFLOW_INTERRUPT_FREQUENCY env var.

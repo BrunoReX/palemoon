@@ -92,12 +92,12 @@ void safe_write(const char *a)
 void safe_write(uint64_t x)
 {
   // 2^64 is 20 decimal digits.
-  const int max_len = 21;
+  const unsigned int max_len = 21;
   char buf[max_len];
   buf[max_len - 1] = '\0';
 
   uint32_t i;
-  for (i = max_len - 2; i >= 0 && x > 0; i--)
+  for (i = max_len - 2; i < max_len && x > 0; i--)
   {
     buf[i] = "0123456789"[x % 10];
     x /= 10;
@@ -345,7 +345,7 @@ class NumLowMemoryEventsReporter : public nsIMemoryReporter
   }
 };
 
-class NumLowVirtualMemoryEventsMemoryReporter : public NumLowMemoryEventsReporter
+class NumLowVirtualMemoryEventsMemoryReporter MOZ_FINAL : public NumLowMemoryEventsReporter
 {
 public:
   NS_DECL_ISUPPORTS
@@ -391,7 +391,7 @@ public:
 
 NS_IMPL_ISUPPORTS1(NumLowVirtualMemoryEventsMemoryReporter, nsIMemoryReporter)
 
-class NumLowCommitSpaceEventsMemoryReporter : public NumLowMemoryEventsReporter
+class NumLowCommitSpaceEventsMemoryReporter MOZ_FINAL : public NumLowMemoryEventsReporter
 {
 public:
   NS_DECL_ISUPPORTS
@@ -433,7 +433,7 @@ public:
 
 NS_IMPL_ISUPPORTS1(NumLowCommitSpaceEventsMemoryReporter, nsIMemoryReporter)
 
-class NumLowPhysicalMemoryEventsMemoryReporter : public NumLowMemoryEventsReporter
+class NumLowPhysicalMemoryEventsMemoryReporter MOZ_FINAL : public NumLowMemoryEventsReporter
 {
 public:
   NS_DECL_ISUPPORTS
@@ -517,9 +517,14 @@ public:
   NS_DECL_NSIOBSERVER
 
   void Init();
+
+private:
+  static bool sFreeDirtyPages;
 };
 
 NS_IMPL_ISUPPORTS1(nsMemoryPressureWatcher, nsIObserver)
+
+bool nsMemoryPressureWatcher::sFreeDirtyPages = false;
 
 /**
  * Initialize and subscribe to the memory-pressure events. We subscribe to the
@@ -534,12 +539,14 @@ nsMemoryPressureWatcher::Init()
   if (os) {
     os->AddObserver(this, "memory-pressure", /* ownsWeak */ false);
   }
+
+  Preferences::AddBoolVarCache(&sFreeDirtyPages, "memory.free_dirty_pages",
+                               false);
 }
 
 /**
  * Reacts to all types of memory-pressure events, launches a runnable to
  * free dirty pages held by jemalloc.
- * @see nsMemoryPressureWatcher::FreeDirtyPages
  */
 NS_IMETHODIMP
 nsMemoryPressureWatcher::Observe(nsISupports *subject, const char *topic,
@@ -547,9 +554,11 @@ nsMemoryPressureWatcher::Observe(nsISupports *subject, const char *topic,
 {
   MOZ_ASSERT(!strcmp(topic, "memory-pressure"), "Unknown topic");
 
-  nsRefPtr<nsIRunnable> runnable = new nsJemallocFreeDirtyPagesRunnable();
+  if (sFreeDirtyPages) {
+    nsRefPtr<nsIRunnable> runnable = new nsJemallocFreeDirtyPagesRunnable();
 
-  NS_DispatchToMainThread(runnable);
+    NS_DispatchToMainThread(runnable);
+  }
 
   return NS_OK;
 }
@@ -590,11 +599,9 @@ void Activate()
   sHooksActive = true;
 #endif
 
-  if (Preferences::GetBool("memory.free_dirty_pages", false)) {
-    // This object is held alive by the observer service.
-    nsRefPtr<nsMemoryPressureWatcher> watcher = new nsMemoryPressureWatcher();
-    watcher->Init();
-  }
+  // This object is held alive by the observer service.
+  nsRefPtr<nsMemoryPressureWatcher> watcher = new nsMemoryPressureWatcher();
+  watcher->Init();
 }
 
 void Init()

@@ -25,9 +25,7 @@
 #include "gfxFT2FontList.h"
 #include <locale.h>
 #include "gfxHarfBuzzShaper.h"
-#ifdef MOZ_GRAPHITE
 #include "gfxGraphiteShaper.h"
-#endif
 #include "nsGkAtoms.h"
 #include "nsTArray.h"
 #include "nsUnicodeRange.h"
@@ -38,15 +36,6 @@
 #include "prinit.h"
 
 #include "mozilla/Preferences.h"
-
-static PRLogModuleInfo *
-GetFontLog()
-{
-    static PRLogModuleInfo *sLog;
-    if (!sLog)
-        sLog = PR_NewLogModule("ft2fonts");
-    return sLog;
-}
 
 // rounding and truncation functions for a Freetype floating point number
 // (FT26Dot6) stored in a 32bit integer with high 26 bits for the integer
@@ -60,6 +49,15 @@ GetFontLog()
 /**
  * gfxFT2FontGroup
  */
+
+static PRLogModuleInfo *
+GetFontLog()
+{
+    static PRLogModuleInfo *sLog;
+    if (!sLog)
+        sLog = PR_NewLogModule("ft2fonts");
+    return sLog;
+}
 
 bool
 gfxFT2FontGroup::FontCallback(const nsAString& fontName,
@@ -413,7 +411,6 @@ gfxFT2Font::ShapeText(gfxContext      *aContext,
 {
     bool ok = false;
 
-#ifdef MOZ_GRAPHITE
     if (FontCanSupportGraphite()) {
         if (gfxPlatform::GetPlatform()->UseGraphiteShaping()) {
             if (!mGraphiteShaper) {
@@ -424,7 +421,6 @@ gfxFT2Font::ShapeText(gfxContext      *aContext,
                                             aScript, aShapedText);
         }
     }
-#endif
 
     if (!ok && gfxPlatform::GetPlatform()->UseHarfBuzzForScript(aScript)) {
         if (!mHarfBuzzShaper) {
@@ -605,9 +601,7 @@ gfxFT2Font::GetOrMakeFont(FT2FontEntry *aFontEntry, const gfxFontStyle *aStyle,
             return nullptr;
         gfxFontCache::GetCache()->AddNew(font);
     }
-    gfxFont *f = nullptr;
-    font.swap(f);
-    return static_cast<gfxFT2Font *>(f);
+    return font.forget().downcast<gfxFT2Font>();
 }
 
 void

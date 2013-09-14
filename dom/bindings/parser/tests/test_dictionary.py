@@ -296,3 +296,257 @@ def WebIDLTest(parser, harness):
     """)
     results = parser.finish()
     harness.ok(True, "Union arg containing a dictionary should actually parse")
+
+    parser = parser.reset()
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo {
+              Foo foo;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Member type must not be its Dictionary.")
+
+    parser = parser.reset()
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo3 : Foo {
+              short d;
+            };
+
+            dictionary Foo2 : Foo3 {
+              boolean c;
+            };
+
+            dictionary Foo1 : Foo2 {
+              long a;
+            };
+
+            dictionary Foo {
+              Foo1 b;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Member type must not be a Dictionary that "
+                      "inherits from its Dictionary.")
+
+    parser = parser.reset()
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo {
+              (Foo or DOMString)[]? b;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Member type must not be a Nullable type "
+                      "whose inner type includes its Dictionary.")
+
+    parser = parser.reset()
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo {
+              (DOMString or Foo) b;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Member type must not be a Union type, one of "
+                      "whose member types includes its Dictionary.")
+
+    parser = parser.reset()
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo {
+              sequence<sequence<sequence<Foo>>> c;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Member type must not be a Sequence type "
+                      "whose element type includes its Dictionary.")
+
+    parser = parser.reset()
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo {
+              (DOMString or Foo)[] d;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Member type must not be an Array type "
+                      "whose element type includes its Dictionary.")
+
+    parser = parser.reset()
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo {
+              Foo1 b;
+            };
+
+            dictionary Foo3 {
+              Foo d;
+            };
+
+            dictionary Foo2 : Foo3 {
+              short c;
+            };
+
+            dictionary Foo1 : Foo2 {
+              long a;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Member type must not be a Dictionary, one of whose "
+                      "members or inherited members has a type that includes "
+                      "its Dictionary.")
+
+    parser = parser.reset();
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo {
+            };
+
+            dictionary Bar {
+              Foo? d;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Member type must not be a nullable dictionary")
+
+    parser = parser.reset();
+    parser.parse("""
+        dictionary Foo {
+          unrestricted float  urFloat = 0;
+          unrestricted float  urFloat2 = 1.1;
+          unrestricted float  urFloat3 = -1.1;
+          unrestricted float? urFloat4 = null;
+          unrestricted float  infUrFloat = Infinity;
+          unrestricted float  negativeInfUrFloat = -Infinity;
+          unrestricted float  nanUrFloat = NaN;
+
+          unrestricted double  urDouble = 0;
+          unrestricted double  urDouble2 = 1.1;
+          unrestricted double  urDouble3 = -1.1;
+          unrestricted double? urDouble4 = null;
+          unrestricted double  infUrDouble = Infinity;
+          unrestricted double  negativeInfUrDouble = -Infinity;
+          unrestricted double  nanUrDouble = NaN;
+        };
+    """)
+    results = parser.finish()
+    harness.ok(True, "Parsing default values for unrestricted types succeeded.")
+
+    parser = parser.reset();
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo {
+              double f = Infinity;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Only unrestricted values can be initialized to Infinity")
+
+    parser = parser.reset();
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo {
+              double f = -Infinity;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Only unrestricted values can be initialized to -Infinity")
+
+    parser = parser.reset();
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo {
+              double f = NaN;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Only unrestricted values can be initialized to NaN")
+
+    parser = parser.reset();
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo {
+              float f = Infinity;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Only unrestricted values can be initialized to Infinity")
+
+
+    parser = parser.reset();
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo {
+              float f = -Infinity;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Only unrestricted values can be initialized to -Infinity")
+
+    parser = parser.reset();
+    threw = False
+    try:
+        parser.parse("""
+            dictionary Foo {
+              float f = NaN;
+            };
+        """)
+        results = parser.finish()
+    except:
+        threw = True
+
+    harness.ok(threw, "Only unrestricted values can be initialized to NaN")

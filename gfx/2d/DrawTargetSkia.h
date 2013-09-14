@@ -5,7 +5,13 @@
 
 #pragma once
 
+#ifdef USE_SKIA_GPU
+#include "skia/GrContext.h"
+#include "skia/GrGLInterface.h"
+#endif
+
 #include "skia/SkCanvas.h"
+
 #include "2D.h"
 #include "Rect.h"
 #include "PathSkia.h"
@@ -69,6 +75,10 @@ public:
   virtual void Mask(const Pattern &aSource,
                     const Pattern &aMask,
                     const DrawOptions &aOptions = DrawOptions());
+  virtual void MaskSurface(const Pattern &aSource,
+                           SourceSurface *aMask,
+                           Point aOffset,
+                           const DrawOptions &aOptions = DrawOptions()) { MOZ_ASSERT(0); };
   virtual void PushClip(const Path *aPath);
   virtual void PushClipRect(const Rect& aRect);
   virtual void PopClip();
@@ -87,24 +97,25 @@ public:
 
   bool Init(const IntSize &aSize, SurfaceFormat aFormat);
   void Init(unsigned char* aData, const IntSize &aSize, int32_t aStride, SurfaceFormat aFormat);
+#ifdef USE_SKIA_GPU
+  void InitWithFBO(unsigned int aFBOID, GrContext* aGrContext, const IntSize &aSize, SurfaceFormat aFormat);
+#endif
   
   operator std::string() const {
     std::stringstream stream;
     stream << "DrawTargetSkia(" << this << ")";
     return stream.str();
   }
+
 private:
   friend class SourceSurfaceSkia;
-  void AppendSnapshot(SourceSurfaceSkia* aSnapshot);
-  void RemoveSnapshot(SourceSurfaceSkia* aSnapshot);
+  void SnapshotDestroyed();
 
   void MarkChanged();
 
   IntSize mSize;
-  SkBitmap mBitmap;
   SkRefPtr<SkCanvas> mCanvas;
-  SkRefPtr<SkDevice> mDevice;
-  std::vector<SourceSurfaceSkia*> mSnapshots;
+  SourceSurfaceSkia* mSnapshot;
 };
 
 }

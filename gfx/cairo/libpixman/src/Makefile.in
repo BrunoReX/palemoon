@@ -9,15 +9,21 @@ VPATH		= @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE		= libpixman
 LIBRARY_NAME	= mozlibpixman
+MSVC_ENABLE_PGO := 1
 LIBXUL_LIBRARY = 1
 
 ifeq ($(OS_TARGET),Android)
 MODULE_OPTIMIZE_FLAGS = -O2
 endif
 
-DEFINES += -DPIXMAN_NO_TLS
+ifdef MOZ_USE_PTHREADS
+DEFINES += -DHAVE_PTHREAD_SETSPECIFIC
+endif
+
+ifdef _MSC_VER
+DEFINES += -DPIXMAN_USE_XP_DLL_TLS_WORKAROUND
+endif
 
 # Build MMX code either with VC or with gcc-on-x86
 ifdef _MSC_VER
@@ -114,8 +120,8 @@ CSRCS	= \
 	$(NULL)
 
 ifdef USE_MMX
-CSRCS += pixman-mmx.c
-DEFINES += -DUSE_MMX
+# CSRCS += pixman-mmx.c
+# DEFINES += -DUSE_MMX
 endif
 
 ifdef USE_SSE2
@@ -141,8 +147,6 @@ SSRCS += pixman-arm-neon-asm-bilinear.S
 DEFINES += -DUSE_ARM_NEON
 ARM_NEON_CFLAGS = -mfpu=neon
 endif
-
-EXPORTS		= pixman.h pixman-version.h
 
 LOCAL_INCLUDES	+= -I$(srcdir) -I$(srcdir)/../../cairo/src
 

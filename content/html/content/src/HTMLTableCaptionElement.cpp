@@ -12,7 +12,6 @@
 #include "mozilla/dom/HTMLTableCaptionElementBinding.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(TableCaption)
-DOMCI_NODE_DATA(HTMLTableCaptionElement, mozilla::dom::HTMLTableCaptionElement)
 
 namespace mozilla {
 namespace dom {
@@ -22,10 +21,9 @@ HTMLTableCaptionElement::~HTMLTableCaptionElement()
 }
 
 JSObject*
-HTMLTableCaptionElement::WrapNode(JSContext *aCx, JSObject *aScope,
-                                  bool *aTriedToWrap)
+HTMLTableCaptionElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return HTMLTableCaptionElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return HTMLTableCaptionElementBinding::Wrap(aCx, aScope, this);
 }
 
 NS_IMPL_ADDREF_INHERITED(HTMLTableCaptionElement, Element)
@@ -33,11 +31,11 @@ NS_IMPL_RELEASE_INHERITED(HTMLTableCaptionElement, Element)
 
 // QueryInterface implementation for HTMLTableCaptionElement
 NS_INTERFACE_TABLE_HEAD(HTMLTableCaptionElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE1(HTMLTableCaptionElement,
-                                   nsIDOMHTMLTableCaptionElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(HTMLTableCaptionElement,
-                                               nsGenericHTMLElement)
-NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLTableCaptionElement)
+  NS_HTML_CONTENT_INTERFACES(nsGenericHTMLElement)
+  NS_INTERFACE_TABLE_INHERITED1(HTMLTableCaptionElement,
+                                nsIDOMHTMLTableCaptionElement)
+  NS_INTERFACE_TABLE_TO_MAP_SEGUE
+NS_ELEMENT_INTERFACE_MAP_END
 
 NS_IMPL_ELEMENT_CLONE(HTMLTableCaptionElement)
 

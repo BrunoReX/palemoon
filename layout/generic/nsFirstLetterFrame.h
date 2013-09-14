@@ -19,13 +19,13 @@ public:
 
   nsFirstLetterFrame(nsStyleContext* aContext) : nsContainerFrame(aContext) {}
 
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
-  NS_IMETHOD Init(nsIContent*      aContent,
-                  nsIFrame*        aParent,
-                  nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
   NS_IMETHOD SetInitialChildList(ChildListID     aListID,
                                  nsFrameList&    aChildList) MOZ_OVERRIDE;
 #ifdef DEBUG
@@ -35,7 +35,7 @@ public:
 
   bool IsFloating() const { return GetStateBits() & NS_FRAME_OUT_OF_FLOW; }
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const MOZ_OVERRIDE
   {
     if (!IsFloating())
       aFlags = aFlags & ~(nsIFrame::eLineParticipant);
@@ -59,7 +59,7 @@ public:
                     nsReflowStatus&          aStatus) MOZ_OVERRIDE;
 
   virtual bool CanContinueTextRun() const MOZ_OVERRIDE;
-  virtual nscoord GetBaseline() const;
+  virtual nscoord GetBaseline() const MOZ_OVERRIDE;
 
 //override of nsFrame method
   NS_IMETHOD GetChildFrameContainingOffset(int32_t inContentOffset,
@@ -80,8 +80,6 @@ public:
 
 protected:
   nscoord mBaseline;
-
-  virtual int GetSkipSides() const;
 
   void DrainOverflowFrames(nsPresContext* aPresContext);
 };

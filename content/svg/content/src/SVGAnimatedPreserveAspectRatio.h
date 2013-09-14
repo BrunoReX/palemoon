@@ -14,12 +14,12 @@
 #include "SVGPreserveAspectRatio.h"
 #include "mozilla/Attributes.h"
 
-class nsISMILAnimationElement;
 class nsSMILValue;
 
 namespace mozilla {
 namespace dom {
 class DOMSVGAnimatedPreserveAspectRatio;
+class SVGAnimationElement;
 }
 
 class SVGAnimatedPreserveAspectRatio MOZ_FINAL
@@ -42,8 +42,7 @@ public:
   void SetBaseValue(const SVGPreserveAspectRatio &aValue,
                     nsSVGElement *aSVGElement);
   nsresult SetBaseAlign(uint16_t aAlign, nsSVGElement *aSVGElement) {
-    if (aAlign < SVG_PRESERVEASPECTRATIO_NONE ||
-        aAlign > SVG_PRESERVEASPECTRATIO_XMAXYMAX) {
+    if (aAlign < SVG_ALIGN_MIN_VALID || aAlign > SVG_ALIGN_MAX_VALID) {
       return NS_ERROR_FAILURE;
     }
     SetBaseValue(SVGPreserveAspectRatio(
@@ -53,8 +52,8 @@ public:
     return NS_OK;
   }
   nsresult SetBaseMeetOrSlice(uint16_t aMeetOrSlice, nsSVGElement *aSVGElement) {
-    if (aMeetOrSlice < SVG_MEETORSLICE_MEET ||
-        aMeetOrSlice > SVG_MEETORSLICE_SLICE) {
+    if (aMeetOrSlice < SVG_MEETORSLICE_MIN_VALID ||
+        aMeetOrSlice > SVG_MEETORSLICE_MAX_VALID) {
       return NS_ERROR_FAILURE;
     }
     SetBaseValue(SVGPreserveAspectRatio(
@@ -103,12 +102,12 @@ public:
 
     // nsISMILAttr methods
     virtual nsresult ValueFromString(const nsAString& aStr,
-                                     const nsISMILAnimationElement* aSrcElement,
+                                     const dom::SVGAnimationElement* aSrcElement,
                                      nsSMILValue& aValue,
-                                     bool& aPreventCachingOfSandwich) const;
-    virtual nsSMILValue GetBaseValue() const;
-    virtual void ClearAnimValue();
-    virtual nsresult SetAnimValue(const nsSMILValue& aValue);
+                                     bool& aPreventCachingOfSandwich) const MOZ_OVERRIDE;
+    virtual nsSMILValue GetBaseValue() const MOZ_OVERRIDE;
+    virtual void ClearAnimValue() MOZ_OVERRIDE;
+    virtual nsresult SetAnimValue(const nsSMILValue& aValue) MOZ_OVERRIDE;
   };
 };
 
@@ -129,7 +128,8 @@ class DOMSVGAnimatedPreserveAspectRatio MOZ_FINAL : public nsISupports,
 
   // WebIDL
   nsSVGElement* GetParentObject() const { return mSVGElement; }
-  virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope, bool* aTriedToWrap);
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
   // These aren't weak refs because new objects are returned each time
   already_AddRefed<DOMSVGPreserveAspectRatio> BaseVal();

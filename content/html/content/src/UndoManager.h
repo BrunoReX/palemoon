@@ -10,18 +10,20 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
+#include "nsIContent.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
 #include "mozilla/dom/Nullable.h"
-#include "nsIContent.h"
 
-class nsIUndoManagerTransaction;
 class nsITransactionManager;
 class nsIMutationObserver;
 
 namespace mozilla {
 class ErrorResult;
 namespace dom {
+
+class DOMTransaction;
+class DOMTransactionCallback;
 
 class UndoManager : public nsISupports,
                     public nsWrapperCache
@@ -33,12 +35,12 @@ public:
 
   explicit UndoManager(nsIContent* aNode);
 
-  void Transact(JSContext* aCx, nsIUndoManagerTransaction& aTransaction,
+  void Transact(JSContext* aCx, DOMTransaction& aTransaction,
                 bool aMerge, ErrorResult& aRv);
   void Undo(JSContext* aCx, ErrorResult& aRv);
   void Redo(JSContext* acx, ErrorResult& aRv);
   void Item(uint32_t aIndex,
-            Nullable<nsTArray<nsRefPtr<nsIUndoManagerTransaction> > >& aItems,
+            Nullable<nsTArray<nsRefPtr<DOMTransaction> > >& aItems,
             ErrorResult& aRv);
   uint32_t GetLength(ErrorResult& aRv);
   uint32_t GetPosition(ErrorResult& aRv);
@@ -52,11 +54,10 @@ public:
     return mHostNode;
   }
 
-  JSObject* WrapObject(JSContext* aCx, JSObject* aScope,
-                       bool* aTriedToWrap)
+  virtual JSObject* WrapObject(JSContext* aCx,
+			       JS::Handle<JSObject*> aScope) MOZ_OVERRIDE
   {
-    return mozilla::dom::UndoManagerBinding::Wrap(aCx, aScope, this,
-                                                  aTriedToWrap);
+    return mozilla::dom::UndoManagerBinding::Wrap(aCx, aScope, this);
   }
 
   nsITransactionManager* GetTransactionManager();
@@ -69,13 +70,15 @@ protected:
   /**
    * Executes |aTransaction| as a manual transaction.
    */
-  void ManualTransact(nsIUndoManagerTransaction* aTransaction,
+  void ManualTransact(DOMTransaction* aTransaction,
                       ErrorResult& aRv);
 
   /**
-   * Executes |aTransaction| as an automatic transaction.
+   * Executes |aTransaction| as an automatic transaction, calling
+   * aCallback to do the work.
    */
-  void AutomaticTransact(nsIUndoManagerTransaction* aTransaction,
+  void AutomaticTransact(DOMTransaction* aTransaction,
+                         DOMTransactionCallback* aCallback,
                          ErrorResult& aRv);
 
   /**
@@ -83,7 +86,7 @@ protected:
    * to the array |aItems|.
    */
   void ItemInternal(uint32_t aIndex,
-                    nsTArray<nsIUndoManagerTransaction*>& aItems,
+                    nsTArray<DOMTransaction*>& aItems,
                     ErrorResult& aRv);
 
   /**

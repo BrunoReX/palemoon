@@ -5,16 +5,12 @@
 
 /* the features that media queries can test */
 
-#include "mozilla/Util.h"
-
 #include "nsMediaFeatures.h"
 #include "nsGkAtoms.h"
 #include "nsCSSKeywords.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsCSSValue.h"
-#include "nsIDocShell.h"
-#include "nsLayoutUtils.h"
 #include "mozilla/LookAndFeel.h"
 #include "nsCSSRuleProcessor.h"
 
@@ -41,6 +37,7 @@ struct WindowsThemeName {
 // Windows theme identities used in the -moz-windows-theme media query.
 const WindowsThemeName themeStrings[] = {
     { LookAndFeel::eWindowsTheme_Aero,       L"aero" },
+    { LookAndFeel::eWindowsTheme_AeroLite,   L"aero-lite" },
     { LookAndFeel::eWindowsTheme_LunaBlue,   L"luna-blue" },
     { LookAndFeel::eWindowsTheme_LunaOlive,  L"luna-olive" },
     { LookAndFeel::eWindowsTheme_LunaSilver, L"luna-silver" },
@@ -513,6 +510,13 @@ nsMediaFeatures::features[] = {
         GetSystemMetric
     },
     {
+        &nsGkAtoms::_moz_overlay_scrollbars,
+        nsMediaFeature::eMinMaxNotAllowed,
+        nsMediaFeature::eBoolInteger,
+        { &nsGkAtoms::overlay_scrollbars },
+        GetSystemMetric
+    },
+    {
         &nsGkAtoms::_moz_windows_default_theme,
         nsMediaFeature::eMinMaxNotAllowed,
         nsMediaFeature::eBoolInteger,
@@ -548,6 +552,13 @@ nsMediaFeatures::features[] = {
         GetSystemMetric
     },
     {
+        &nsGkAtoms::_moz_windows_glass,
+        nsMediaFeature::eMinMaxNotAllowed,
+        nsMediaFeature::eBoolInteger,
+        { &nsGkAtoms::windows_glass },
+        GetSystemMetric
+    },
+    {
         &nsGkAtoms::_moz_touch_enabled,
         nsMediaFeature::eMinMaxNotAllowed,
         nsMediaFeature::eBoolInteger,
@@ -574,6 +585,22 @@ nsMediaFeatures::features[] = {
         nsMediaFeature::eIdent,
         { nullptr },
         GetWindowsTheme
+    },
+
+    {
+        &nsGkAtoms::_moz_swipe_animation_enabled,
+        nsMediaFeature::eMinMaxNotAllowed,
+        nsMediaFeature::eBoolInteger,
+        { &nsGkAtoms::swipe_animation_enabled },
+        GetSystemMetric
+    },
+
+    {
+        &nsGkAtoms::_moz_physical_home_button,
+        nsMediaFeature::eMinMaxNotAllowed,
+        nsMediaFeature::eBoolInteger,
+        { &nsGkAtoms::physical_home_button },
+        GetSystemMetric
     },
 
     // Internal -moz-is-glyph media feature: applies only inside SVG glyphs.

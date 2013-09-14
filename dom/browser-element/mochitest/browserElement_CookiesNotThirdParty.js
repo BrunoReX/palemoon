@@ -6,15 +6,14 @@
 "use strict";
 
 SimpleTest.waitForExplicitFinish();
+browserElementTestHelpers.setEnabledPref(true);
+browserElementTestHelpers.addPermission();
 
 function runTest() {
-  browserElementTestHelpers.setEnabledPref(true);
-  browserElementTestHelpers.addPermission();
-
   const innerPage = 'http://example.com/tests/dom/browser-element/mochitest/file_browserElement_CookiesNotThirdParty.html';
 
   var iframe = document.createElement('iframe');
-  iframe.mozbrowser = true;
+  SpecialPowers.wrap(iframe).mozbrowser = true;
 
   iframe.addEventListener('mozbrowsershowmodalprompt', function(e) {
     if (e.detail.message == 'next') {
@@ -47,4 +46,6 @@ function runTest() {
 }
 
 // Disable third-party cookies for this test.
-SpecialPowers.pushPrefEnv({'set': [['network.cookie.cookieBehavior', 1]]}, runTest);
+addEventListener('testready', function() {
+  SpecialPowers.pushPrefEnv({'set': [['network.cookie.cookieBehavior', 1]]}, runTest);
+});

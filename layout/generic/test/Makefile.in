@@ -61,6 +61,7 @@ MOCHITEST_FILES = \
   test_bug579767.html \
   test_bug597333.html \
   test_bug666225.html \
+  test_bug904810.html \
   test_image_selection.html \
   test_image_selection_2.html \
   test_invalidate_during_plugin_paint.html \
@@ -105,6 +106,7 @@ MOCHITEST_FILES = \
   test_bug785324.html \
   test_bug791616.html \
   test_bug831780.html \
+  test_bug841361.html \
   $(NULL)
 
 MOCHITEST_CHROME_FILES = \
@@ -119,6 +121,7 @@ MOCHITEST_CHROME_FILES = \
   test_backspace_delete.xul \
   test_bug514732-2.xul \
   file_bug514732_window.xul \
+  test_selection_preventDefault.html \
   $(NULL)
 
 include $(topsrcdir)/config/rules.mk

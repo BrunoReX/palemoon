@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -232,11 +231,6 @@ SafepointWriter::writeNunboxParts(LSafepoint *safepoint)
     // Safepoints are permitted to have partially filled in entries for nunboxes,
     // provided that only the type is live and not the payload. Omit these from
     // the written safepoint.
-    //
-    // Note that partial entries typically appear when one part of a nunbox is
-    // stored in multiple places, in which case we will end up with incomplete
-    // information about all the places the value is stored. This will need to
-    // be fixed when the GC is permitted to move structures.
     uint32_t partials = safepoint->partialNunboxes();
 
     stream_.writeUnsigned(entries.length() - partials);
@@ -423,7 +417,7 @@ PartFromStream(CompactBufferReader &stream, NunboxPartKind kind, uint32_t info)
         return LStackSlot(info);
 
     JS_ASSERT(kind == Part_Arg);
-    return LArgument(info);
+    return LArgument(LAllocation::INT_ARGUMENT, info);
 }
 
 bool

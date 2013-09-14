@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,7 +30,7 @@ using namespace js::ion;
 // Snapshot body, repeated "frame count" times, from oldest frame to newest frame.
 // Note that the first frame doesn't have the "parent PC" field.
 //
-//   [ptr] Debug only: RawScript
+//   [ptr] Debug only: JSScript *
 //   [vwu] pc offset
 //   [vwu] # of slots, including nargs
 // [slot*] N slot entries, where N = nargs + nfixed + stackDepth
@@ -133,16 +132,6 @@ SnapshotReader::readFrameHeader()
 {
     JS_ASSERT(moreFrames());
     JS_ASSERT(slotsRead_ == slotCount_);
-
-#ifdef DEBUG
-    union {
-        RawScript script;
-        uint8_t bytes[sizeof(RawScript)];
-    } u;
-    for (size_t i = 0; i < sizeof(RawScript); i++)
-        u.bytes[i] = reader_.readByte();
-    script_ = u.script;
-#endif
 
     pcOffset_ = reader_.readUnsigned();
     slotCount_ = reader_.readUnsigned();
@@ -307,28 +296,18 @@ SnapshotWriter::startSnapshot(uint32_t frameCount, BailoutKind kind, bool resume
 }
 
 void
-SnapshotWriter::startFrame(JSFunction *fun, UnrootedScript script, jsbytecode *pc, uint32_t exprStack)
+SnapshotWriter::startFrame(JSFunction *fun, JSScript *script, jsbytecode *pc, uint32_t exprStack)
 {
-    JS_ASSERT(CountArgSlots(fun) < SNAPSHOT_MAX_NARGS);
-    JS_ASSERT(exprStack < SNAPSHOT_MAX_STACK);
+    JS_ASSERT(CountArgSlots(script, fun) < SNAPSHOT_MAX_NARGS);
 
-    uint32_t formalArgs = CountArgSlots(fun);
+    uint32_t implicit = StartArgSlot(script, fun);
+    uint32_t formalArgs = CountArgSlots(script, fun);
 
     nslots_ = formalArgs + script->nfixed + exprStack;
     slotsWritten_ = 0;
 
-    IonSpew(IonSpew_Snapshots, "Starting frame; formals %u, fixed %u, exprs %u",
-            formalArgs, script->nfixed, exprStack);
-
-#ifdef DEBUG
-    union {
-        RawScript script;
-        uint8_t bytes[sizeof(RawScript)];
-    } u;
-    u.script = script;
-    for (size_t i = 0; i < sizeof(RawScript); i++)
-        writer_.writeByte(u.bytes[i]);
-#endif
+    IonSpew(IonSpew_Snapshots, "Starting frame; implicit %u, formals %u, fixed %u, exprs %u",
+            implicit, formalArgs - implicit, script->nfixed, exprStack);
 
     JS_ASSERT(script->code <= pc && pc <= script->code + script->length);
 

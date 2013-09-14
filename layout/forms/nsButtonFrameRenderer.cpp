@@ -166,9 +166,9 @@ void nsDisplayButtonForeground::Paint(nsDisplayListBuilder* aBuilder,
                                       nsRenderingContext* aCtx)
 {
   nsPresContext *presContext = mFrame->PresContext();
-  const nsStyleDisplay *disp = mFrame->GetStyleDisplay();
+  const nsStyleDisplay *disp = mFrame->StyleDisplay();
   if (!mFrame->IsThemed(disp) ||
-      !presContext->GetTheme()->ThemeDrawsFocusForWidget(presContext, mFrame, disp->mAppearance)) {
+      !presContext->GetTheme()->ThemeDrawsFocusForWidget(disp->mAppearance)) {
     // draw the focus and outline borders
     nsRect r = nsRect(ToReferenceFrame(), mFrame->GetSize());
     mBFR->PaintOutlineAndFocusBorders(presContext, *aCtx, mVisibleRect, r);
@@ -180,18 +180,24 @@ nsButtonFrameRenderer::DisplayButton(nsDisplayListBuilder* aBuilder,
                                      nsDisplayList* aBackground,
                                      nsDisplayList* aForeground)
 {
-  if (mFrame->GetStyleBorder()->mBoxShadow) {
-    nsresult rv = aBackground->AppendNewToTop(new (aBuilder)
-        nsDisplayButtonBoxShadowOuter(aBuilder, this));
-    NS_ENSURE_SUCCESS(rv, rv);
+  if (mFrame->StyleBorder()->mBoxShadow) {
+    aBackground->AppendNewToTop(new (aBuilder)
+      nsDisplayButtonBoxShadowOuter(aBuilder, this));
   }
 
-  nsresult rv = aBackground->AppendNewToTop(new (aBuilder)
-      nsDisplayButtonBorderBackground(aBuilder, this));
-  NS_ENSURE_SUCCESS(rv, rv);
+  // Almost all buttons draw some kind of background so there's not much
+  // point in checking whether we should create this item.
+  aBackground->AppendNewToTop(new (aBuilder)
+    nsDisplayButtonBorderBackground(aBuilder, this));
 
-  return aForeground->AppendNewToTop(new (aBuilder)
+  // Only display focus rings if we actually have them. Since at most one
+  // button would normally display a focus ring, most buttons won't have them.
+  if ((mOuterFocusStyle && mOuterFocusStyle->StyleBorder()->HasBorder()) ||
+      (mInnerFocusStyle && mInnerFocusStyle->StyleBorder()->HasBorder())) {
+    aForeground->AppendNewToTop(new (aBuilder)
       nsDisplayButtonForeground(aBuilder, this));
+  }
+  return NS_OK;
 }
 
 void
@@ -241,7 +247,7 @@ nsButtonFrameRenderer::PaintBorderAndBackground(nsPresContext* aPresContext,
   nsRect buttonRect;
   GetButtonRect(aRect, buttonRect);
 
-  nsStyleContext* context = mFrame->GetStyleContext();
+  nsStyleContext* context = mFrame->StyleContext();
 
   nsCSSRendering::PaintBackground(aPresContext, aRenderingContext, mFrame,
                                   aDirtyRect, buttonRect, aBGFlags);
@@ -281,10 +287,10 @@ nsButtonFrameRenderer::GetButtonOuterFocusBorderAndPadding()
   nsMargin result(0,0,0,0);
 
   if (mOuterFocusStyle) {
-    if (!mOuterFocusStyle->GetStylePadding()->GetPadding(result)) {
+    if (!mOuterFocusStyle->StylePadding()->GetPadding(result)) {
       NS_NOTYETIMPLEMENTED("percentage padding");
     }
-    result += mOuterFocusStyle->GetStyleBorder()->GetComputedBorder();
+    result += mOuterFocusStyle->StyleBorder()->GetComputedBorder();
   }
 
   return result;
@@ -305,7 +311,7 @@ nsButtonFrameRenderer::GetButtonInnerFocusMargin()
   nsMargin innerFocusMargin(0,0,0,0);
 
   if (mInnerFocusStyle) {
-    const nsStyleMargin* margin = mInnerFocusStyle->GetStyleMargin();
+    const nsStyleMargin* margin = mInnerFocusStyle->StyleMargin();
     if (!margin->GetMargin(innerFocusMargin)) {
       NS_NOTYETIMPLEMENTED("percentage margin");
     }
@@ -320,10 +326,10 @@ nsButtonFrameRenderer::GetButtonInnerFocusBorderAndPadding()
   nsMargin result(0,0,0,0);
 
   if (mInnerFocusStyle) {
-    if (!mInnerFocusStyle->GetStylePadding()->GetPadding(result)) {
+    if (!mInnerFocusStyle->StylePadding()->GetPadding(result)) {
       NS_NOTYETIMPLEMENTED("percentage padding");
     }
-    result += mInnerFocusStyle->GetStyleBorder()->GetComputedBorder();
+    result += mInnerFocusStyle->StyleBorder()->GetComputedBorder();
   }
 
   return result;
@@ -343,7 +349,7 @@ void
 nsButtonFrameRenderer::ReResolveStyles(nsPresContext* aPresContext)
 {
   // get all the styles
-  nsStyleContext* context = mFrame->GetStyleContext();
+  nsStyleContext* context = mFrame->StyleContext();
   nsStyleSet *styleSet = aPresContext->StyleSet();
 
   // style for the inner such as a dotted line (Windows)

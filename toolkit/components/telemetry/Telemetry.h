@@ -148,9 +148,10 @@ void RecordSlowSQLStatement(const nsACString &statement,
                             uint32_t delay);
 
 /**
- * Threshold for a statement to be considered slow, in milliseconds
+ * Thresholds for a statement to be considered slow, in milliseconds
  */
-const uint32_t kSlowStatementThreshold = 100;
+const uint32_t kSlowSQLThresholdForMainThread = 50;
+const uint32_t kSlowSQLThresholdForHelperThreads = 100;
 
 class ProcessedStack;
 
@@ -165,6 +166,13 @@ class ProcessedStack;
 void RecordChromeHang(uint32_t duration,
                       ProcessedStack &aStack);
 #endif
+
+/**
+ * Record a failed attempt at locking the user's profile.
+ *
+ * @param aProfileDir The profile directory whose lock attempt failed
+ */
+void WriteFailedProfileLock(nsIFile* aProfileDir);
 
 } // namespace Telemetry
 } // namespace mozilla

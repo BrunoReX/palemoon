@@ -7,7 +7,6 @@
 
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLImageElementBinding.h"
-#include "nsIDOMEventTarget.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
@@ -26,6 +25,7 @@
 #include "nsContentPolicyUtils.h"
 #include "nsIDOMWindow.h"
 #include "nsFocusManager.h"
+#include "mozilla/dom/HTMLFormElement.h"
 
 #include "imgIContainer.h"
 #include "imgILoader.h"
@@ -36,43 +36,19 @@
 
 #include "nsRuleData.h"
 
-#include "nsIJSContextStack.h"
 #include "nsIDOMHTMLMapElement.h"
 #include "nsEventDispatcher.h"
 
 #include "nsLayoutUtils.h"
 
-nsGenericHTMLElement*
-NS_NewHTMLImageElement(already_AddRefed<nsINodeInfo> aNodeInfo,
-                       mozilla::dom::FromParser aFromParser)
-{
-  /*
-   * HTMLImageElement's will be created without a nsINodeInfo passed in
-   * if someone says "var img = new Image();" in JavaScript, in a case like
-   * that we request the nsINodeInfo from the document's nodeinfo list.
-   */
-  nsCOMPtr<nsINodeInfo> nodeInfo(aNodeInfo);
-  if (!nodeInfo) {
-    nsCOMPtr<nsIDocument> doc =
-      do_QueryInterface(nsContentUtils::GetDocumentFromCaller());
-    NS_ENSURE_TRUE(doc, nullptr);
-
-    nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::img, nullptr,
-                                                   kNameSpaceID_XHTML,
-                                                   nsIDOMNode::ELEMENT_NODE);
-    NS_ENSURE_TRUE(nodeInfo, nullptr);
-  }
-
-  return new mozilla::dom::HTMLImageElement(nodeInfo.forget());
-}
-
-DOMCI_NODE_DATA(HTMLImageElement, mozilla::dom::HTMLImageElement)
+NS_IMPL_NS_NEW_HTML_ELEMENT(Image)
 
 namespace mozilla {
 namespace dom {
 
 HTMLImageElement::HTMLImageElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : nsGenericHTMLElement(aNodeInfo)
+  , mForm(nullptr)
 {
   // We start out broken
   AddStatesSilently(NS_EVENT_STATE_BROKEN);
@@ -90,16 +66,15 @@ NS_IMPL_RELEASE_INHERITED(HTMLImageElement, Element)
 
 
 // QueryInterface implementation for HTMLImageElement
-NS_INTERFACE_TABLE_HEAD(HTMLImageElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE5(HTMLImageElement,
-                                   nsIDOMHTMLImageElement,
-                                   nsIJSNativeInitializer,
-                                   nsIImageLoadingContent,
-                                   imgIOnloadBlocker,
-                                   imgINotificationObserver)
-  NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(HTMLImageElement,
-                                               nsGenericHTMLElement)
-NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLImageElement)
+NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(HTMLImageElement)
+  NS_HTML_CONTENT_INTERFACES(nsGenericHTMLElement)
+  NS_INTERFACE_TABLE_INHERITED4(HTMLImageElement,
+                                nsIDOMHTMLImageElement,
+                                nsIImageLoadingContent,
+                                imgIOnloadBlocker,
+                                imgINotificationObserver)
+  NS_INTERFACE_TABLE_TO_MAP_SEGUE
+NS_ELEMENT_INTERFACE_MAP_END
 
 
 NS_IMPL_ELEMENT_CLONE(HTMLImageElement)
@@ -131,6 +106,7 @@ HTMLImageElement::SetItemValueText(const nsAString& aValue)
 
 // crossorigin is not "limited to only known values" per spec, so it's
 // just a string attr purposes of the DOM crossOrigin property.
+// TODO: It is now (bug 880997).
 NS_IMPL_STRING_ATTR(HTMLImageElement, CrossOrigin, crossorigin)
 
 bool
@@ -165,39 +141,41 @@ HTMLImageElement::GetComplete(bool* aComplete)
   return NS_OK;
 }
 
-nsIntPoint
+CSSIntPoint
 HTMLImageElement::GetXY()
 {
-  nsIntPoint point(0, 0);
-
   nsIFrame* frame = GetPrimaryFrame(Flush_Layout);
-
   if (!frame) {
-    return point;
+    return CSSIntPoint(0, 0);
   }
 
   nsIFrame* layer = nsLayoutUtils::GetClosestLayer(frame->GetParent());
-  nsPoint origin(frame->GetOffsetTo(layer));
-  // Convert to pixels using that scale
-  point.x = nsPresContext::AppUnitsToIntCSSPixels(origin.x);
-  point.y = nsPresContext::AppUnitsToIntCSSPixels(origin.y);
+  return CSSIntPoint::FromAppUnitsRounded(frame->GetOffsetTo(layer));
+}
 
-  return point;
+int32_t
+HTMLImageElement::X()
+{
+  return GetXY().x;
+}
+
+int32_t
+HTMLImageElement::Y()
+{
+  return GetXY().y;
 }
 
 NS_IMETHODIMP
 HTMLImageElement::GetX(int32_t* aX)
 {
-  *aX = GetXY().x;
-
+  *aX = X();
   return NS_OK;
 }
 
 NS_IMETHODIMP
 HTMLImageElement::GetY(int32_t* aY)
 {
-  *aY = GetXY().y;
-
+  *aY = Y();
   return NS_OK;
 }
 
@@ -212,7 +190,9 @@ HTMLImageElement::GetHeight(uint32_t* aHeight)
 NS_IMETHODIMP
 HTMLImageElement::SetHeight(uint32_t aHeight)
 {
-  return nsGenericHTMLElement::SetUnsignedIntAttr(nsGkAtoms::height, aHeight);
+  ErrorResult rv;
+  SetHeight(aHeight, rv);
+  return rv.ErrorCode();
 }
 
 NS_IMETHODIMP
@@ -226,7 +206,9 @@ HTMLImageElement::GetWidth(uint32_t* aWidth)
 NS_IMETHODIMP
 HTMLImageElement::SetWidth(uint32_t aWidth)
 {
-  return nsGenericHTMLElement::SetUnsignedIntAttr(nsGkAtoms::width, aWidth);
+  ErrorResult rv;
+  SetWidth(aWidth, rv);
+  return rv.ErrorCode();
 }
 
 bool
@@ -294,6 +276,47 @@ nsMapRuleToAttributesFunc
 HTMLImageElement::GetAttributeMappingFunction() const
 {
   return &MapAttributesIntoRule;
+}
+
+
+nsresult
+HTMLImageElement::BeforeSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
+                                const nsAttrValueOrString* aValue,
+                                bool aNotify)
+{
+
+  if (aNameSpaceID == kNameSpaceID_None && mForm &&
+      (aName == nsGkAtoms::name || aName == nsGkAtoms::id)) {
+    // remove the image from the hashtable as needed
+    nsAutoString tmp;
+    GetAttr(kNameSpaceID_None, aName, tmp);
+
+    if (!tmp.IsEmpty()) {
+      mForm->RemoveImageElementFromTable(this, tmp,
+                                         HTMLFormElement::AttributeUpdated);
+    }
+  }
+
+  return nsGenericHTMLElement::BeforeSetAttr(aNameSpaceID, aName,
+                                             aValue, aNotify);
+}
+
+nsresult
+HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
+                               const nsAttrValue* aValue, bool aNotify)
+{
+  if (aNameSpaceID == kNameSpaceID_None && mForm &&
+      (aName == nsGkAtoms::name || aName == nsGkAtoms::id) &&
+      aValue && !aValue->IsEmptyString()) {
+    // add the image to the hashtable as needed
+    NS_ABORT_IF_FALSE(aValue->Type() == nsAttrValue::eAtom,
+      "Expected atom value for name/id");
+    mForm->AddImageElementToTable(this,
+      nsDependentAtomString(aValue->GetAtomValue()));
+  }
+
+  return nsGenericHTMLElement::AfterSetAttr(aNameSpaceID, aName,
+                                            aValue, aNotify);
 }
 
 
@@ -415,6 +438,10 @@ HTMLImageElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
   nsImageLoadingContent::BindToTree(aDocument, aParent, aBindingParent,
                                     aCompileEventHandlers);
 
+  if (aParent) {
+    UpdateFormOwner();
+  }
+
   if (HasAttr(kNameSpaceID_None, nsGkAtoms::src)) {
     // FIXME: Bug 660963 it would be nice if we could just have
     // ClearBrokenState update our state and do it fast...
@@ -435,8 +462,43 @@ HTMLImageElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
 void
 HTMLImageElement::UnbindFromTree(bool aDeep, bool aNullParent)
 {
+  if (mForm) {
+    if (aNullParent || !FindAncestorForm(mForm)) {
+      ClearForm(true);
+    } else {
+      UnsetFlags(MAYBE_ORPHAN_FORM_ELEMENT);
+    }
+  }
+
   nsImageLoadingContent::UnbindFromTree(aDeep, aNullParent);
   nsGenericHTMLElement::UnbindFromTree(aDeep, aNullParent);
+}
+
+void
+HTMLImageElement::UpdateFormOwner()
+{
+  if (!mForm) {
+    mForm = FindAncestorForm();
+  }
+
+  if (mForm && !HasFlag(ADDED_TO_FORM)) {
+    // Now we need to add ourselves to the form
+    nsAutoString nameVal, idVal;
+    GetAttr(kNameSpaceID_None, nsGkAtoms::name, nameVal);
+    GetAttr(kNameSpaceID_None, nsGkAtoms::id, idVal);
+
+    SetFlags(ADDED_TO_FORM);
+
+    mForm->AddImageElement(this);
+
+    if (!nameVal.IsEmpty()) {
+      mForm->AddImageElementToTable(this, nameVal);
+    }
+
+    if (!idVal.IsEmpty()) {
+      mForm->AddImageElementToTable(this, idVal);
+    }
+  }
 }
 
 void
@@ -460,33 +522,41 @@ HTMLImageElement::IntrinsicState() const
     nsImageLoadingContent::ImageState();
 }
 
-NS_IMETHODIMP
-HTMLImageElement::Initialize(nsISupports* aOwner, JSContext* aContext,
-                             JSObject *aObj, uint32_t argc, jsval *argv)
+// static
+already_AddRefed<HTMLImageElement>
+HTMLImageElement::Image(const GlobalObject& aGlobal,
+                        const Optional<uint32_t>& aWidth,
+                        const Optional<uint32_t>& aHeight, ErrorResult& aError)
 {
-  if (argc <= 0) {
-    // Nothing to do here if we don't get any arguments.
-
-    return NS_OK;
+  nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(aGlobal.Get());
+  nsIDocument* doc;
+  if (!win || !(doc = win->GetExtantDoc())) {
+    aError.Throw(NS_ERROR_FAILURE);
+    return nullptr;
   }
 
-  // The first (optional) argument is the width of the image
-  uint32_t width;
-  JSBool ret = JS_ValueToECMAUint32(aContext, argv[0], &width);
-  NS_ENSURE_TRUE(ret, NS_ERROR_INVALID_ARG);
+  nsCOMPtr<nsINodeInfo> nodeInfo =
+    doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::img, nullptr,
+                                        kNameSpaceID_XHTML,
+                                        nsIDOMNode::ELEMENT_NODE);
 
-  nsresult rv = SetIntAttr(nsGkAtoms::width, static_cast<int32_t>(width));
+  nsRefPtr<HTMLImageElement> img = new HTMLImageElement(nodeInfo.forget());
 
-  if (NS_SUCCEEDED(rv) && (argc > 1)) {
-    // The second (optional) argument is the height of the image
-    uint32_t height;
-    ret = JS_ValueToECMAUint32(aContext, argv[1], &height);
-    NS_ENSURE_TRUE(ret, NS_ERROR_INVALID_ARG);
+  if (aWidth.WasPassed()) {
+    img->SetWidth(aWidth.Value(), aError);
+    if (aError.Failed()) {
+      return nullptr;
+    }
 
-    rv = SetIntAttr(nsGkAtoms::height, static_cast<int32_t>(height));
+    if (aHeight.WasPassed()) {
+      img->SetHeight(aHeight.Value(), aError);
+      if (aError.Failed()) {
+        return nullptr;
+      }
+    }
   }
 
-  return rv;
+  return img.forget();
 }
 
 uint32_t
@@ -565,10 +635,59 @@ HTMLImageElement::GetCORSMode()
 }
 
 JSObject*
-HTMLImageElement::WrapNode(JSContext* aCx, JSObject* aScope,
-                           bool* aTriedToWrap)
+HTMLImageElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aScope)
 {
-  return HTMLImageElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return HTMLImageElementBinding::Wrap(aCx, aScope, this);
+}
+
+#ifdef DEBUG
+nsIDOMHTMLFormElement*
+HTMLImageElement::GetForm() const
+{
+  return mForm;
+}
+#endif
+
+void
+HTMLImageElement::SetForm(nsIDOMHTMLFormElement* aForm)
+{
+  NS_PRECONDITION(aForm, "Don't pass null here");
+  NS_ASSERTION(!mForm,
+               "We don't support switching from one non-null form to another.");
+
+  mForm = static_cast<HTMLFormElement*>(aForm);
+}
+
+void
+HTMLImageElement::ClearForm(bool aRemoveFromForm)
+{
+  NS_ASSERTION((mForm != nullptr) == HasFlag(ADDED_TO_FORM),
+               "Form control should have had flag set correctly");
+
+  if (!mForm) {
+    return;
+  }
+
+  if (aRemoveFromForm) {
+    nsAutoString nameVal, idVal;
+    GetAttr(kNameSpaceID_None, nsGkAtoms::name, nameVal);
+    GetAttr(kNameSpaceID_None, nsGkAtoms::id, idVal);
+
+    mForm->RemoveImageElement(this);
+
+    if (!nameVal.IsEmpty()) {
+      mForm->RemoveImageElementFromTable(this, nameVal,
+                                         HTMLFormElement::ElementRemoved);
+    }
+
+    if (!idVal.IsEmpty()) {
+      mForm->RemoveImageElementFromTable(this, idVal,
+                                         HTMLFormElement::ElementRemoved);
+    }
+  }
+
+  UnsetFlags(ADDED_TO_FORM);
+  mForm = nullptr;
 }
 
 } // namespace dom

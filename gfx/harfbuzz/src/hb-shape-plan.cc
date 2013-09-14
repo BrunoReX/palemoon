@@ -27,6 +27,7 @@
 #include "hb-shape-plan-private.hh"
 #include "hb-shaper-private.hh"
 #include "hb-font-private.hh"
+#include "hb-buffer-private.hh"
 
 #define HB_SHAPER_IMPLEMENT(shaper) \
 	HB_SHAPER_DATA_ENSURE_DECLARE(shaper, face) \
@@ -49,6 +50,7 @@ hb_shape_plan_plan (hb_shape_plan_t    *shape_plan,
 	    HB_SHAPER_DATA (shaper, shape_plan) = \
 	      HB_SHAPER_DATA_CREATE_FUNC (shaper, shape_plan) (shape_plan, user_features, num_user_features); \
 	    shape_plan->shaper_func = _hb_##shaper##_shape; \
+	    shape_plan->shaper_name = #shaper; \
 	    return; \
 	  } \
 	} HB_STMT_END
@@ -120,6 +122,7 @@ hb_shape_plan_get_empty (void)
     HB_SEGMENT_PROPERTIES_DEFAULT, /* props */
 
     NULL, /* shaper_func */
+    NULL, /* shaper_name */
 
     {
 #define HB_SHAPER_IMPLEMENT(shaper) HB_SHAPER_DATA_INVALID,
@@ -176,8 +179,13 @@ hb_shape_plan_execute (hb_shape_plan_t    *shape_plan,
 		       const hb_feature_t *features,
 		       unsigned int        num_features)
 {
-  if (unlikely (shape_plan->face != font->face))
+  if (unlikely (hb_object_is_inert (shape_plan) ||
+		hb_object_is_inert (font) ||
+		hb_object_is_inert (buffer)))
     return false;
+
+  assert (shape_plan->face == font->face);
+  assert (hb_segment_properties_equal (&shape_plan->props, &buffer->props));
 
 #define HB_SHAPER_EXECUTE(shaper) \
 	HB_STMT_START { \
@@ -297,4 +305,10 @@ retry:
   hb_face_destroy (face);
 
   return hb_shape_plan_reference (shape_plan);
+}
+
+const char *
+hb_shape_plan_get_shaper (hb_shape_plan_t *shape_plan)
+{
+  return shape_plan->shaper_name;
 }

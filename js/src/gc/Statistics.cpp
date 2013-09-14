@@ -1,29 +1,27 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=78:
- *
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "gc/Statistics.h"
+
 #include <stdio.h>
 #include <stdarg.h>
 
+#include "mozilla/PodOperations.h"
+
 #include "jscntxt.h"
-#include "jscompartment.h"
-#include "jscrashformat.h"
 #include "jscrashreport.h"
 #include "jsprf.h"
-#include "jsprobes.h"
 #include "jsutil.h"
 #include "prmjtime.h"
-
 #include "gc/Memory.h"
-#include "gc/Statistics.h"
-
-#include "gc/Barrier-inl.h"
 
 using namespace js;
 using namespace js::gcstats;
+
+using mozilla::PodArrayZero;
 
 /* Except for the first and last, slices of less than 42ms are not reported. */
 static const int64_t SLICE_MIN_REPORT_TIME = 42 * PRMJ_USEC_PER_MSEC;
@@ -241,14 +239,14 @@ class gcstats::StatisticsSerializer
  * larger-numbered reasons to pile up in the last telemetry bucket, or switch
  * to GC_REASON_3 and bump the max value.
  */
-JS_STATIC_ASSERT(gcreason::NUM_TELEMETRY_REASONS >= gcreason::NUM_REASONS);
+JS_STATIC_ASSERT(JS::gcreason::NUM_TELEMETRY_REASONS >= JS::gcreason::NUM_REASONS);
 
 static const char *
-ExplainReason(gcreason::Reason reason)
+ExplainReason(JS::gcreason::Reason reason)
 {
     switch (reason) {
 #define SWITCH_REASON(name)                     \
-        case gcreason::name:                    \
+        case JS::gcreason::name:                    \
           return #name;
         GCREASONS(SWITCH_REASON)
 
@@ -274,7 +272,7 @@ struct PhaseInfo
 
 static const Phase PHASE_NO_PARENT = PHASE_LIMIT;
 
-static PhaseInfo phases[] = {
+static const PhaseInfo phases[] = {
     { PHASE_GC_BEGIN, "Begin Callback", PHASE_NO_PARENT },
     { PHASE_WAIT_BACKGROUND_THREAD, "Wait Background Thread", PHASE_NO_PARENT },
     { PHASE_MARK_DISCARD_CODE, "Mark Discard Code", PHASE_NO_PARENT },
@@ -367,6 +365,7 @@ Statistics::formatData(StatisticsSerializer &ss, uint64_t timestamp)
     ss.appendDecimal("Total Time", "ms", t(total));
     ss.appendNumber("Compartments Collected", "%d", "", collectedCount);
     ss.appendNumber("Total Compartments", "%d", "", compartmentCount);
+    ss.appendNumber("Total Zones", "%d", "", zoneCount);
     ss.appendNumber("MMU (20ms)", "%d", "%", int(mmu20 * 100));
     ss.appendNumber("MMU (50ms)", "%d", "%", int(mmu50 * 100));
     ss.appendDecimal("SCC Sweep Total", "ms", t(sccTotal));
@@ -447,6 +446,7 @@ Statistics::Statistics(JSRuntime *rt)
     fullFormat(false),
     gcDepth(0),
     collectedCount(0),
+    zoneCount(0),
     compartmentCount(0),
     nonincrementalReason(NULL),
     preBytes(0),
@@ -527,14 +527,11 @@ Statistics::beginGC()
     nonincrementalReason = NULL;
 
     preBytes = runtime->gcBytes;
-
-    Probes::GCStart();
 }
 
 void
 Statistics::endGC()
 {
-    Probes::GCEnd();
     crash::SnapshotGCStack();
 
     for (int i = 0; i < PHASE_LIMIT; i++)
@@ -547,7 +544,7 @@ Statistics::endGC()
         int64_t sccTotal, sccLongest;
         sccDurations(&sccTotal, &sccLongest);
 
-        (*cb)(JS_TELEMETRY_GC_IS_COMPARTMENTAL, collectedCount == compartmentCount ? 0 : 1);
+        (*cb)(JS_TELEMETRY_GC_IS_COMPARTMENTAL, collectedCount == zoneCount ? 0 : 1);
         (*cb)(JS_TELEMETRY_GC_MS, t(total));
         (*cb)(JS_TELEMETRY_GC_MAX_PAUSE_MS, t(longest));
         (*cb)(JS_TELEMETRY_GC_MARK_MS, t(phaseTimes[PHASE_MARK]));
@@ -568,9 +565,11 @@ Statistics::endGC()
 }
 
 void
-Statistics::beginSlice(int collectedCount, int compartmentCount, gcreason::Reason reason)
+Statistics::beginSlice(int collectedCount, int zoneCount, int compartmentCount,
+                       JS::gcreason::Reason reason)
 {
     this->collectedCount = collectedCount;
+    this->zoneCount = zoneCount;
     this->compartmentCount = compartmentCount;
 
     bool first = runtime->gcIncrementalState == gc::NO_INCREMENTAL;
@@ -585,9 +584,10 @@ Statistics::beginSlice(int collectedCount, int compartmentCount, gcreason::Reaso
 
     // Slice callbacks should only fire for the outermost level
     if (++gcDepth == 1) {
-        bool wasFullGC = collectedCount == compartmentCount;
-        if (GCSliceCallback cb = runtime->gcSliceCallback)
-            (*cb)(runtime, first ? GC_CYCLE_BEGIN : GC_SLICE_BEGIN, GCDescription(!wasFullGC));
+        bool wasFullGC = collectedCount == zoneCount;
+        if (JS::GCSliceCallback cb = runtime->gcSliceCallback)
+            (*cb)(runtime, first ? JS::GC_CYCLE_BEGIN : JS::GC_SLICE_BEGIN,
+                  JS::GCDescription(!wasFullGC));
     }
 }
 
@@ -608,9 +608,10 @@ Statistics::endSlice()
 
     // Slice callbacks should only fire for the outermost level
     if (--gcDepth == 0) {
-        bool wasFullGC = collectedCount == compartmentCount;
-        if (GCSliceCallback cb = runtime->gcSliceCallback)
-            (*cb)(runtime, last ? GC_CYCLE_END : GC_SLICE_END, GCDescription(!wasFullGC));
+        bool wasFullGC = collectedCount == zoneCount;
+        if (JS::GCSliceCallback cb = runtime->gcSliceCallback)
+            (*cb)(runtime, last ? JS::GC_CYCLE_END : JS::GC_SLICE_END,
+                  JS::GCDescription(!wasFullGC));
     }
 
     /* Do this after the slice callback since it uses these values. */
@@ -634,11 +635,6 @@ Statistics::beginPhase(Phase phase)
 #endif
 
     phaseStartTimes[phase] = PRMJ_Now();
-
-    if (phase == gcstats::PHASE_MARK)
-        Probes::GCStartMarkPhase();
-    else if (phase == gcstats::PHASE_SWEEP)
-        Probes::GCStartSweepPhase();
 }
 
 void
@@ -650,11 +646,6 @@ Statistics::endPhase(Phase phase)
     slices.back().phaseTimes[phase] += t;
     phaseTimes[phase] += t;
     phaseStartTimes[phase] = 0;
-
-    if (phase == gcstats::PHASE_MARK)
-        Probes::GCEndMarkPhase();
-    else if (phase == gcstats::PHASE_SWEEP)
-        Probes::GCEndSweepPhase();
 }
 
 int64_t

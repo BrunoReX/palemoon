@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_cpu_registers_h__
-#define jsion_cpu_registers_h__
+#ifndef ion_Registers_h
+#define ion_Registers_h
 
 #include "jsutil.h"
 #include "IonTypes.h"
@@ -114,10 +113,12 @@ class MachineState
     double read(FloatRegister reg) const {
         return *fpregs_[reg.code()];
     }
+    void write(Register reg, uintptr_t value) const {
+        *regs_[reg.code()] = value;
+    }
 };
 
 } // namespace ion
 } // namespace js
 
-#endif // jsion_cpu_registers_h__
-
+#endif /* ion_Registers_h */

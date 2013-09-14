@@ -10,67 +10,66 @@ const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 this.EXPORTED_SYMBOLS = ["DebuggerPanel"];
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/commonjs/promise/core.js");
-Cu.import("resource:///modules/devtools/EventEmitter.jsm");
+Cu.import("resource:///modules/devtools/shared/event-emitter.js");
 
-XPCOMUtils.defineLazyModuleGetter(this, "DebuggerServer",
-  "resource://gre/modules/devtools/dbg-server.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "Promise",
+  "resource://gre/modules/commonjs/sdk/core/promise.js");
 
-function DebuggerPanel(iframeWindow, toolbox) {
+this.DebuggerPanel = function DebuggerPanel(iframeWindow, toolbox) {
   this.panelWin = iframeWindow;
   this._toolbox = toolbox;
 
-  this._controller = this.panelWin.DebuggerController;
   this._view = this.panelWin.DebuggerView;
+  this._controller = this.panelWin.DebuggerController;
   this._controller._target = this.target;
   this._bkp = this._controller.Breakpoints;
+
+  this.highlightWhenPaused = this.highlightWhenPaused.bind(this);
+  this.unhighlightWhenResumed = this.unhighlightWhenResumed.bind(this);
 
   EventEmitter.decorate(this);
 }
 
 DebuggerPanel.prototype = {
   /**
-   * open is effectively an asynchronous constructor
+   * Open is effectively an asynchronous constructor.
+   *
+   * @return object
+   *         A Promise that is resolved when the Debugger completes opening.
    */
   open: function DebuggerPanel_open() {
-    let deferred = Promise.defer();
+    let promise;
 
-    this._ensureOnlyOneRunningDebugger();
-
+    // Local debugging needs to make the target remote.
     if (!this.target.isRemote) {
-      if (!DebuggerServer.initialized) {
-        DebuggerServer.init();
-        DebuggerServer.addBrowserActors();
-      }
+      promise = this.target.makeRemote();
+    } else {
+      promise = Promise.resolve(this.target);
     }
 
-    let onDebuggerLoaded = function () {
-      this.panelWin.removeEventListener("Debugger:Loaded",
-                                        onDebuggerLoaded, true);
-      this._isReady = true;
-      this.emit("ready");
-      deferred.resolve(this);
-    }.bind(this);
-
-    let onDebuggerConnected = function () {
-      this.panelWin.removeEventListener("Debugger:Connected",
-                                        onDebuggerConnected, true);
-      this.emit("connected");
-    }.bind(this);
-
-    this.panelWin.addEventListener("Debugger:Loaded", onDebuggerLoaded, true);
-    this.panelWin.addEventListener("Debugger:Connected",
-                                   onDebuggerConnected, true);
-
-    return deferred.promise;
+    return promise
+      .then(() => this._controller.startupDebugger())
+      .then(() => this._controller.connect())
+      .then(() => {
+        this.target.on("thread-paused", this.highlightWhenPaused);
+        this.target.on("thread-resumed", this.unhighlightWhenResumed);
+        this.isReady = true;
+        this.emit("ready");
+        return this;
+      })
+      .then(null, function onError(aReason) {
+        Cu.reportError("DebuggerPanel open failed. " +
+                       reason.error + ": " + reason.message);
+      });
   },
 
   // DevToolPanel API
   get target() this._toolbox.target,
 
-  get isReady() this._isReady,
-
   destroy: function() {
+    this.target.off("thread-paused", this.highlightWhenPaused);
+    this.target.off("thread-resumed", this.unhighlightWhenResumed);
+    this.emit("destroyed");
     return Promise.resolve(null);
   },
 
@@ -92,9 +91,11 @@ DebuggerPanel.prototype = {
     return this._bkp.store;
   },
 
-  // Private
-
-  _ensureOnlyOneRunningDebugger: function() {
-    // FIXME
+  highlightWhenPaused: function() {
+    this._toolbox.highlightTool("jsdebugger");
   },
+
+  unhighlightWhenResumed: function() {
+    this._toolbox.unhighlightTool("jsdebugger");
+  }
 };

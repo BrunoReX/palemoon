@@ -1,12 +1,13 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "UnreachableCodeElimination.h"
 #include "IonAnalysis.h"
+#include "AliasAnalysis.h"
+#include "ValueNumbering.h"
 
 using namespace js;
 using namespace ion;
@@ -35,87 +36,183 @@ UnreachableCodeElimination::analyze()
     // Pass 1: Identify unreachable blocks (if any).
     if (!prunePointlessBranchesAndMarkReachableBlocks())
         return false;
+
+    return removeUnmarkedBlocksAndCleanup();
+}
+
+bool
+UnreachableCodeElimination::removeUnmarkedBlocks(size_t marked)
+{
+    marked_ = marked;
+    return removeUnmarkedBlocksAndCleanup();
+}
+
+bool
+UnreachableCodeElimination::removeUnmarkedBlocksAndCleanup()
+{
+    // Everything is reachable, no work required.
+    JS_ASSERT(marked_ <= graph_.numBlocks());
     if (marked_ == graph_.numBlocks()) {
-        // Everything is reachable.
         graph_.unmarkBlocks();
         return true;
     }
 
-    // Pass 2: Remove unmarked blocks.
+    // Pass 2: Remove unmarked blocks (see analyze() above).
     if (!removeUnmarkedBlocksAndClearDominators())
         return false;
     graph_.unmarkBlocks();
+
+    AssertGraphCoherency(graph_);
+
+    IonSpewPass("UCE-mid-point");
 
     // Pass 3: Recompute dominators and tweak phis.
     BuildDominatorTree(graph_);
     if (redundantPhis_ && !EliminatePhis(mir_, graph_, ConservativeObservability))
         return false;
 
+    // Pass 4: Rerun alias analysis
+    if (rerunAliasAnalysis_) {
+        AliasAnalysis analysis(mir_, graph_);
+        if (!analysis.analyze())
+            return false;
+    }
+
+    // Pass 5: It's important for optimizations to re-run GVN (and in
+    // turn alias analysis) after UCE if we eliminated branches.
+    if (rerunAliasAnalysis_ && js_IonOptions.gvn) {
+        ValueNumberer gvn(mir_, graph_, js_IonOptions.gvnIsOptimistic);
+        if (!gvn.clear() || !gvn.analyze())
+            return false;
+        IonSpewPass("GVN-after-UCE");
+        AssertExtendedGraphCoherency(graph_);
+
+        if (mir_->shouldCancel("GVN-after-UCE"))
+            return false;
+    }
+
     return true;
+}
+
+bool
+UnreachableCodeElimination::enqueue(MBasicBlock *block, BlockList &list)
+{
+    if (block->isMarked())
+        return true;
+
+    block->mark();
+    marked_++;
+    return list.append(block);
+}
+
+MBasicBlock *
+UnreachableCodeElimination::optimizableSuccessor(MBasicBlock *block)
+{
+    // If the last instruction in `block` is a test instruction of a
+    // constant value, returns the successor that the branch will
+    // always branch to at runtime. Otherwise, returns NULL.
+
+    MControlInstruction *ins = block->lastIns();
+    if (!ins->isTest())
+        return NULL;
+
+    MTest *testIns = ins->toTest();
+    MDefinition *v = testIns->getOperand(0);
+    if (!v->isConstant())
+        return NULL;
+
+    const Value &val = v->toConstant()->value();
+    BranchDirection bdir = ToBoolean(val) ? TRUE_BRANCH : FALSE_BRANCH;
+    return testIns->branchSuccessor(bdir);
 }
 
 bool
 UnreachableCodeElimination::prunePointlessBranchesAndMarkReachableBlocks()
 {
-    Vector<MBasicBlock *, 16, SystemAllocPolicy> worklist;
+    BlockList worklist, optimizableBlocks;
 
-    // Seed with the two entry points.
-    MBasicBlock *entries[] = { graph_.entryBlock(), graph_.osrBlock() };
-    for (size_t i = 0; i < sizeof(entries) / sizeof(entries[0]); i++) {
-        if (entries[i]) {
-            entries[i]->mark();
-            marked_++;
-            if (!worklist.append(entries[i]))
-                return false;
-        }
-    }
-
-    // Process everything reachable from there.
+    // Process everything reachable from the start block, ignoring any
+    // OSR block.
+    if (!enqueue(graph_.entryBlock(), worklist))
+        return false;
     while (!worklist.empty()) {
         if (mir_->shouldCancel("Eliminate Unreachable Code"))
             return false;
 
         MBasicBlock *block = worklist.popCopy();
-        MControlInstruction *ins = block->lastIns();
 
-        // Rewrite test false or test true to goto.
-        if (ins->isTest()) {
-            MTest *testIns = ins->toTest();
-            MDefinition *v = testIns->getOperand(0);
-            if (v->isConstant()) {
-                const Value &val = v->toConstant()->value();
-                BranchDirection bdir = ToBoolean(val) ? TRUE_BRANCH : FALSE_BRANCH;
-                MBasicBlock *succ = testIns->branchSuccessor(bdir);
-                MGoto *gotoIns = MGoto::New(succ);
-                block->discardLastIns();
-                block->end(gotoIns);
-                MBasicBlock *successorWithPhis = block->successorWithPhis();
-                if (successorWithPhis && successorWithPhis != succ)
-                    block->setSuccessorWithPhis(NULL, 0);
-            }
-        }
-
-        for (size_t i = 0; i < block->numSuccessors(); i++) {
-            MBasicBlock *succ = block->getSuccessor(i);
-            if (!succ->isMarked()) {
-                succ->mark();
-                marked_++;
-                if (!worklist.append(succ))
+        // If this block is a test on a constant operand, only enqueue
+        // the relevant successor. Also, remember the block for later.
+        if (MBasicBlock *succ = optimizableSuccessor(block)) {
+            if (!optimizableBlocks.append(block))
+                return false;
+            if (!enqueue(succ, worklist))
+                return false;
+        } else {
+            // Otherwise just visit all successors.
+            for (size_t i = 0; i < block->numSuccessors(); i++) {
+                MBasicBlock *succ = block->getSuccessor(i);
+                if (!enqueue(succ, worklist))
                     return false;
             }
         }
     }
+
+    // Now, if there is an OSR block, check that all of its successors
+    // were reachable (bug 880377). If not, we are in danger of
+    // creating a CFG with two disjoint parts, so simply mark all
+    // blocks as reachable. This generally occurs when the TI info for
+    // stack types is incorrect or incomplete, due to operations that
+    // have not yet executed in baseline.
+    if (graph_.osrBlock()) {
+        MBasicBlock *osrBlock = graph_.osrBlock();
+        JS_ASSERT(!osrBlock->isMarked());
+        if (!enqueue(osrBlock, worklist))
+            return false;
+        for (size_t i = 0; i < osrBlock->numSuccessors(); i++) {
+            if (!osrBlock->getSuccessor(i)->isMarked()) {
+                // OSR block has an otherwise unreachable successor, abort.
+                for (MBasicBlockIterator iter(graph_.begin()); iter != graph_.end(); iter++)
+                    iter->mark();
+                marked_ = graph_.numBlocks();
+                return true;
+            }
+        }
+    }
+
+    // Now that we know we will not abort due to OSR, go back and
+    // transform any tests on constant operands into gotos.
+    for (uint32_t i = 0; i < optimizableBlocks.length(); i++) {
+        MBasicBlock *block = optimizableBlocks[i];
+        MBasicBlock *succ = optimizableSuccessor(block);
+        JS_ASSERT(succ);
+
+        MGoto *gotoIns = MGoto::New(succ);
+        block->discardLastIns();
+        block->end(gotoIns);
+        MBasicBlock *successorWithPhis = block->successorWithPhis();
+        if (successorWithPhis && successorWithPhis != succ)
+            block->setSuccessorWithPhis(NULL, 0);
+    }
+
     return true;
 }
 
 void
-UnreachableCodeElimination::removeUsesFromUnmarkedBlocks(MDefinition *instr)
+UnreachableCodeElimination::checkDependencyAndRemoveUsesFromUnmarkedBlocks(MDefinition *instr)
 {
+    // When the instruction depends on removed block,
+    // alias analysis needs to get rerun to have the right dependency.
+    if (instr->dependency() && !instr->dependency()->block()->isMarked())
+        rerunAliasAnalysis_ = true;
+
     for (MUseIterator iter(instr->usesBegin()); iter != instr->usesEnd(); ) {
-        if (!iter->node()->block()->isMarked())
+        if (!iter->consumer()->block()->isMarked()) {
+            instr->setUseRemovedUnchecked();
             iter = instr->removeUse(iter);
-        else
+        } else {
             iter++;
+        }
     }
 }
 
@@ -142,9 +239,9 @@ UnreachableCodeElimination::removeUnmarkedBlocksAndClearDominators()
         if (block->isMarked()) {
             block->setId(--id);
             for (MPhiIterator iter(block->phisBegin()); iter != block->phisEnd(); iter++)
-                removeUsesFromUnmarkedBlocks(*iter);
+                checkDependencyAndRemoveUsesFromUnmarkedBlocks(*iter);
             for (MInstructionIterator iter(block->begin()); iter != block->end(); iter++)
-                removeUsesFromUnmarkedBlocks(*iter);
+                checkDependencyAndRemoveUsesFromUnmarkedBlocks(*iter);
         } else {
             if (block->numPredecessors() > 1) {
                 // If this block had phis, then any reachable
@@ -186,6 +283,22 @@ UnreachableCodeElimination::removeUnmarkedBlocksAndClearDominators()
                                 break;
                             }
                         }
+                    }
+                }
+            }
+
+            // When we remove a call, we can't leave the corresponding MPassArg
+            // in the graph. Since lowering will fail. Replace it with the
+            // argument for the exceptional case when it is kept alive in a
+            // ResumePoint. DCE will remove the unused MPassArg instruction.
+            for (MInstructionIterator iter(block->begin()); iter != block->end(); iter++) {
+                if (iter->isCall()) {
+                    MCall *call = iter->toCall();
+                    for (size_t i = 0; i < call->numStackArgs(); i++) {
+                        JS_ASSERT(call->getArg(i)->isPassArg());
+                        JS_ASSERT(call->getArg(i)->defUseCount() == 1);
+                        MPassArg *arg = call->getArg(i)->toPassArg();
+                        arg->replaceAllUsesWith(arg->getArgument());
                     }
                 }
             }

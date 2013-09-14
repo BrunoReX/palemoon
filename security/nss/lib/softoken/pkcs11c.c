@@ -53,8 +53,8 @@
 #include "pkcs11f.h"
 
 typedef struct {
-    uint8 client_version[2];
-    uint8 random[46];
+    PRUint8 client_version[2];
+    PRUint8 random[46];
 } SSL3RSAPreMasterSecret;
 
 static void sftk_Null(void *data, PRBool freeit)
@@ -2247,7 +2247,10 @@ finish_rsa:
 					*(CK_ULONG *)pMechanism->pParameter);
 	break;
     case CKM_TLS_PRF_GENERAL:
-	crv = sftk_TLSPRFInit(context, key, key_type);
+	crv = sftk_TLSPRFInit(context, key, key_type, HASH_AlgNULL);
+	break;
+    case CKM_NSS_TLS_PRF_GENERAL_SHA256:
+	crv = sftk_TLSPRFInit(context, key, key_type, HASH_AlgSHA256);
 	break;
 
     case CKM_NSS_HMAC_CONSTANT_TIME: {
@@ -2803,7 +2806,10 @@ finish_rsa:
 					*(CK_ULONG *)pMechanism->pParameter);
 	break;
     case CKM_TLS_PRF_GENERAL:
-	crv = sftk_TLSPRFInit(context, key, key_type);
+	crv = sftk_TLSPRFInit(context, key, key_type, HASH_AlgNULL);
+	break;
+    case CKM_NSS_TLS_PRF_GENERAL_SHA256:
+	crv = sftk_TLSPRFInit(context, key, key_type, HASH_AlgSHA256);
 	break;
 
     default:
@@ -3281,7 +3287,7 @@ nsc_SetupHMACKeyGen(CK_MECHANISM_PTR pMechanism, NSSPKCS5PBEParameter **pbe)
     SECItem  salt;
     CK_PBE_PARAMS *pbe_params = NULL;
     NSSPKCS5PBEParameter *params;
-    PRArenaPool *arena = NULL;
+    PLArenaPool *arena = NULL;
     SECStatus rv;
 
     *pbe = NULL;
@@ -5331,11 +5337,11 @@ sftk_MapKeySize(CK_KEY_TYPE keyType)
  */
 static CK_RV sftk_compute_ANSI_X9_63_kdf(CK_BYTE **key, CK_ULONG key_len, SECItem *SharedSecret,
 		CK_BYTE_PTR SharedInfo, CK_ULONG SharedInfoLen,
-		SECStatus Hash(unsigned char *, const unsigned char *, uint32),
+		SECStatus Hash(unsigned char *, const unsigned char *, PRUint32),
 		CK_ULONG HashLen)
 {
     unsigned char *buffer = NULL, *output_buffer = NULL;
-    uint32 buffer_len, max_counter, i;
+    PRUint32 buffer_len, max_counter, i;
     SECStatus rv;
 
     /* Check that key_len isn't too long.  The maximum key length could be
@@ -5471,6 +5477,7 @@ CK_RV NSC_DeriveKey( CK_SESSION_HANDLE hSession,
     CK_OBJECT_CLASS classType	= CKO_SECRET_KEY;
     CK_KEY_DERIVATION_STRING_DATA *stringPtr;
     PRBool          isTLS = PR_FALSE;
+    PRBool          isSHA256 = PR_FALSE;
     PRBool          isDH = PR_FALSE;
     SECStatus       rv;
     int             i;
@@ -5570,6 +5577,10 @@ CK_RV NSC_DeriveKey( CK_SESSION_HANDLE hSession,
     /*
      * generate the master secret 
      */
+    case CKM_NSS_TLS_MASTER_KEY_DERIVE_SHA256:
+    case CKM_NSS_TLS_MASTER_KEY_DERIVE_DH_SHA256:
+	isSHA256 = PR_TRUE;
+	/* fall thru */
     case CKM_TLS_MASTER_KEY_DERIVE:
     case CKM_TLS_MASTER_KEY_DERIVE_DH:
 	isTLS = PR_TRUE;
@@ -5582,7 +5593,8 @@ CK_RV NSC_DeriveKey( CK_SESSION_HANDLE hSession,
 	unsigned char                     crsrdata[SSL3_RANDOM_LENGTH * 2];
 
         if ((pMechanism->mechanism == CKM_SSL3_MASTER_KEY_DERIVE_DH) ||
-            (pMechanism->mechanism == CKM_TLS_MASTER_KEY_DERIVE_DH))
+            (pMechanism->mechanism == CKM_TLS_MASTER_KEY_DERIVE_DH) ||
+            (pMechanism->mechanism == CKM_NSS_TLS_MASTER_KEY_DERIVE_DH_SHA256))
 		isDH = PR_TRUE;
 
 	/* first do the consistancy checks */
@@ -5650,7 +5662,12 @@ CK_RV NSC_DeriveKey( CK_SESSION_HANDLE hSession,
  	    pms.data    = (unsigned char*)att->attrib.pValue;
 	    pms.len     =                 att->attrib.ulValueLen;
 
-	    status = TLS_PRF(&pms, "master secret", &crsr, &master, isFIPS);
+	    if (isSHA256) {
+		status = TLS_P_hash(HASH_AlgSHA256, &pms, "master secret",
+				    &crsr, &master, isFIPS);
+	    } else {
+		status = TLS_PRF(&pms, "master secret", &crsr, &master, isFIPS);
+	    }
 	    if (status != SECSuccess) {
 	    	crv = CKR_FUNCTION_FAILED;
 		break;
@@ -5709,6 +5726,9 @@ CK_RV NSC_DeriveKey( CK_SESSION_HANDLE hSession,
 	break;
       }
 
+    case CKM_NSS_TLS_KEY_AND_MAC_DERIVE_SHA256:
+	isSHA256 = PR_TRUE;
+	/* fall thru */
     case CKM_TLS_KEY_AND_MAC_DERIVE:
 	isTLS = PR_TRUE;
 	/* fall thru */
@@ -5800,8 +5820,13 @@ CK_RV NSC_DeriveKey( CK_SESSION_HANDLE hSession,
 	    master.data = (unsigned char*)att->attrib.pValue;
 	    master.len  =                 att->attrib.ulValueLen;
 
-	    status = TLS_PRF(&master, "key expansion", &srcr, &keyblk,
-			      isFIPS);
+	    if (isSHA256) {
+		status = TLS_P_hash(HASH_AlgSHA256, &master, "key expansion",
+				    &srcr, &keyblk, isFIPS);
+	    } else {
+		status = TLS_PRF(&master, "key expansion", &srcr, &keyblk,
+				 isFIPS);
+	    }
 	    if (status != SECSuccess) {
 		goto key_and_mac_derive_fail;
 	    }
@@ -5958,7 +5983,7 @@ CK_RV NSC_DeriveKey( CK_SESSION_HANDLE hSession,
 	    } else {
 
 		/*
-		** Generate TLS Export write keys and IVs.
+		** Generate TLS 1.0 Export write keys and IVs.
 		*/
 		SECStatus     status;
 		SECItem       secret = { siBuffer, NULL, 0 };

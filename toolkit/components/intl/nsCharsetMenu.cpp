@@ -431,7 +431,6 @@ NS_IMETHODIMP nsCharsetMenuObserver::Observe(nsISupports *aSubject, const char *
 //----------------------------------------------------------------------------
 // Class nsCharsetMenu [implementation]
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsCharsetMenu)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_0(nsCharsetMenu)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsCharsetMenu)
   cb.NoteXPCOMChild(nsCharsetMenu::mInner);
@@ -1884,7 +1883,7 @@ NS_IMETHODIMP nsCharsetMenu::GetAllCmds(
                              nsIRDFResource* source,
                              nsISimpleEnumerator/*<nsIRDFResource>*/** commands)
 {
-  NS_NOTYETIMPLEMENTED("write me!");
+  NS_NOTYETIMPLEMENTED("nsCharsetMenu::GetAllCmds");
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -1894,7 +1893,7 @@ NS_IMETHODIMP nsCharsetMenu::IsCommandEnabled(
                              nsISupportsArray/*<nsIRDFResource>*/* aArguments,
                              bool* aResult)
 {
-  NS_NOTYETIMPLEMENTED("write me!");
+  NS_NOTYETIMPLEMENTED("nsCharsetMenu::IsCommandEnabled");
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -1902,7 +1901,7 @@ NS_IMETHODIMP nsCharsetMenu::DoCommand(nsISupportsArray* aSources,
                                        nsIRDFResource*   aCommand,
                                        nsISupportsArray* aArguments)
 {
-  NS_NOTYETIMPLEMENTED("write me!");
+  NS_NOTYETIMPLEMENTED("nsCharsetMenu::DoCommand");
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

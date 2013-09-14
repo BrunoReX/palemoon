@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef pcscriptcache_h__
-#define pcscriptcache_h__
+#ifndef ion_PcScriptCache_h
+#define ion_PcScriptCache_h
 
 // Defines a fixed-size hash table solely for the purpose of caching ion::GetPcScript().
 // One cache is attached to each JSRuntime; it functions as if cleared on GC.
@@ -20,7 +19,7 @@ struct PcScriptCacheEntry
 {
     uint8_t *returnAddress; // Key into the hash table.
     jsbytecode *pc;         // Cached PC.
-    RawScript script;       // Cached script.
+    JSScript *script;       // Cached script.
 };
 
 struct PcScriptCache
@@ -44,9 +43,9 @@ struct PcScriptCache
     // Get a value from the cache. May perform lazy allocation.
     // Defined in PcScriptCache-inl.h.
     bool get(JSRuntime *rt, uint32_t hash, uint8_t *addr,
-             MutableHandleScript scriptRes, jsbytecode **pcRes);
+             JSScript **scriptRes, jsbytecode **pcRes);
 
-    void add(uint32_t hash, uint8_t *addr, jsbytecode *pc, UnrootedScript script) {
+    void add(uint32_t hash, uint8_t *addr, jsbytecode *pc, JSScript *script) {
         entries[hash].returnAddress = addr;
         entries[hash].pc = pc;
         entries[hash].script = script;
@@ -61,4 +60,4 @@ struct PcScriptCache
 } // namespace ion
 } // namespace js
 
-#endif // pcscriptcache_h__
+#endif /* ion_PcScriptCache_h */

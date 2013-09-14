@@ -14,11 +14,11 @@
 
 #include "mozilla/dom/Element.h"
 
-#include "nsDOMAttribute.h"
+#include "mozilla/dom/Attr.h"
 #include "nsDOMAttributeMap.h"
 #include "nsIAtom.h"
 #include "nsINodeInfo.h"
-#include "nsIDocument.h"
+#include "nsIDocumentInlines.h"
 #include "nsIDOMNodeList.h"
 #include "nsIDOMDocument.h"
 #include "nsIContentIterator.h"
@@ -73,7 +73,6 @@
 #include "nsLayoutUtils.h"
 #include "nsGkAtoms.h"
 #include "nsContentUtils.h"
-#include "nsIJSContextStack.h"
 
 #include "nsIDOMEventListener.h"
 #include "nsIWebNavigation.h"
@@ -89,7 +88,6 @@
 #include "nsGenericHTMLElement.h"
 #include "nsIEditor.h"
 #include "nsIEditorIMESupport.h"
-#include "nsIEditorDocShell.h"
 #include "nsEventDispatcher.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsIControllers.h"
@@ -102,6 +100,7 @@
 #include "nsRuleProcessorData.h"
 #include "nsAsyncDOMEvent.h"
 #include "nsTextNode.h"
+#include "mozilla/dom/HTMLTemplateElement.h"
 
 #ifdef MOZ_XUL
 #include "nsIXULDocument.h"
@@ -117,7 +116,6 @@
 #include "nsDOMMutationObserver.h"
 #include "nsSVGFeatures.h"
 #include "nsWrapperCacheInlines.h"
-#include "nsCycleCollector.h"
 #include "xpcpublic.h"
 #include "nsIScriptError.h"
 #include "nsLayoutStatics.h"
@@ -129,6 +127,7 @@
 #include "nsXBLService.h"
 #include "nsContentCID.h"
 #include "nsITextControlElement.h"
+#include "mozilla/dom/DocumentFragment.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -334,16 +333,15 @@ Element::GetBindingURL(nsIDocument *aDocument, css::URLValue **aResult)
                                                                   nullptr);
   NS_ENSURE_TRUE(sc, false);
 
-  *aResult = sc->GetStyleDisplay()->mBinding;
+  *aResult = sc->StyleDisplay()->mBinding;
 
   return true;
 }
 
 JSObject*
-Element::WrapObject(JSContext *aCx, JSObject *aScope,
-                    bool *aTriedToWrap)
+Element::WrapObject(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  JSObject* obj = nsINode::WrapObject(aCx, aScope, aTriedToWrap);
+  JSObject* obj = nsINode::WrapObject(aCx, aScope);
   if (!obj) {
     return nullptr;
   }
@@ -404,8 +402,7 @@ Element::WrapObject(JSContext *aCx, JSObject *aScope,
   }
 
   nsRefPtr<nsXBLBinding> binding;
-  xblService->LoadBindings(this, uri, principal, false, getter_AddRefs(binding),
-                           &dummy);
+  xblService->LoadBindings(this, uri, principal, getter_AddRefs(binding), &dummy);
   
   if (binding) {
     if (nsContentUtils::IsSafeToRunScript()) {
@@ -464,7 +461,7 @@ Element::GetClassList()
 }
 
 void
-Element::GetClassList(nsIDOMDOMTokenList** aClassList)
+Element::GetClassList(nsISupports** aClassList)
 {
   NS_IF_ADDREF(*aClassList = GetClassList());
 }
@@ -487,46 +484,6 @@ Element::GetStyledFrame()
 {
   nsIFrame *frame = GetPrimaryFrame(Flush_Layout);
   return frame ? nsLayoutUtils::GetStyleFrame(frame) : nullptr;
-}
-
-Element*
-Element::GetOffsetRect(nsRect& aRect)
-{
-  aRect = nsRect();
-
-  nsIFrame* frame = GetStyledFrame();
-  if (!frame) {
-    return nullptr;
-  }
-
-  nsPoint origin = frame->GetPosition();
-  aRect.x = nsPresContext::AppUnitsToIntCSSPixels(origin.x);
-  aRect.y = nsPresContext::AppUnitsToIntCSSPixels(origin.y);
-
-  // Get the union of all rectangles in this and continuation frames.
-  // It doesn't really matter what we use as aRelativeTo here, since
-  // we only care about the size. Using 'parent' might make things
-  // a bit faster by speeding up the internal GetOffsetTo operations.
-  nsIFrame* parent = frame->GetParent() ? frame->GetParent() : frame;
-  nsRect rcFrame = nsLayoutUtils::GetAllInFlowRectsUnion(frame, parent);
-  aRect.width = nsPresContext::AppUnitsToIntCSSPixels(rcFrame.width);
-  aRect.height = nsPresContext::AppUnitsToIntCSSPixels(rcFrame.height);
-
-  return nullptr;
-}
-
-nsIntSize
-Element::GetPaddingRectSize()
-{
-  nsIFrame* frame = GetStyledFrame();
-  if (!frame) {
-    return nsIntSize(0, 0);
-  }
-
-  NS_ASSERTION(frame->GetParent(), "Styled frame has no parent");
-  nsRect rcFrame = nsLayoutUtils::GetAllInFlowPaddingRectsUnion(frame, frame->GetParent());
-  return nsIntSize(nsPresContext::AppUnitsToIntCSSPixels(rcFrame.width),
-                   nsPresContext::AppUnitsToIntCSSPixels(rcFrame.height));
 }
 
 nsIScrollableFrame*
@@ -598,6 +555,28 @@ Element::ScrollIntoView(bool aTop)
                                    nsIPresShell::SCROLL_OVERFLOW_HIDDEN);
 }
 
+static nsSize GetScrollRectSizeForOverflowVisibleFrame(nsIFrame* aFrame)
+{
+  if (!aFrame) {
+    return nsSize(0,0);
+  }
+
+  nsRect paddingRect = aFrame->GetPaddingRectRelativeToSelf();
+  nsOverflowAreas overflowAreas(paddingRect, paddingRect);
+  // Add the scrollable overflow areas of children (if any) to the paddingRect.
+  // It's important to start with the paddingRect, otherwise if there are no
+  // children the overflow rect will be 0,0,0,0 which will force the point 0,0
+  // to be included in the final rect.
+  nsLayoutUtils::UnionChildOverflow(aFrame, overflowAreas);
+  // Make sure that an empty padding-rect's edges are included, by adding
+  // the padding-rect in again with UnionEdges.
+  nsRect overflowRect =
+    overflowAreas.ScrollableOverflow().UnionEdges(paddingRect);
+  return nsLayoutUtils::GetScrolledRect(aFrame,
+      overflowRect, paddingRect.Size(),
+      aFrame->StyleVisibility()->mDirection).Size();
+}
+
 int32_t
 Element::ScrollHeight()
 {
@@ -605,11 +584,13 @@ Element::ScrollHeight()
     return 0;
 
   nsIScrollableFrame* sf = GetScrollFrame();
-  if (!sf) {
-    return GetPaddingRectSize().height;
+  nscoord height;
+  if (sf) {
+    height = sf->GetScrollRange().height + sf->GetScrollPortRect().height;
+  } else {
+    height = GetScrollRectSizeForOverflowVisibleFrame(GetStyledFrame()).height;
   }
 
-  nscoord height = sf->GetScrollRange().height + sf->GetScrollPortRect().height;
   return nsPresContext::AppUnitsToIntCSSPixels(height);
 }
 
@@ -620,11 +601,13 @@ Element::ScrollWidth()
     return 0;
 
   nsIScrollableFrame* sf = GetScrollFrame();
-  if (!sf) {
-    return GetPaddingRectSize().width;
+  nscoord width;
+  if (sf) {
+    width = sf->GetScrollRange().width + sf->GetScrollPortRect().width;
+  } else {
+    width = GetScrollRectSizeForOverflowVisibleFrame(GetStyledFrame()).width;
   }
 
-  nscoord width = sf->GetScrollRange().width + sf->GetScrollPortRect().width;
   return nsPresContext::AppUnitsToIntCSSPixels(width);
 }
 
@@ -639,7 +622,7 @@ Element::GetClientAreaRect()
   }
 
   if (styledFrame &&
-      (styledFrame->GetStyleDisplay()->mDisplay != NS_STYLE_DISPLAY_INLINE ||
+      (styledFrame->StyleDisplay()->mDisplay != NS_STYLE_DISPLAY_INLINE ||
        styledFrame->IsFrameOfType(nsIFrame::eReplaced))) {
     // Special case code to make client area work even when there isn't
     // a scroll view, see bug 180552, bug 227567.
@@ -653,7 +636,7 @@ Element::GetClientAreaRect()
 already_AddRefed<nsClientRect>
 Element::GetBoundingClientRect()
 {
-  nsRefPtr<nsClientRect> rect = new nsClientRect();
+  nsRefPtr<nsClientRect> rect = new nsClientRect(this);
   
   nsIFrame* frame = GetPrimaryFrame(Flush_Layout);
   if (!frame) {
@@ -669,7 +652,7 @@ Element::GetBoundingClientRect()
 }
 
 already_AddRefed<nsClientRectList>
-Element::GetClientRects(ErrorResult& aError)
+Element::GetClientRects()
 {
   nsRefPtr<nsClientRectList> rectList = new nsClientRectList(this);
 
@@ -683,10 +666,6 @@ Element::GetClientRects(ErrorResult& aError)
   nsLayoutUtils::GetAllInFlowRects(frame,
           nsLayoutUtils::GetContainingBlockForClientRect(frame), &builder,
           nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS);
-  if (NS_FAILED(builder.mRV)) {
-    aError.Throw(builder.mRV);
-    return nullptr;
-  }
   return rectList.forget();
 }
 
@@ -695,7 +674,7 @@ Element::GetClientRects(ErrorResult& aError)
 
 
 void
-Element::GetAttribute(const nsAString& aName, nsString& aReturn)
+Element::GetAttribute(const nsAString& aName, DOMString& aReturn)
 {
   const nsAttrValue* val =
     mAttrsAndChildren.GetAttr(aName,
@@ -707,9 +686,9 @@ Element::GetAttribute(const nsAString& aName, nsString& aReturn)
     if (IsXUL()) {
       // XXX should be SetDOMStringToNull(aReturn);
       // See bug 232598
-      aReturn.Truncate();
+      // aReturn is already empty
     } else {
-      SetDOMStringToNull(aReturn);
+      aReturn.SetNull();
     }
   }
 }
@@ -771,65 +750,27 @@ Element::RemoveAttribute(const nsAString& aName, ErrorResult& aError)
   aError = UnsetAttr(name->NamespaceID(), name->LocalName(), true);
 }
 
-nsIDOMAttr*
+Attr*
 Element::GetAttributeNode(const nsAString& aName)
 {
   OwnerDoc()->WarnOnceAbout(nsIDocument::eGetAttributeNode);
-
-  nsDOMAttributeMap* map = GetAttributes();
-  if (!map) {
-    return nullptr;
-  }
-
-  return map->GetNamedItem(aName);
+  return Attributes()->GetNamedItem(aName);
 }
 
-already_AddRefed<nsIDOMAttr>
-Element::SetAttributeNode(nsIDOMAttr* aNewAttr, ErrorResult& aError)
+already_AddRefed<Attr>
+Element::SetAttributeNode(Attr& aNewAttr, ErrorResult& aError)
 {
   OwnerDoc()->WarnOnceAbout(nsIDocument::eSetAttributeNode);
 
-  nsDOMAttributeMap* map = GetAttributes();
-  if (!map) {
-    // XXX Throw?
-    return nullptr;
-  }
-
-  nsCOMPtr<nsIDOMNode> returnNode;
-  aError = map->SetNamedItem(aNewAttr, getter_AddRefs(returnNode));
-  if (aError.Failed()) {
-    return nullptr;
-  }
-
-  return static_cast<nsIDOMAttr*>(returnNode.forget().get());
+  return Attributes()->SetNamedItem(aNewAttr, aError);
 }
 
-already_AddRefed<nsIDOMAttr>
-Element::RemoveAttributeNode(nsIDOMAttr* aAttribute,
+already_AddRefed<Attr>
+Element::RemoveAttributeNode(Attr& aAttribute,
                              ErrorResult& aError)
 {
   OwnerDoc()->WarnOnceAbout(nsIDocument::eRemoveAttributeNode);
-
-  nsDOMAttributeMap* map = GetAttributes();
-  if (!map) {
-    // XXX Throw?
-    return nullptr;
-  }
-
-  nsAutoString name;
-
-  aError = aAttribute->GetName(name);
-  if (aError.Failed()) {
-    return nullptr;
-  }
-
-  nsCOMPtr<nsIDOMNode> node;
-  aError = map->RemoveNamedItem(name, getter_AddRefs(node));
-  if (aError.Failed()) {
-    return nullptr;
-  }
-
-  return static_cast<nsIDOMAttr*>(node.forget().get());
+  return Attributes()->RemoveNamedItem(aAttribute.NodeName(), aError);
 }
 
 void
@@ -892,41 +833,28 @@ Element::RemoveAttributeNS(const nsAString& aNamespaceURI,
   aError = UnsetAttr(nsid, name, true);
 }
 
-nsIDOMAttr*
+Attr*
 Element::GetAttributeNodeNS(const nsAString& aNamespaceURI,
-                            const nsAString& aLocalName,
-                            ErrorResult& aError)
+                            const nsAString& aLocalName)
 {
   OwnerDoc()->WarnOnceAbout(nsIDocument::eGetAttributeNodeNS);
 
-  return GetAttributeNodeNSInternal(aNamespaceURI, aLocalName, aError);
+  return GetAttributeNodeNSInternal(aNamespaceURI, aLocalName);
 }
 
-nsIDOMAttr*
+Attr*
 Element::GetAttributeNodeNSInternal(const nsAString& aNamespaceURI,
-                                    const nsAString& aLocalName,
-                                    ErrorResult& aError)
+                                    const nsAString& aLocalName)
 {
-  nsDOMAttributeMap* map = GetAttributes();
-  if (!map) {
-    return nullptr;
-  }
-
-  return map->GetNamedItemNS(aNamespaceURI, aLocalName, aError);
+  return Attributes()->GetNamedItemNS(aNamespaceURI, aLocalName);
 }
 
-already_AddRefed<nsIDOMAttr>
-Element::SetAttributeNodeNS(nsIDOMAttr* aNewAttr,
+already_AddRefed<Attr>
+Element::SetAttributeNodeNS(Attr& aNewAttr,
                             ErrorResult& aError)
 {
   OwnerDoc()->WarnOnceAbout(nsIDocument::eSetAttributeNodeNS);
-
-  nsDOMAttributeMap* map = GetAttributes();
-  if (!map) {
-    return nullptr;
-  }
-
-  return map->SetNamedItemNS(aNewAttr, aError);
+  return Attributes()->SetNamedItemNS(aNewAttr, aError);
 }
 
 already_AddRefed<nsIHTMLCollection>
@@ -1155,6 +1083,9 @@ Element::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                NODE_NEEDS_FRAME | NODE_DESCENDANTS_NEED_FRAMES |
                // And the restyle bits
                ELEMENT_ALL_RESTYLE_FLAGS);
+
+    // Propagate scoped style sheet tracking bit.
+    SetIsElementInStyleScope(mParent->IsElementInStyleScope());
   } else {
     // If we're not in the doc, update our subtree pointer.
     SetSubtreeRootPointer(aParent->SubtreeRoot());
@@ -1164,7 +1095,7 @@ Element::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
   //  because it has to happen after updating the parent pointer, but before
   //  recursively binding the kids.
   if (IsHTML()) {
-    RecomputeDirectionality(this, false);
+    SetDirOnBind(this, aParent);
   }
 
   // If NODE_FORCE_XBL_BINDINGS was set we might have anonymous children
@@ -1293,7 +1224,7 @@ Element::UnbindFromTree(bool aDeep, bool aNullParent)
                                       nsContentUtils::eDOM_PROPERTIES,
                                       "RemovedFullScreenElement");
       // Fully exit full-screen.
-      nsIDocument::ExitFullScreen(false);
+      nsIDocument::ExitFullscreen(OwnerDoc(), /* async */ false);
     }
     if (HasPointerLock()) {
       nsIDocument::UnlockPointer();
@@ -1356,7 +1287,7 @@ Element::UnbindFromTree(bool aDeep, bool aNullParent)
   //  because it has to happen after unsetting the parent pointer, but before
   //  recursively unbinding the kids.
   if (IsHTML()) {
-    RecomputeDirectionality(this, false);
+    ResetDir(this);
   }
 
   if (aDeep) {
@@ -1484,31 +1415,17 @@ Element::GetExistingAttrNameFromQName(const nsAString& aStr) const
     return nullptr;
   }
 
-  nsINodeInfo* nodeInfo;
+  nsCOMPtr<nsINodeInfo> nodeInfo;
   if (name->IsAtom()) {
     nodeInfo = mNodeInfo->NodeInfoManager()->
       GetNodeInfo(name->Atom(), nullptr, kNameSpaceID_None,
-                  nsIDOMNode::ATTRIBUTE_NODE).get();
+                  nsIDOMNode::ATTRIBUTE_NODE);
   }
   else {
-    NS_ADDREF(nodeInfo = name->NodeInfo());
+    nodeInfo = name->NodeInfo();
   }
 
-  return nodeInfo;
-}
-
-NS_IMETHODIMP
-Element::GetAttributes(nsIDOMNamedNodeMap** aAttributes)
-{
-  nsDOMSlots *slots = DOMSlots();
-
-  if (!slots->mAttributeMap) {
-    slots->mAttributeMap = new nsDOMAttributeMap(this);
-  }
-
-  NS_ADDREF(*aAttributes = slots->mAttributeMap);
-
-  return NS_OK;
+  return nodeInfo.forget();
 }
 
 // static
@@ -1722,6 +1639,23 @@ Element::MaybeCheckSameAttrVal(int32_t aNamespaceID,
   return false;
 }
 
+bool
+Element::OnlyNotifySameValueSet(int32_t aNamespaceID, nsIAtom* aName,
+                                nsIAtom* aPrefix,
+                                const nsAttrValueOrString& aValue,
+                                bool aNotify, nsAttrValue& aOldValue,
+                                uint8_t* aModType, bool* aHasListeners)
+{
+  if (!MaybeCheckSameAttrVal(aNamespaceID, aName, aPrefix, aValue, aNotify,
+                             aOldValue, aModType, aHasListeners)) {
+    return false;
+  }
+
+  nsAutoScriptBlocker scriptBlocker;
+  nsNodeUtils::AttributeSetToCurrentValue(this, aNamespaceID, aName);
+  return true;
+}
+
 nsresult
 Element::SetAttr(int32_t aNamespaceID, nsIAtom* aName,
                  nsIAtom* aPrefix, const nsAString& aValue,
@@ -1831,7 +1765,15 @@ Element::SetAttrAndNotify(int32_t aNamespaceID,
     aValueForAfterSetAttr.SetTo(aParsedValue);
   }
 
+  bool hadValidDir = false;
+  bool hadDirAuto = false;
+
   if (aNamespaceID == kNameSpaceID_None) {
+    if (aName == nsGkAtoms::dir) {
+      hadValidDir = HasValidDir() || IsHTML(nsGkAtoms::bdi);
+      hadDirAuto = HasDirAuto(); // already takes bdi into account
+    }
+
     // XXXbz Perhaps we should push up the attribute mapping function
     // stuff to Element?
     if (!IsAttributeMapped(aName) ||
@@ -1844,7 +1786,6 @@ Element::SetAttrAndNotify(int32_t aNamespaceID,
     ni = mNodeInfo->NodeInfoManager()->GetNodeInfo(aName, aPrefix,
                                                    aNamespaceID,
                                                    nsIDOMNode::ATTRIBUTE_NODE);
-    NS_ENSURE_TRUE(ni, NS_ERROR_OUT_OF_MEMORY);
 
     rv = mAttrsAndChildren.SetAndTakeAttr(ni, aParsedValue);
   }
@@ -1867,6 +1808,11 @@ Element::SetAttrAndNotify(int32_t aNamespaceID,
   if (aCallAfterSetAttr) {
     rv = AfterSetAttr(aNamespaceID, aName, &aValueForAfterSetAttr, aNotify);
     NS_ENSURE_SUCCESS(rv, rv);
+
+    if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::dir) {
+      OnSetDirAttr(this, &aValueForAfterSetAttr,
+                   hadValidDir, hadDirAuto, aNotify);
+    }
   }
 
   if (aFireMutation) {
@@ -1874,9 +1820,8 @@ Element::SetAttrAndNotify(int32_t aNamespaceID,
 
     nsAutoString ns;
     nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aNamespaceID, ns);
-    ErrorResult rv;
-    nsIDOMAttr* attrNode =
-      GetAttributeNodeNSInternal(ns, nsDependentAtomString(aName), rv);
+    Attr* attrNode =
+      GetAttributeNodeNSInternal(ns, nsDependentAtomString(aName));
     mutation.mRelatedNode = attrNode;
 
     mutation.mAttrName = aName;
@@ -1945,60 +1890,10 @@ bool
 Element::GetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                  nsAString& aResult) const
 {
-  NS_ASSERTION(nullptr != aName, "must have attribute name");
-  NS_ASSERTION(aNameSpaceID != kNameSpaceID_Unknown,
-               "must have a real namespace ID!");
-
-  const nsAttrValue* val = mAttrsAndChildren.GetAttr(aName, aNameSpaceID);
-  if (!val) {
-    // Since we are returning a success code we'd better do
-    // something about the out parameters (someone may have
-    // given us a non-empty string).
-    aResult.Truncate();
-    
-    return false;
-  }
-
-  val->ToString(aResult);
-
-  return true;
-}
-
-bool
-Element::HasAttr(int32_t aNameSpaceID, nsIAtom* aName) const
-{
-  NS_ASSERTION(nullptr != aName, "must have attribute name");
-  NS_ASSERTION(aNameSpaceID != kNameSpaceID_Unknown,
-               "must have a real namespace ID!");
-
-  return mAttrsAndChildren.IndexOfAttr(aName, aNameSpaceID) >= 0;
-}
-
-bool
-Element::AttrValueIs(int32_t aNameSpaceID,
-                     nsIAtom* aName,
-                     const nsAString& aValue,
-                     nsCaseTreatment aCaseSensitive) const
-{
-  NS_ASSERTION(aName, "Must have attr name");
-  NS_ASSERTION(aNameSpaceID != kNameSpaceID_Unknown, "Must have namespace");
-
-  const nsAttrValue* val = mAttrsAndChildren.GetAttr(aName, aNameSpaceID);
-  return val && val->Equals(aValue, aCaseSensitive);
-}
-
-bool
-Element::AttrValueIs(int32_t aNameSpaceID,
-                     nsIAtom* aName,
-                     nsIAtom* aValue,
-                     nsCaseTreatment aCaseSensitive) const
-{
-  NS_ASSERTION(aName, "Must have attr name");
-  NS_ASSERTION(aNameSpaceID != kNameSpaceID_Unknown, "Must have namespace");
-  NS_ASSERTION(aValue, "Null value atom");
-
-  const nsAttrValue* val = mAttrsAndChildren.GetAttr(aName, aNameSpaceID);
-  return val && val->Equals(aValue, aCaseSensitive);
+  DOMString str;
+  bool haveAttr = GetAttr(aNameSpaceID, aName, str);
+  str.ToString(aResult);
+  return haveAttr;
 }
 
 int32_t
@@ -2051,15 +1946,14 @@ Element::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                                          this);
 
   // Grab the attr node if needed before we remove it from the attr map
-  nsCOMPtr<nsIDOMAttr> attrNode;
+  nsRefPtr<Attr> attrNode;
   if (hasMutationListeners) {
     nsAutoString ns;
     nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aNameSpaceID, ns);
-    ErrorResult rv;
-    attrNode = GetAttributeNodeNSInternal(ns, nsDependentAtomString(aName), rv);
+    attrNode = GetAttributeNodeNSInternal(ns, nsDependentAtomString(aName));
   }
 
-  // Clear binding to nsIDOMNamedNodeMap
+  // Clear binding to nsIDOMMozNamedAttrMap
   nsDOMSlots *slots = GetExistingDOMSlots();
   if (slots && slots->mAttributeMap) {
     slots->mAttributeMap->DropAttribute(aNameSpaceID, aName);
@@ -2068,6 +1962,14 @@ Element::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aName,
   // The id-handling code, and in the future possibly other code, need to
   // react to unexpected attribute changes.
   nsMutationGuard::DidMutate();
+
+  bool hadValidDir = false;
+  bool hadDirAuto = false;
+
+  if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::dir) {
+    hadValidDir = HasValidDir() || IsHTML(nsGkAtoms::bdi);
+    hadDirAuto = HasDirAuto(); // already takes bdi into account
+  }
 
   nsAttrValue oldValue;
   rv = mAttrsAndChildren.RemoveAttrAt(index, oldValue);
@@ -2091,8 +1993,11 @@ Element::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aName,
   rv = AfterSetAttr(aNameSpaceID, aName, nullptr, aNotify);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::dir) {
+    OnSetDirAttr(this, nullptr, hadValidDir, hadDirAuto, aNotify);
+  }
+
   if (hasMutationListeners) {
-    nsCOMPtr<nsIDOMEventTarget> node = do_QueryObject(this);
     nsMutationEvent mutation(true, NS_MUTATION_ATTRMODIFIED);
 
     mutation.mRelatedNode = attrNode;
@@ -2583,6 +2488,13 @@ Element::AttrValueToCORSMode(const nsAttrValue* aValue)
 static const char*
 GetFullScreenError(nsIDocument* aDoc)
 {
+  // Block fullscreen requests in the chrome document when the fullscreen API
+  // is configured for content only.
+  if (nsContentUtils::IsFullscreenApiContentOnly() &&
+      nsContentUtils::IsChromeDoc(aDoc)) {
+    return "FullScreenDeniedContentOnly";
+  }
+
   nsCOMPtr<nsPIDOMWindow> win = aDoc->GetWindow();
   if (aDoc->NodePrincipal()->GetAppStatus() >= nsIPrincipal::APP_STATUS_INSTALLED) {
     // Request is in a web app and in the same origin as the web app.
@@ -3150,7 +3062,9 @@ IsVoidTag(Element* aElement)
 static bool
 Serialize(Element* aRoot, bool aDescendentsOnly, nsAString& aOut)
 {
-  nsINode* current = aDescendentsOnly ? aRoot->GetFirstChild() : aRoot;
+  nsINode* current = aDescendentsOnly ?
+    nsNodeUtils::GetFirstChildOfTemplateOrNode(aRoot) : aRoot;
+
   if (!current) {
     return true;
   }
@@ -3164,7 +3078,8 @@ Serialize(Element* aRoot, bool aDescendentsOnly, nsAString& aOut)
         Element* elem = current->AsElement();
         StartElement(elem, builder);
         isVoid = IsVoidTag(elem);
-        if (!isVoid && (next = current->GetFirstChild())) {
+        if (!isVoid &&
+            (next = nsNodeUtils::GetFirstChildOfTemplateOrNode(current))) {
           current = next;
           continue;
         }
@@ -3230,6 +3145,17 @@ Serialize(Element* aRoot, bool aDescendentsOnly, nsAString& aOut)
       }
 
       current = current->GetParentNode();
+
+      // Template case, if we are in a template's content, then the parent
+      // should be the host template element.
+      if (current->NodeType() == nsIDOMNode::DOCUMENT_FRAGMENT_NODE) {
+        DocumentFragment* frag = static_cast<DocumentFragment*>(current);
+        HTMLTemplateElement* fragHost = frag->GetHost();
+        if (fragHost) {
+          current = fragHost;
+        }
+      }
+
       if (aDescendentsOnly && current == aRoot) {
         return builder.ToString(aOut);
       }
@@ -3336,30 +3262,39 @@ Element::GetInnerHTML(nsAString& aInnerHTML, ErrorResult& aError)
 void
 Element::SetInnerHTML(const nsAString& aInnerHTML, ErrorResult& aError)
 {
-  nsIDocument* doc = OwnerDoc();
+  FragmentOrElement* target = this;
+  // Handle template case.
+  if (nsNodeUtils::IsTemplateElement(target)) {
+    DocumentFragment* frag =
+      static_cast<HTMLTemplateElement*>(target)->Content();
+    MOZ_ASSERT(frag);
+    target = frag;
+  }
+
+  nsIDocument* doc = target->OwnerDoc();
 
   // Batch possible DOMSubtreeModified events.
   mozAutoSubtreeModified subtree(doc, nullptr);
 
-  FireNodeRemovedForChildren();
+  target->FireNodeRemovedForChildren();
 
   // Needed when innerHTML is used in combination with contenteditable
   mozAutoDocUpdate updateBatch(doc, UPDATE_CONTENT_MODEL, true);
 
   // Remove childnodes.
-  uint32_t childCount = GetChildCount();
-  nsAutoMutationBatch mb(this, true, false);
+  uint32_t childCount = target->GetChildCount();
+  nsAutoMutationBatch mb(target, true, false);
   for (uint32_t i = 0; i < childCount; ++i) {
-    RemoveChildAt(0, true);
+    target->RemoveChildAt(0, true);
   }
   mb.RemovalDone();
 
   nsAutoScriptLoaderDisabler sld(doc);
 
   if (doc->IsHTML()) {
-    int32_t oldChildCount = GetChildCount();
+    int32_t oldChildCount = target->GetChildCount();
     aError = nsContentUtils::ParseFragmentHTML(aInnerHTML,
-                                               this,
+                                               target,
                                                Tag(),
                                                GetNameSpaceID(),
                                                doc->GetCompatibilityMode() ==
@@ -3367,10 +3302,10 @@ Element::SetInnerHTML(const nsAString& aInnerHTML, ErrorResult& aError)
                                                true);
     mb.NodesAdded();
     // HTML5 parser has notified, but not fired mutation events.
-    FireMutationEventsForDirectParsing(doc, this, oldChildCount);
+    FireMutationEventsForDirectParsing(doc, target, oldChildCount);
   } else {
     nsCOMPtr<nsIDOMDocumentFragment> df;
-    aError = nsContentUtils::CreateContextualFragment(this, aInnerHTML,
+    aError = nsContentUtils::CreateContextualFragment(target, aInnerHTML,
                                                       true,
                                                       getter_AddRefs(df));
     nsCOMPtr<nsINode> fragment = do_QueryInterface(df);
@@ -3380,7 +3315,7 @@ Element::SetInnerHTML(const nsAString& aInnerHTML, ErrorResult& aError)
       // listeners on the fragment that comes from the parser.
       nsAutoScriptBlockerSuppressNodeRemoved scriptBlocker;
 
-      static_cast<nsINode*>(this)->AppendChild(*fragment, aError);
+      static_cast<nsINode*>(target)->AppendChild(*fragment, aError);
       mb.NodesAdded();
     }
   }
@@ -3417,13 +3352,8 @@ Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError)
       localName = nsGkAtoms::body;
       namespaceID = kNameSpaceID_XHTML;
     }
-    nsCOMPtr<nsIDOMDocumentFragment> df;
-    aError = NS_NewDocumentFragment(getter_AddRefs(df),
-                                    OwnerDoc()->NodeInfoManager());
-    if (aError.Failed()) {
-      return;
-    }
-    nsCOMPtr<nsIContent> fragment = do_QueryInterface(df);
+    nsRefPtr<DocumentFragment> fragment =
+      new DocumentFragment(OwnerDoc()->NodeInfoManager());
     nsContentUtils::ParseFragmentHTML(aOuterHTML,
                                       fragment,
                                       localName,
@@ -3431,7 +3361,6 @@ Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError)
                                       OwnerDoc()->GetCompatibilityMode() ==
                                         eCompatibility_NavQuirks,
                                       true);
-    nsAutoMutationBatch mb(parent, true, false);
     parent->ReplaceChild(*fragment, *this, aError);
     return;
   }
@@ -3459,7 +3388,6 @@ Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError)
     return;
   }
   nsCOMPtr<nsINode> fragment = do_QueryInterface(df);
-  nsAutoMutationBatch mb(parent, true, false);
   parent->ReplaceChild(*fragment, *this, aError);
 }
 
@@ -3574,4 +3502,29 @@ Element::GetEditorInternal()
 {
   nsCOMPtr<nsITextControlElement> textCtrl = do_QueryInterface(this);
   return textCtrl ? textCtrl->GetTextEditor() : nullptr;
+}
+
+nsresult
+Element::SetBoolAttr(nsIAtom* aAttr, bool aValue)
+{
+  if (aValue) {
+    return SetAttr(kNameSpaceID_None, aAttr, EmptyString(), true);
+  }
+
+  return UnsetAttr(kNameSpaceID_None, aAttr, true);
+}
+
+float
+Element::FontSizeInflation()
+{
+  nsIFrame* frame = mPrimaryFrame;
+  if (!frame) {
+    return -1.0;
+  }
+
+  if (nsLayoutUtils::FontSizeInflationEnabled(frame->PresContext())) {
+    return nsLayoutUtils::FontSizeInflationFor(frame);
+  }
+
+  return 1.0;
 }

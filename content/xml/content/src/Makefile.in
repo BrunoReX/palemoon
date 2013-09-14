@@ -10,24 +10,9 @@ VPATH		= @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE		= content
-LIBRARY_NAME	= gkconxmlcon_s
+MSVC_ENABLE_PGO := 1
 LIBXUL_LIBRARY	= 1
 FAIL_ON_WARNINGS = 1
-
-EXPORTS_NAMESPACES = mozilla/dom
-
-EXPORTS_mozilla/dom = \
-  CDATASection.h \
-  ProcessingInstruction.h \
-  $(NULL)
-
-CPPSRCS		= \
-		nsXMLElement.cpp \
-		CDATASection.cpp \
-		ProcessingInstruction.cpp \
-		nsXMLStylesheetPI.cpp \
-		$(NULL)
 
 # we don't want the shared lib, but we want to force the creation of a static lib.
 FORCE_STATIC_LIB = 1

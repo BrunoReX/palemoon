@@ -180,17 +180,25 @@ FixServicePath(SC_HANDLE service,
   // maintenanceservice_tmp.exe as the install path.  Only a small number
   // of Nightly users would be affected by this, but we check for this
   // state here and fix the user if they are affected.
+  //
+  // We also fix the path in the case of the path not being quoted.
+  size_t currentServicePathLen = wcslen(currentServicePath);
   bool doesServiceHaveCorrectPath =
-    !wcsstr(currentServicePath, L"maintenanceservice_tmp.exe");
+    currentServicePathLen > 2 &&
+    !wcsstr(currentServicePath, L"maintenanceservice_tmp.exe") &&
+    currentServicePath[0] == L'\"' &&
+    currentServicePath[currentServicePathLen - 1] == L'\"';
+
   if (doesServiceHaveCorrectPath) {
     LOG(("The MozillaMaintenance service path is correct."));
     servicePathWasWrong = FALSE;
     return TRUE;
   }
   // This is a recoverable situation so not logging as a warning
-  LOG(("The MozillaMaintenance path is NOT correct."));
-  servicePathWasWrong = TRUE;
+  LOG(("The MozillaMaintenance path is NOT correct. It was: %ls",
+       currentServicePath));
 
+  servicePathWasWrong = TRUE;
   WCHAR fixedPath[MAX_PATH + 1] = { L'\0' };
   wcsncpy(fixedPath, currentServicePath, MAX_PATH);
   PathUnquoteSpacesW(fixedPath);
@@ -379,10 +387,11 @@ SvcInstall(SvcInstallAction action)
           // Calculate the temp file path that we're moving the file to. This 
           // is the same as the proper service path but with a .old extension.
           LPWSTR oldServiceBinaryTempPath = 
-            new WCHAR[wcslen(serviceConfig.lpBinaryPathName) + 1];
-          wcscpy(oldServiceBinaryTempPath, serviceConfig.lpBinaryPathName);
+            new WCHAR[len + 1];
+          memset(oldServiceBinaryTempPath, 0, (len + 1) * sizeof (WCHAR));
+          wcsncpy(oldServiceBinaryTempPath, serviceConfig.lpBinaryPathName, len);
           // Rename the last 3 chars to 'old'
-          wcscpy(oldServiceBinaryTempPath + len - 3, L"old");
+          wcsncpy(oldServiceBinaryTempPath + len - 3, L"old", 3);
 
           // Move the current (old) service file to the temp path.
           if (MoveFileExW(serviceConfig.lpBinaryPathName, 
@@ -669,8 +678,8 @@ SetUserAccessServiceDACL(SC_HANDLE hService, PACL &pNewAcl,
   // a buffer for the domain name but it's not used since we're using
   // the built in account Sid.
   SID_NAME_USE accountType;
-  WCHAR accountName[UNLEN + 1];
-  WCHAR domainName[DNLEN + 1];
+  WCHAR accountName[UNLEN + 1] = { L'\0' };
+  WCHAR domainName[DNLEN + 1] = { L'\0' };
   DWORD accountNameSize = UNLEN + 1;
   DWORD domainNameSize = DNLEN + 1;
   if (!LookupAccountSidW(NULL, sid, accountName, 
@@ -678,7 +687,7 @@ SetUserAccessServiceDACL(SC_HANDLE hService, PACL &pNewAcl,
                          domainName, &domainNameSize, &accountType)) {
     LOG_WARN(("Could not lookup account Sid, will try Users.  (%d)",
               GetLastError()));
-    wcscpy(accountName, L"Users");
+    wcsncpy(accountName, L"Users", UNLEN);
   }
 
   // We already have the group name so we can get rid of the SID

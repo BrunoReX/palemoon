@@ -10,24 +10,16 @@ VPATH		= @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE		= dmd
 LIBRARY_NAME	= dmd
 FORCE_SHARED_LIB= 1
 
 DEFINES 	+= -DMOZ_NO_MOZALLOC
 
-CPPSRCS		= DMD.cpp
-
 VPATH 		+= $(topsrcdir)/xpcom/base
-CPPSRCS 	+= nsStackWalk.cpp
-
 VPATH 		+= $(topsrcdir)/nsprpub/lib/libc/src
-CSRCS 		+= strcpy.c
+DISABLED_CSRCS 		+= strcpy.c
 
 VPATH 		+= $(topsrcdir)/mfbt
-CPPSRCS 	+= HashFunctions.cpp
-
-EXPORTS 	= DMD.h
 
 # Disable mozglue.
 WRAP_LDFLAGS 	=

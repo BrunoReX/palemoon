@@ -7,16 +7,18 @@
 #include "jsfriendapi.h"
 #include "nsJSUtils.h"
 #include "nsIDOMTCPSocket.h"
+#include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "mozilla/unused.h"
-#include "mozilla/AppProcessPermissions.h"
+#include "mozilla/AppProcessChecker.h"
 
 namespace IPC {
 
 //Defined in TCPSocketChild.cpp
 extern bool
-DeserializeUint8Array(JSRawObject aObj,
-                      const InfallibleTArray<uint8_t>& aBuffer,
-                      jsval* aVal);
+DeserializeArrayBuffer(JS::Handle<JSObject*> aObj,
+                       const InfallibleTArray<uint8_t>& aBuffer,
+                       JS::MutableHandle<JS::Value> aVal);
 
 }
 
@@ -28,9 +30,8 @@ FireInteralError(mozilla::net::PTCPSocketParent* aActor, uint32_t aLineNo)
 {
   mozilla::unused <<
       aActor->SendCallback(NS_LITERAL_STRING("onerror"),
-                          JSError(NS_LITERAL_STRING("Internal error"),
-                                  NS_LITERAL_STRING(__FILE__), aLineNo, 0),
-                          NS_LITERAL_STRING("connecting"), 0);
+                           TCPError(NS_LITERAL_STRING("InvalidStateError")),
+                           NS_LITERAL_STRING("connecting"), 0);
 }
 
 NS_IMPL_CYCLE_COLLECTION_2(TCPSocketParent, mSocket, mIntermediary)
@@ -44,15 +45,8 @@ NS_INTERFACE_MAP_END
 
 bool
 TCPSocketParent::Init(const nsString& aHost, const uint16_t& aPort, const bool& aUseSSL,
-                      const nsString& aBinaryType, PBrowserParent* aBrowser)
+                      const nsString& aBinaryType)
 {
-  // We don't have browser actors in xpcshell, and hence can't run automated
-  // tests without this loophole.
-  if (aBrowser && !AssertAppProcessPermission(aBrowser, "tcp-socket")) {
-    FireInteralError(this, __LINE__);
-    return true;
-  }
-
   nsresult rv;
   mIntermediary = do_CreateInstance("@mozilla.org/tcp-socket-intermediary;1", &rv);
   if (NS_FAILED(rv)) {
@@ -103,8 +97,10 @@ TCPSocketParent::RecvData(const SendableData& aData)
   nsresult rv;
   switch (aData.type()) {
     case SendableData::TArrayOfuint8_t: {
-      jsval val;
-      IPC::DeserializeUint8Array(mIntermediaryObj, aData.get_ArrayOfuint8_t(), &val);
+      AutoSafeJSContext cx;
+      JS::Rooted<JS::Value> val(cx);
+      JS::Rooted<JSObject*> obj(cx, mIntermediaryObj);
+      IPC::DeserializeArrayBuffer(obj, aData.get_ArrayOfuint8_t(), &val);
       rv = mIntermediary->SendArrayBuffer(val);
       NS_ENSURE_SUCCESS(rv, true);
       break;
@@ -116,7 +112,7 @@ TCPSocketParent::RecvData(const SendableData& aData)
       break;
 
     default:
-      MOZ_NOT_REACHED();
+      MOZ_NOT_REACHED("unexpected SendableData type");
       return false;
   }
   return true;
@@ -149,17 +145,16 @@ TCPSocketParent::SendCallback(const nsAString& aType, const JS::Value& aDataVal,
       FireInteralError(this, __LINE__);
       return NS_ERROR_OUT_OF_MEMORY;
     }
-    data = str;
+    data = SendableData(str);
 
   } else if (aDataVal.isUndefined() || aDataVal.isNull()) {
     data = mozilla::void_t();
 
   } else if (aDataVal.isObject()) {
     JSObject* obj = &aDataVal.toObject();
-    if (JS_IsTypedArrayObject(obj)) {
-      NS_ENSURE_TRUE(JS_IsUint8Array(obj), NS_ERROR_FAILURE);
-      uint32_t nbytes = JS_GetTypedArrayByteLength(obj);
-      uint8_t* buffer = JS_GetUint8ArrayData(obj);
+    if (JS_IsArrayBufferObject(obj)) {
+      uint32_t nbytes = JS_GetArrayBufferByteLength(obj);
+      uint8_t* buffer = JS_GetArrayBufferData(obj);
       if (!buffer) {
         FireInteralError(this, __LINE__);
         return NS_ERROR_OUT_OF_MEMORY;
@@ -174,40 +169,18 @@ TCPSocketParent::SendCallback(const nsAString& aType, const JS::Value& aDataVal,
       data = SendableData(arr);
 
     } else {
-      nsDependentJSString message, filename;
-      uint32_t lineNumber = 0;
-      uint32_t columnNumber = 0;
+      nsDependentJSString name;
 
-      jsval val;
-      if (!JS_GetProperty(aCx, obj, "message", &val)) {
-        NS_ERROR("No message property on supposed error object");
+      JS::Rooted<JS::Value> val(aCx);
+      if (!JS_GetProperty(aCx, obj, "name", val.address())) {
+        NS_ERROR("No name property on supposed error object");
       } else if (JSVAL_IS_STRING(val)) {
-        if (!message.init(aCx, JSVAL_TO_STRING(val))) {
+        if (!name.init(aCx, JSVAL_TO_STRING(val))) {
           NS_WARNING("couldn't initialize string");
         }
       }
 
-      if (!JS_GetProperty(aCx, obj, "fileName", &val)) {
-        NS_ERROR("No fileName property on supposed error object");
-      } else if (JSVAL_IS_STRING(val)) {
-        if (!filename.init(aCx, JSVAL_TO_STRING(val))) {
-          NS_WARNING("couldn't initialize string");
-        }
-      }
-
-      if (!JS_GetProperty(aCx, obj, "lineNumber", &val)) {
-        NS_ERROR("No lineNumber property on supposed error object");
-      } else if (JSVAL_IS_INT(val)) {
-        lineNumber = JSVAL_TO_INT(val);
-      }
-
-      if (!JS_GetProperty(aCx, obj, "columnNumber", &val)) {
-        NS_ERROR("No columnNumber property on supposed error object");
-      } else if (JSVAL_IS_INT(val)) {
-        columnNumber = JSVAL_TO_INT(val);
-      }
-
-      data = JSError(message, filename, lineNumber, columnNumber);
+      data = TCPError(name);
     }
   } else {
     NS_ERROR("Unexpected JS value encountered");

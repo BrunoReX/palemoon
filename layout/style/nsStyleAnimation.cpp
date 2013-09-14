@@ -5,10 +5,11 @@
 
 /* Utilities for animation of computed style values */
 
-#include "mozilla/Util.h"
 #include "mozilla/MathAlgorithms.h"
+#include "mozilla/Util.h"
 
 #include "nsStyleAnimation.h"
+#include "nsStyleTransformMatrix.h"
 #include "nsCOMArray.h"
 #include "nsIStyleRule.h"
 #include "mozilla/css/StyleRule.h"
@@ -21,12 +22,8 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Likely.h"
-#include "prlog.h"
 #include "gfxMatrix.h"
 #include "gfxQuaternion.h"
-#include "nsPrintfCString.h"
-#include <cstdlib> // for std::abs(int/long)
-#include <cmath> // for std::abs(float/double)
 
 using namespace mozilla;
 
@@ -153,9 +150,7 @@ AppendFunction(nsCSSKeyword aTransformFunction)
   }
 
   nsRefPtr<nsCSSValue::Array> arr = nsCSSValue::Array::Create(nargs + 1);
-  arr->Item(0).SetStringValue(
-    NS_ConvertUTF8toUTF16(nsCSSKeywords::GetStringValue(aTransformFunction)),
-    eCSSUnit_Ident);
+  arr->Item(0).SetIntValue(aTransformFunction, eCSSUnit_Enumerated);
 
   return arr.forget();
 }
@@ -348,6 +343,22 @@ SetCalcValue(const nsStyleCoord::Calc* aCalc, nsCSSValue& aValue)
   aValue.SetArrayValue(arr, eCSSUnit_Calc);
 }
 
+static void
+SetCalcValue(const CalcValue& aCalc, nsCSSValue& aValue)
+{
+  nsRefPtr<nsCSSValue::Array> arr = nsCSSValue::Array::Create(1);
+  if (!aCalc.mHasPercent) {
+    arr->Item(0).SetFloatValue(aCalc.mLength, eCSSUnit_Pixel);
+  } else {
+    nsCSSValue::Array *arr2 = nsCSSValue::Array::Create(2);
+    arr->Item(0).SetArrayValue(arr2, eCSSUnit_Calc_Plus);
+    arr2->Item(0).SetFloatValue(aCalc.mLength, eCSSUnit_Pixel);
+    arr2->Item(1).SetPercentValue(aCalc.mPercent);
+  }
+
+  aValue.SetArrayValue(arr, eCSSUnit_Calc);
+}
+
 static already_AddRefed<nsStringBuffer>
 GetURIAsUtf16StringBuffer(nsIURI* aUri)
 {
@@ -384,40 +395,45 @@ nsStyleAnimation::ComputeDistance(nsCSSProperty aProperty,
           // just like eUnit_Integer.
           int32_t startInt = aStartValue.GetIntValue();
           int32_t endInt = aEndValue.GetIntValue();
-          aDistance = std::abs(endInt - startInt);
+          aDistance = Abs(endInt - startInt);
           return true;
         }
         default:
           return false;
       }
    case eUnit_Visibility: {
-      int32_t startVal =
-        aStartValue.GetIntValue() == NS_STYLE_VISIBILITY_VISIBLE;
-      int32_t endVal =
-        aEndValue.GetIntValue() == NS_STYLE_VISIBILITY_VISIBLE;
-      aDistance = std::abs(startVal - endVal);
+      int32_t startEnum = aStartValue.GetIntValue();
+      int32_t endEnum = aEndValue.GetIntValue();
+      if (startEnum == endEnum) {
+        aDistance = 0;
+        return true;
+      }
+      if ((startEnum == NS_STYLE_VISIBILITY_VISIBLE) ==
+          (endEnum == NS_STYLE_VISIBILITY_VISIBLE)) {
+        return false;
+      }
+      aDistance = 1;
       return true;
     }
     case eUnit_Integer: {
       int32_t startInt = aStartValue.GetIntValue();
       int32_t endInt = aEndValue.GetIntValue();
-      aDistance = std::abs(endInt - startInt);
+      aDistance = Abs(double(endInt) - double(startInt));
       return true;
     }
     case eUnit_Coord: {
       nscoord startCoord = aStartValue.GetCoordValue();
       nscoord endCoord = aEndValue.GetCoordValue();
-      aDistance = fabs(double(endCoord - startCoord));
+      aDistance = Abs(double(endCoord) - double(startCoord));
       return true;
     }
     case eUnit_Percent: {
       float startPct = aStartValue.GetPercentValue();
       float endPct = aEndValue.GetPercentValue();
-      aDistance = fabs(double(endPct - startPct));
+      aDistance = Abs(double(endPct) - double(startPct));
       return true;
     }
     case eUnit_Float: {
-#ifdef MOZ_FLEXBOX
       // Special case for flex-grow and flex-shrink: animations are
       // disallowed between 0 and other values.
       if ((aProperty == eCSSProperty_flex_grow ||
@@ -427,11 +443,10 @@ nsStyleAnimation::ComputeDistance(nsCSSProperty aProperty,
           aStartValue.GetFloatValue() != aEndValue.GetFloatValue()) {
         return false;
       }
-#endif // MOZ_FLEXBOX
 
       float startFloat = aStartValue.GetFloatValue();
       float endFloat = aEndValue.GetFloatValue();
-      aDistance = fabs(double(endFloat - startFloat));
+      aDistance = Abs(double(endFloat) - double(startFloat));
       return true;
     }
     case eUnit_Color: {
@@ -880,13 +895,13 @@ MOZ_ALWAYS_INLINE float
 EnsureNotNan(float aValue)
 {
   // This would benefit from a MOZ_FLOAT_IS_NaN if we had one.
-  return MOZ_LIKELY(!MOZ_DOUBLE_IS_NaN(aValue)) ? aValue : 0;
+  return MOZ_LIKELY(!mozilla::IsNaN(aValue)) ? aValue : 0;
 }
 template<>
 MOZ_ALWAYS_INLINE double
 EnsureNotNan(double aValue)
 {
-  return MOZ_LIKELY(!MOZ_DOUBLE_IS_NaN(aValue)) ? aValue : 0;
+  return MOZ_LIKELY(!mozilla::IsNaN(aValue)) ? aValue : 0;
 }
 
 template <typename T>
@@ -968,15 +983,13 @@ AddCSSValueCanonicalCalc(double aCoeff1, const nsCSSValue &aValue1,
 {
   CalcValue v1 = ExtractCalcValue(aValue1);
   CalcValue v2 = ExtractCalcValue(aValue2);
-  NS_ABORT_IF_FALSE(v1.mHasPercent || v2.mHasPercent,
-                    "only used on properties that always have percent in calc");
-  nsRefPtr<nsCSSValue::Array> a = nsCSSValue::Array::Create(2),
-                              acalc = nsCSSValue::Array::Create(1);
-  a->Item(0).SetFloatValue(aCoeff1 * v1.mLength + aCoeff2 * v2.mLength,
-                           eCSSUnit_Pixel);
-  a->Item(1).SetPercentValue(aCoeff1 * v1.mPercent + aCoeff2 * v2.mPercent);
-  acalc->Item(0).SetArrayValue(a, eCSSUnit_Calc_Plus);
-  aResult.SetArrayValue(acalc, eCSSUnit_Calc);
+  CalcValue result;
+  result.mLength = aCoeff1 * v1.mLength + aCoeff2 * v2.mLength;
+  result.mPercent = aCoeff1 * v1.mPercent + aCoeff2 * v2.mPercent;
+  result.mHasPercent = v1.mHasPercent || v2.mHasPercent;
+  MOZ_ASSERT(result.mHasPercent || result.mPercent == 0.0f,
+             "can't have a nonzero percentage part without having percentages");
+  SetCalcValue(result, aResult);
 }
 
 static void
@@ -1294,7 +1307,7 @@ Decompose2DMatrix(const gfxMatrix &aMatrix, gfxPoint3D &aScale,
   XYshear /= scaleY;
 
   // A*D - B*C should now be 1 or -1
-  NS_ASSERTION(0.99 < std::abs(A*D - B*C) && std::abs(A*D - B*C) < 1.01,
+  NS_ASSERTION(0.99 < Abs(A*D - B*C) && Abs(A*D - B*C) < 1.01,
                "determinant should now be 1 or -1");
   if (A * D < B * C) {
     A = -A;
@@ -1706,11 +1719,21 @@ nsStyleAnimation::AddWeighted(nsCSSProperty aProperty,
           return false;
       }
     case eUnit_Visibility: {
-      int32_t val1 = aValue1.GetIntValue() == NS_STYLE_VISIBILITY_VISIBLE;
-      int32_t val2 = aValue2.GetIntValue() == NS_STYLE_VISIBILITY_VISIBLE;
+      int32_t enum1 = aValue1.GetIntValue();
+      int32_t enum2 = aValue2.GetIntValue();
+      if (enum1 == enum2) {
+        aResultValue.SetIntValue(enum1, eUnit_Visibility);
+        return true;
+      }
+      if ((enum1 == NS_STYLE_VISIBILITY_VISIBLE) ==
+          (enum2 == NS_STYLE_VISIBILITY_VISIBLE)) {
+        return false;
+      }
+      int32_t val1 = enum1 == NS_STYLE_VISIBILITY_VISIBLE;
+      int32_t val2 = enum2 == NS_STYLE_VISIBILITY_VISIBLE;
       double interp = aCoeff1 * val1 + aCoeff2 * val2;
       int32_t result = interp > 0.0 ? NS_STYLE_VISIBILITY_VISIBLE
-                                    : NS_STYLE_VISIBILITY_HIDDEN;
+                                    : (val1 ? enum2 : enum1);
       aResultValue.SetIntValue(result, eUnit_Visibility);
       return true;
     }
@@ -1745,7 +1768,6 @@ nsStyleAnimation::AddWeighted(nsCSSProperty aProperty,
       return true;
     }
     case eUnit_Float: {
-#ifdef MOZ_FLEXBOX
       // Special case for flex-grow and flex-shrink: animations are
       // disallowed between 0 and other values.
       if ((aProperty == eCSSProperty_flex_grow ||
@@ -1755,7 +1777,6 @@ nsStyleAnimation::AddWeighted(nsCSSProperty aProperty,
           aValue1.GetFloatValue() != aValue2.GetFloatValue()) {
         return false;
       }
-#endif // MOZ_FLEXBOX
 
       aResultValue.SetFloatValue(RestrictValue(aProperty,
         aCoeff1 * aValue1.GetFloatValue() +
@@ -2307,13 +2328,13 @@ nsStyleAnimation::ComputeValue(nsCSSProperty aProperty,
 
     // Force walk of rule tree
     nsStyleStructID sid = nsCSSProps::kSIDTable[aProperty];
-    tmpStyleContext->GetStyleData(sid);
+    tmpStyleContext->StyleData(sid);
 
     // If the rule node will have cached style data if the value is not
     // context-sensitive. So if there's nothing cached, it's not context
     // sensitive.
     *aIsContextSensitive =
-      !tmpStyleContext->GetRuleNode()->NodeHasCachedData(sid);
+      !tmpStyleContext->RuleNode()->NodeHasCachedData(sid);
   }
 
   // If we're not concerned whether the property is context sensitive then just
@@ -2468,7 +2489,7 @@ ExtractBorderColor(nsStyleContext* aStyleContext, const void* aStyleBorder,
     GetBorderColor(aSide, color, foreground);
   if (foreground) {
     // FIXME: should add test for this
-    color = aStyleContext->GetStyleColor()->mColor;
+    color = aStyleContext->StyleColor()->mColor;
   }
   aComputedValue.SetColorValue(color);
 }
@@ -2587,7 +2608,7 @@ nsStyleAnimation::ExtractComputedValue(nsCSSProperty aProperty,
                     aProperty < eCSSProperty_COUNT_no_shorthands,
                     "bad property");
   const void* styleStruct =
-    aStyleContext->GetStyleData(nsCSSProps::kSIDTable[aProperty]);
+    aStyleContext->StyleData(nsCSSProps::kSIDTable[aProperty]);
   ptrdiff_t ssOffset = nsCSSProps::kStyleStructOffsetTable[aProperty];
   nsStyleAnimType animType = nsCSSProps::kAnimTypeTable[aProperty];
   NS_ABORT_IF_FALSE(0 <= ssOffset || animType == eStyleAnimType_Custom,
@@ -2639,7 +2660,7 @@ nsStyleAnimation::ExtractComputedValue(nsCSSProperty aProperty,
             static_cast<const nsStyleOutline*>(styleStruct);
           nscolor color;
           if (!styleOutline->GetOutlineColor(color))
-            color = aStyleContext->GetStyleColor()->mColor;
+            color = aStyleContext->StyleColor()->mColor;
           aComputedValue.SetColorValue(color);
           break;
         }
@@ -2649,7 +2670,7 @@ nsStyleAnimation::ExtractComputedValue(nsCSSProperty aProperty,
             static_cast<const nsStyleColumn*>(styleStruct);
           nscolor color;
           if (styleColumn->mColumnRuleColorIsForeground) {
-            color = aStyleContext->GetStyleColor()->mColor;
+            color = aStyleContext->StyleColor()->mColor;
           } else {
             color = styleColumn->mColumnRuleColor;
           }
@@ -2669,7 +2690,6 @@ nsStyleAnimation::ExtractComputedValue(nsCSSProperty aProperty,
           break;
         }
 
-#ifdef MOZ_FLEXBOX
         case eCSSProperty_order: {
           const nsStylePosition *stylePosition =
             static_cast<const nsStylePosition*>(styleStruct);
@@ -2677,7 +2697,6 @@ nsStyleAnimation::ExtractComputedValue(nsCSSProperty aProperty,
                                      eUnit_Integer);
           break;
         }
-#endif // MOZ_FLEXBOX
 
         case eCSSProperty_text_decoration_color: {
           const nsStyleTextReset *styleTextReset =
@@ -2686,7 +2705,7 @@ nsStyleAnimation::ExtractComputedValue(nsCSSProperty aProperty,
           bool isForeground;
           styleTextReset->GetDecorationColor(color, isForeground);
           if (isForeground) {
-            color = aStyleContext->GetStyleColor()->mColor;
+            color = aStyleContext->StyleColor()->mColor;
           }
           aComputedValue.SetColorValue(color);
           break;
@@ -3206,14 +3225,14 @@ nsStyleAnimation::Value::Value(float aPercent, PercentConstructorType)
 {
   mUnit = eUnit_Percent;
   mValue.mFloat = aPercent;
-  MOZ_ASSERT(!MOZ_DOUBLE_IS_NaN(mValue.mFloat));
+  MOZ_ASSERT(!mozilla::IsNaN(mValue.mFloat));
 }
 
 nsStyleAnimation::Value::Value(float aFloat, FloatConstructorType)
 {
   mUnit = eUnit_Float;
   mValue.mFloat = aFloat;
-  MOZ_ASSERT(!MOZ_DOUBLE_IS_NaN(mValue.mFloat));
+  MOZ_ASSERT(!mozilla::IsNaN(mValue.mFloat));
 }
 
 nsStyleAnimation::Value::Value(nscolor aColor, ColorConstructorType)
@@ -3245,7 +3264,7 @@ nsStyleAnimation::Value::operator=(const Value& aOther)
     case eUnit_Percent:
     case eUnit_Float:
       mValue.mFloat = aOther.mValue.mFloat;
-      MOZ_ASSERT(!MOZ_DOUBLE_IS_NaN(mValue.mFloat));
+      MOZ_ASSERT(!mozilla::IsNaN(mValue.mFloat));
       break;
     case eUnit_Color:
       mValue.mColor = aOther.mValue.mColor;
@@ -3357,7 +3376,7 @@ nsStyleAnimation::Value::SetPercentValue(float aPercent)
   FreeValue();
   mUnit = eUnit_Percent;
   mValue.mFloat = aPercent;
-  MOZ_ASSERT(!MOZ_DOUBLE_IS_NaN(mValue.mFloat));
+  MOZ_ASSERT(!mozilla::IsNaN(mValue.mFloat));
 }
 
 void
@@ -3366,7 +3385,7 @@ nsStyleAnimation::Value::SetFloatValue(float aFloat)
   FreeValue();
   mUnit = eUnit_Float;
   mValue.mFloat = aFloat;
-  MOZ_ASSERT(!MOZ_DOUBLE_IS_NaN(mValue.mFloat));
+  MOZ_ASSERT(!mozilla::IsNaN(mValue.mFloat));
 }
 
 void

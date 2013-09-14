@@ -6,11 +6,10 @@ let temp = {}
 Cu.import("resource:///modules/devtools/gDevTools.jsm", temp);
 let DevTools = temp.DevTools;
 
-Cu.import("resource:///modules/devtools/Toolbox.jsm", temp);
-let Toolbox = temp.Toolbox;
+Cu.import("resource://gre/modules/devtools/Loader.jsm", temp);
+let devtools = temp.devtools;
 
-Cu.import("resource:///modules/devtools/Target.jsm", temp);
-let TargetFactory = temp.TargetFactory;
+let Toolbox = devtools.Toolbox;
 
 let toolbox, target;
 
@@ -90,12 +89,14 @@ function testToolSelect()
 function testDestroy()
 {
   toolbox.destroy().then(function() {
+    target = TargetFactory.forTab(gBrowser.selectedTab);
     gDevTools.showToolbox(target).then(testRememberHost);
   });
 }
 
-function testRememberHost()
+function testRememberHost(aToolbox)
 {
+  toolbox = aToolbox;
   // last host was the window - make sure it's the same when re-opening
   is(toolbox.hostType, Toolbox.HostType.WINDOW, "host remembered");
 
@@ -123,8 +124,9 @@ function cleanup()
 {
   Services.prefs.setCharPref("devtools.toolbox.host", Toolbox.HostType.BOTTOM);
 
-  toolbox.destroy();
-  DevTools = Toolbox = toolbox = target = null;
-  gBrowser.removeCurrentTab();
-  finish();
-}
+  toolbox.destroy().then(function() {
+    DevTools = Toolbox = toolbox = target = null;
+    gBrowser.removeCurrentTab();
+    finish();
+  });
+ }

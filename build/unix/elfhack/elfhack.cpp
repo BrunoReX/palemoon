@@ -16,6 +16,12 @@
 #ifndef R_ARM_V4BX
 #define R_ARM_V4BX 0x28
 #endif
+#ifndef R_ARM_CALL
+#define R_ARM_CALL 0x1c
+#endif
+#ifndef R_ARM_JUMP24
+#define R_ARM_JUMP24 0x1d
+#endif
 #ifndef R_ARM_THM_JUMP24
 #define R_ARM_THM_JUMP24 0x1e
 #endif
@@ -234,8 +240,25 @@ private:
             unsigned int word0 = addend & 0xffff,
                          word1 = addend >> 16;
 
-            if (((word0 & 0xf800) != 0xf000) || ((word1 & 0x9000) != 0x9000))
+            /* Encoding T4 of B.W is 10x1 ; Encoding T1 of BL is 11x1. */
+            unsigned int type = (word1 & 0xd000) >> 12;
+            if (((word0 & 0xf800) != 0xf000) || ((type & 0x9) != 0x9))
                 throw std::runtime_error("R_ARM_THM_JUMP24/R_ARM_THM_CALL relocation only supported for B.W <label> and BL <label>");
+
+            /* When the target address points to ARM code, switch a BL to a
+             * BLX. This however can't be done with a B.W without adding a
+             * trampoline, which is not supported as of now. */
+            if ((addr & 0x1) == 0) {
+                if (type == 0x9)
+                    throw std::runtime_error("R_ARM_THM_JUMP24/R_ARM_THM_CALL relocation only supported for BL <label> when label points to ARM code");
+                /* The address of the target is always relative to a 4-bytes
+                 * aligned address, so if the address of the BL instruction is
+                 * not 4-bytes aligned, adjust for it. */
+                if ((base_addr + offset) & 0x2)
+                    tmp += 2;
+                /* Encoding T2 of BLX is 11x0. */
+                type = 0xc;
+            }
 
             unsigned int s = (word0 & (1 << 10)) >> 10;
             unsigned int j1 = (word1 & (1 << 13)) >> 13;
@@ -250,7 +273,7 @@ private:
             j2 = ((tmp & (1 << 22)) >> 22) ^ !s;
 
             return 0xf000 | (s << 10) | ((tmp & (0x3ff << 12)) >> 12) |
-                   ((word1 & 0xd000) << 16) | (j1 << 29) | (j2 << 27) | ((tmp & 0xffe) << 15);
+                   (type << 28) | (j1 << 29) | (j2 << 27) | ((tmp & 0xffe) << 15);
         }
     };
 
@@ -326,6 +349,8 @@ private:
             case REL(ARM, REL32):
                 apply_relocation<pc32_relocation>(the_code, buf, &*r, addr);
                 break;
+            case REL(ARM, CALL):
+            case REL(ARM, JUMP24):
             case REL(ARM, PLT32):
                 apply_relocation<arm_plt32_relocation>(the_code, buf, &*r, addr);
                 break;
@@ -411,7 +436,17 @@ void maybe_split_segment(Elf *elf, ElfSegment *segment, bool fill)
             // PT_LOAD.
             if (!fill)
                 break;
+            // Insert dummy segment to normalize the entire Elf with the header
+            // sizes adjusted, before inserting a filler segment.
+            {
+              memset(&phdr, 0, sizeof(phdr));
+              ElfSegment dummySegment(&phdr);
+              elf->insertSegmentAfter(segment, &dummySegment);
+              elf->normalize();
+              elf->removeSegment(&dummySegment);
+            }
             ElfSection *previous = section->getPrevious();
+            phdr.p_type = PT_LOAD;
             phdr.p_vaddr = (previous->getAddr() + previous->getSize() + segment->getAlign() - 1) & ~(segment->getAlign() - 1);
             phdr.p_paddr = phdr.p_vaddr + segment->getVPDiff();
             phdr.p_flags = 0;
@@ -422,6 +457,8 @@ void maybe_split_segment(Elf *elf, ElfSegment *segment, bool fill)
                 newSegment = new ElfSegment(&phdr);
                 assert(newSegment->isElfHackFillerSegment());
                 elf->insertSegmentAfter(segment, newSegment);
+            } else {
+                elf->normalize();
             }
             break;
         }

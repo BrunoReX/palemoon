@@ -7,7 +7,6 @@
 #define mozilla_dom_SVGPolylineElement_h
 
 #include "nsSVGPolyElement.h"
-#include "nsIDOMSVGPolylineElement.h"
 
 nsresult NS_NewSVGPolylineElement(nsIContent **aResult,
                                   already_AddRefed<nsINodeInfo> aNodeInfo);
@@ -17,30 +16,18 @@ typedef nsSVGPolyElement SVGPolylineElementBase;
 namespace mozilla {
 namespace dom {
 
-class SVGPolylineElement MOZ_FINAL : public SVGPolylineElementBase,
-                                     public nsIDOMSVGPolylineElement
+class SVGPolylineElement MOZ_FINAL : public SVGPolylineElementBase
 {
 protected:
   SVGPolylineElement(already_AddRefed<nsINodeInfo> aNodeInfo);
-  virtual JSObject* WrapNode(JSContext *cx, JSObject *scope, bool *triedToWrap) MOZ_OVERRIDE;
+  virtual JSObject* WrapNode(JSContext *cx,
+                             JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
   friend nsresult (::NS_NewSVGPolylineElement(nsIContent **aResult,
                                               already_AddRefed<nsINodeInfo> aNodeInfo));
 
 public:
-  // interfaces:
-
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIDOMSVGPOLYLINEELEMENT
-
-  // xxx I wish we could use virtual inheritance
-  NS_FORWARD_NSIDOMNODE_TO_NSINODE
-  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
-  NS_FORWARD_NSIDOMSVGELEMENT(SVGPolylineElementBase::)
-
   // nsIContent interface
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
-  virtual nsXPCClassInfo* GetClassInfo();
-  virtual nsIDOMNode* AsDOMNode() { return this; }
 };
 
 } // namespace mozilla

@@ -7,6 +7,11 @@
 #include "SourceSurfaceSkia.h"
 #include "ScaledFontBase.h"
 #include "skia/SkDevice.h"
+
+#ifdef USE_SKIA_GPU
+#include "skia/SkGpuDevice.h"
+#endif
+
 #include "skia/SkTypeface.h"
 #include "skia/SkGradientShader.h"
 #include "skia/SkBlurDrawLooper.h"
@@ -75,30 +80,26 @@ public:
 };
 
 DrawTargetSkia::DrawTargetSkia()
+  : mSnapshot(nullptr)
 {
 }
 
 DrawTargetSkia::~DrawTargetSkia()
 {
-  if (mSnapshots.size()) {
-    for (std::vector<SourceSurfaceSkia*>::iterator iter = mSnapshots.begin();
-         iter != mSnapshots.end(); iter++) {
-      (*iter)->DrawTargetDestroyed();
-    }
-    // All snapshots will now have copied data.
-    mSnapshots.clear();
-  }
 }
 
 TemporaryRef<SourceSurface>
 DrawTargetSkia::Snapshot()
 {
-  RefPtr<SourceSurfaceSkia> source = new SourceSurfaceSkia();
-  if (!source->InitWithBitmap(mBitmap, mFormat, this)) {
-    return nullptr;
+  RefPtr<SourceSurfaceSkia> snapshot = mSnapshot;
+  if (!snapshot) {
+    snapshot = new SourceSurfaceSkia();
+    mSnapshot = snapshot;
+    if (!snapshot->InitFromCanvas(mCanvas.get(), mFormat, this))
+      return nullptr;
   }
-  AppendSnapshot(source);
-  return source;
+
+  return snapshot;
 }
 
 void SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern, Float aAlpha = 1.0)
@@ -248,6 +249,7 @@ struct AutoPaintSetup {
 void
 DrawTargetSkia::Flush()
 {
+  mCanvas->flush();
 }
 
 void
@@ -545,7 +547,7 @@ DrawTargetSkia::CopySurface(SourceSurface *aSurface,
 {
   //TODO: We could just use writePixels() here if the sourceRect is the entire source
   
-    if (aSurface->GetType() != SURFACE_SKIA) {
+  if (aSurface->GetType() != SURFACE_SKIA) {
     return;
   }
 
@@ -560,8 +562,7 @@ DrawTargetSkia::CopySurface(SourceSurface *aSurface,
   mCanvas->clipRect(dest, SkRegion::kReplace_Op);
   SkPaint paint;
 
-  if (mBitmap.config() == SkBitmap::kRGB_565_Config &&
-      mCanvas->getDevice()->config() == SkBitmap::kRGB_565_Config) {
+  if (mCanvas->getDevice()->config() == SkBitmap::kRGB_565_Config) {
     // Set the xfermode to SOURCE_OVER to workaround
     // http://code.google.com/p/skia/issues/detail?id=628
     // RGB565 is opaque so they're equivalent anyway
@@ -577,38 +578,68 @@ DrawTargetSkia::CopySurface(SourceSurface *aSurface,
 bool
 DrawTargetSkia::Init(const IntSize &aSize, SurfaceFormat aFormat)
 {
-  mBitmap.setConfig(GfxFormatToSkiaConfig(aFormat), aSize.width, aSize.height);
-  if (!mBitmap.allocPixels()) {
+  SkAutoTUnref<SkDevice> device(new SkDevice(GfxFormatToSkiaConfig(aFormat), aSize.width, aSize.height));
+
+  SkBitmap bitmap = device->accessBitmap(true);
+  if (!bitmap.allocPixels()) {
     return false;
   }
-  mBitmap.eraseARGB(0, 0, 0, 0);
-  SkAutoTUnref<SkDevice> device(new SkDevice(mBitmap));
+
+  bitmap.eraseARGB(0, 0, 0, 0);
+
   SkAutoTUnref<SkCanvas> canvas(new SkCanvas(device.get()));
   mSize = aSize;
 
-  mDevice = device.get();
   mCanvas = canvas.get();
   mFormat = aFormat;
   return true;
 }
 
+#ifdef USE_SKIA_GPU
 void
-DrawTargetSkia::Init(unsigned char* aData, const IntSize &aSize, int32_t aStride, SurfaceFormat aFormat)
+DrawTargetSkia::InitWithFBO(unsigned int aFBOID, GrContext* aGrContext, const IntSize &aSize, SurfaceFormat aFormat)
 {
-  if (aFormat == FORMAT_B8G8R8X8) {
-    // We have to manually set the A channel to be 255 as Skia doesn't understand BGRX
-    ConvertBGRXToBGRA(aData, aSize, aStride);
-    mBitmap.setIsOpaque(true);
-  }
+  GrPlatformRenderTargetDesc targetDescriptor;
 
-  mBitmap.setConfig(GfxFormatToSkiaConfig(aFormat), aSize.width, aSize.height, aStride);
-  mBitmap.setPixels(aData);
-  
-  SkAutoTUnref<SkDevice> device(new SkDevice(mBitmap));
+  targetDescriptor.fWidth = aSize.width;
+  targetDescriptor.fHeight = aSize.height;
+  targetDescriptor.fConfig = GfxFormatToGrConfig(aFormat);
+  targetDescriptor.fSampleCnt = 0;
+  targetDescriptor.fRenderTargetHandle = aFBOID;
+
+  SkAutoTUnref<GrRenderTarget> target(aGrContext->createPlatformRenderTarget(targetDescriptor));
+
+  SkAutoTUnref<SkDevice> device(new SkGpuDevice(aGrContext, target.get()));
   SkAutoTUnref<SkCanvas> canvas(new SkCanvas(device.get()));
   mSize = aSize;
 
-  mDevice = device.get();
+  mCanvas = canvas.get();
+  mFormat = aFormat;
+}
+#endif
+
+void
+DrawTargetSkia::Init(unsigned char* aData, const IntSize &aSize, int32_t aStride, SurfaceFormat aFormat)
+{
+  bool isOpaque = false;
+  if (aFormat == FORMAT_B8G8R8X8) {
+    // We have to manually set the A channel to be 255 as Skia doesn't understand BGRX
+    ConvertBGRXToBGRA(aData, aSize, aStride);
+    isOpaque = true;
+  }
+  
+  SkAutoTUnref<SkDevice> device(new SkDevice(GfxFormatToSkiaConfig(aFormat), aSize.width, aSize.height, isOpaque));
+
+  SkBitmap bitmap = (SkBitmap)device->accessBitmap(true);
+  bitmap.lockPixels();
+  bitmap.setPixels(aData);
+  bitmap.setConfig(GfxFormatToSkiaConfig(aFormat), aSize.width, aSize.height, aStride);
+  bitmap.unlockPixels();
+  bitmap.notifyPixelsChanged();
+
+  SkAutoTUnref<SkCanvas> canvas(new SkCanvas(device.get()));
+  mSize = aSize;
+
   mCanvas = canvas.get();
   mFormat = aFormat;
 }
@@ -683,31 +714,18 @@ DrawTargetSkia::CreateGradientStops(GradientStop *aStops, uint32_t aNumStops, Ex
 }
 
 void
-DrawTargetSkia::AppendSnapshot(SourceSurfaceSkia* aSnapshot)
-{
-  mSnapshots.push_back(aSnapshot);
-}
-
-void
-DrawTargetSkia::RemoveSnapshot(SourceSurfaceSkia* aSnapshot)
-{
-  std::vector<SourceSurfaceSkia*>::iterator iter = std::find(mSnapshots.begin(), mSnapshots.end(), aSnapshot);
-  if (iter != mSnapshots.end()) {
-    mSnapshots.erase(iter);
-  }
-}
-
-void
 DrawTargetSkia::MarkChanged()
 {
-  if (mSnapshots.size()) {
-    for (std::vector<SourceSurfaceSkia*>::iterator iter = mSnapshots.begin();
-         iter != mSnapshots.end(); iter++) {
-      (*iter)->DrawTargetWillChange();
-    }
-    // All snapshots will now have copied data.
-    mSnapshots.clear();
+  if (mSnapshot) {
+    mSnapshot->DrawTargetWillChange();
+    mSnapshot = nullptr;
   }
+}
+
+void
+DrawTargetSkia::SnapshotDestroyed()
+{
+  mSnapshot = nullptr;
 }
 
 }

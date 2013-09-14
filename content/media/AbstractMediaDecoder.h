@@ -7,6 +7,7 @@
 #ifndef AbstractMediaDecoder_h_
 #define AbstractMediaDecoder_h_
 
+#include "mozilla/Attributes.h"
 #include "nsISupports.h"
 #include "nsDataHashtable.h"
 #include "nsThreadUtils.h"
@@ -22,8 +23,13 @@ class MediaResource;
 class ReentrantMonitor;
 class VideoFrameContainer;
 class TimedMetadata;
+class MediaDecoderOwner;
 
 typedef nsDataHashtable<nsCStringHashKey, nsCString> MetadataTags;
+
+static inline bool IsCurrentThread(nsIThread* aThread) {
+  return NS_GetCurrentThread() == aThread;
+}
 
 /**
  * The AbstractMediaDecoder class describes the public interface for a media decoder
@@ -81,8 +87,8 @@ public:
   // Return true if the transport layer supports seeking.
   virtual bool IsMediaSeekable() = 0;
 
-  virtual void MetadataLoaded(int aChannels, int aRate, bool aHasAudio, MetadataTags* aTags) = 0;
-  virtual void QueueMetadata(int64_t aTime, int aChannels, int aRate, bool aHasAudio, MetadataTags* aTags) = 0;
+  virtual void MetadataLoaded(int aChannels, int aRate, bool aHasAudio, bool aHasVideo, MetadataTags* aTags) = 0;
+  virtual void QueueMetadata(int64_t aTime, int aChannels, int aRate, bool aHasAudio, bool aHasVideo, MetadataTags* aTags) = 0;
 
   // Set the media end time in microseconds
   virtual void SetMediaEndTime(int64_t aTime) = 0;
@@ -96,6 +102,10 @@ public:
   // May be called by the reader to notify this decoder that the metadata from
   // the media file has been read. Call on the decode thread only.
   virtual void OnReadMetadataCompleted() = 0;
+
+  // Returns the owner of this media decoder. The owner should only be used
+  // on the main thread.
+  virtual MediaDecoderOwner* GetOwner() = 0;
 
   // Stack based class to assist in notifying the frame statistics of
   // parsed and decoded frames. Use inside video demux & decode functions
@@ -119,23 +129,25 @@ class AudioMetadataEventRunner : public nsRunnable
   private:
     nsRefPtr<AbstractMediaDecoder> mDecoder;
   public:
-    AudioMetadataEventRunner(AbstractMediaDecoder* aDecoder, int aChannels, int aRate, bool aHasAudio, MetadataTags* aTags)
+    AudioMetadataEventRunner(AbstractMediaDecoder* aDecoder, int aChannels, int aRate, bool aHasAudio, bool aHasVideo, MetadataTags* aTags)
       : mDecoder(aDecoder),
         mChannels(aChannels),
         mRate(aRate),
         mHasAudio(aHasAudio),
+        mHasVideo(aHasVideo),
         mTags(aTags)
   {}
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() MOZ_OVERRIDE
   {
-    mDecoder->MetadataLoaded(mChannels, mRate, mHasAudio, mTags);
+    mDecoder->MetadataLoaded(mChannels, mRate, mHasAudio, mHasVideo, mTags);
     return NS_OK;
   }
 
   int mChannels;
   int mRate;
   bool mHasAudio;
+  bool mHasVideo;
   MetadataTags* mTags;
 };
 

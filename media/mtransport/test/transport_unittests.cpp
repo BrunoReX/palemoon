@@ -12,6 +12,7 @@
 
 #include "sigslot.h"
 
+#include "logging.h"
 #include "nspr.h"
 #include "nss.h"
 #include "ssl.h"
@@ -29,7 +30,6 @@
 #include "transportlayerlog.h"
 #include "transportlayerloopback.h"
 
-#include "logging.h"
 #include "mtransport_test_utils.h"
 #include "runnable_utils.h"
 
@@ -42,10 +42,40 @@ MOZ_MTLOG_MODULE("mtransport")
 
 MtransportTestUtils *test_utils;
 
+// Layer class which can't be initialized.
+class TransportLayerDummy : public TransportLayer {
+ public:
+  TransportLayerDummy(bool allow_init, bool *destroyed)
+      : allow_init_(allow_init),
+        destroyed_(destroyed) {
+    *destroyed_ = false;
+  }
+
+  virtual ~TransportLayerDummy() {
+    *destroyed_ = true;
+  }
+
+  virtual nsresult InitInternal() {
+    return allow_init_ ? NS_OK : NS_ERROR_FAILURE;
+  }
+
+  virtual TransportResult SendPacket(const unsigned char *data, size_t len) {
+    MOZ_CRASH();  // Should never be called.
+    return 0;
+  }
+
+  TRANSPORT_LAYER_ID("lossy")
+
+ private:
+  bool allow_init_;
+  bool *destroyed_;
+};
+
 // Class to simulate various kinds of network lossage
 class TransportLayerLossy : public TransportLayer {
  public:
   TransportLayerLossy() : loss_mask_(0), packet_(0) {}
+  ~TransportLayerLossy () {}
 
   virtual TransportResult SendPacket(const unsigned char *data, size_t len) {
     MOZ_MTLOG(PR_LOG_NOTICE, LAYER_INFO << "SendPacket(" << len << ")");
@@ -112,6 +142,12 @@ class TransportTestPeer : public sigslot::has_slots<> {
         peer_(nullptr),
         gathering_complete_(false)
  {
+    std::vector<NrIceStunServer> stun_servers;
+    ScopedDeletePtr<NrIceStunServer> server(NrIceStunServer::Create(
+        std::string((char *)"216.93.246.14"), 3478));
+    stun_servers.push_back(*server);
+    EXPECT_TRUE(NS_SUCCEEDED(ice_ctx_->SetStunServers(stun_servers)));
+
     dtls_->SetIdentity(identity_);
     dtls_->SetRole(name == "P2" ?
                    TransportLayerDtls::CLIENT :
@@ -122,7 +158,7 @@ class TransportTestPeer : public sigslot::has_slots<> {
                                              sizeof(fingerprint_),
                                              &fingerprint_len_);
     EXPECT_TRUE(NS_SUCCEEDED(res));
-    EXPECT_EQ(20, fingerprint_len_);
+    EXPECT_EQ(20u, fingerprint_len_);
   }
 
   ~TransportTestPeer() {
@@ -131,15 +167,26 @@ class TransportTestPeer : public sigslot::has_slots<> {
       NS_DISPATCH_SYNC);
   }
 
+
   void DestroyFlow() {
+    if (flow_) {
+      loopback_->Disconnect();
+      flow_ = nullptr;
+    }
+    ice_ctx_ = nullptr;
+  }
+
+  void DisconnectDestroyFlow() {
     loopback_->Disconnect();
-    flow_ = nullptr;
+    disconnect_all();  // Disconnect from the signals;
+     flow_ = nullptr;
   }
 
   void SetDtlsAllowAll() {
     nsresult res = dtls_->SetVerificationAllowAll();
     ASSERT_TRUE(NS_SUCCEEDED(res));
   }
+
   void SetDtlsPeer(TransportTestPeer *peer, int digests, unsigned int damage) {
     unsigned int mask = 1;
 
@@ -164,7 +211,7 @@ class TransportTestPeer : public sigslot::has_slots<> {
   }
 
 
-  void ConnectSocket(TransportTestPeer *peer) {
+  void ConnectSocket_s(TransportTestPeer *peer) {
     nsresult res;
     res = loopback_->Init();
     ASSERT_EQ((nsresult)NS_OK, res);
@@ -177,6 +224,13 @@ class TransportTestPeer : public sigslot::has_slots<> {
     ASSERT_EQ((nsresult)NS_OK, flow_->PushLayer(dtls_));
 
     flow_->SignalPacketReceived.connect(this, &TransportTestPeer::PacketReceived);
+  }
+
+  void ConnectSocket(TransportTestPeer *peer) {
+    RUN_ON_THREAD(test_utils->sts_target(),
+                  WrapRunnable(this, & TransportTestPeer::ConnectSocket_s,
+                               peer),
+                  NS_DISPATCH_SYNC);
   }
 
   void InitIce() {
@@ -204,14 +258,15 @@ class TransportTestPeer : public sigslot::has_slots<> {
     ice_ = new TransportLayerIce(name, ice_ctx_, stream, 1);
 
     // Assemble the stack
-    std::queue<mozilla::TransportLayer *> layers;
-    layers.push(ice_);
-    layers.push(dtls_);
+    nsAutoPtr<std::queue<mozilla::TransportLayer *> > layers(
+      new std::queue<mozilla::TransportLayer *>);
+    layers->push(ice_);
+    layers->push(dtls_);
 
     test_utils->sts_target()->Dispatch(
       WrapRunnableRet(flow_, &TransportFlow::PushLayers, layers, &res),
       NS_DISPATCH_SYNC);
-        
+
     ASSERT_EQ((nsresult)NS_OK, res);
 
     // Listen for media events
@@ -275,7 +330,6 @@ class TransportTestPeer : public sigslot::has_slots<> {
 
   TransportResult SendPacket(const unsigned char* data, size_t len) {
     TransportResult ret;
-    
     test_utils->sts_target()->Dispatch(
       WrapRunnableRet(flow_, &TransportFlow::SendPacket, data, len, &ret),
       NS_DISPATCH_SYNC);
@@ -300,12 +354,22 @@ class TransportTestPeer : public sigslot::has_slots<> {
     lossy_->SetLoss(loss);
   }
 
+  TransportLayer::State state() {
+    TransportLayer::State tstate;
+
+    RUN_ON_THREAD(test_utils->sts_target(),
+                  WrapRunnableRet(flow_, &TransportFlow::state, &tstate),
+                  NS_DISPATCH_SYNC);
+
+    return tstate;
+  }
+
   bool connected() {
-    return flow_->state() == TransportLayer::TS_OPEN;
+    return state() == TransportLayer::TS_OPEN;
   }
 
   bool failed() {
-    return flow_->state() == TransportLayer::TS_ERROR;
+    return state() == TransportLayer::TS_ERROR;
   }
 
   size_t received() { return received_; }
@@ -345,6 +409,11 @@ class TransportTest : public ::testing::Test {
     //    Can't detach these
     //    PR_Close(fds_[0]);
     //    PR_Close(fds_[1]);
+  }
+
+  void DestroyPeerFlows() {
+    p1_->DisconnectDestroyFlow();
+    p2_->DisconnectDestroyFlow();
   }
 
   void SetUp() {
@@ -433,6 +502,12 @@ TEST_F(TransportTest, TestConnect) {
   ConnectSocket();
 }
 
+TEST_F(TransportTest, TestConnectDestroyFlowsMainThread) {
+  SetDtlsPeer();
+  ConnectSocket();
+  DestroyPeerFlows();
+}
+
 TEST_F(TransportTest, TestConnectAllowAll) {
   SetDtlsAllowAll();
   ConnectSocket();
@@ -490,6 +565,59 @@ TEST_F(TransportTest, TestTransferIce) {
   SetDtlsPeer();
   ConnectIce();
   TransferTest(1);
+}
+
+TEST(PushTests, LayerFail) {
+  TransportFlow flow;
+  nsresult rv;
+  bool destroyed1, destroyed2;
+
+  rv = flow.PushLayer(new TransportLayerDummy(true, &destroyed1));
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+
+  rv = flow.PushLayer(new TransportLayerDummy(false, &destroyed2));
+  ASSERT_TRUE(NS_FAILED(rv));
+
+  ASSERT_EQ(TransportLayer::TS_ERROR, flow.state());
+  ASSERT_EQ(true, destroyed1);
+  ASSERT_EQ(true, destroyed2);
+
+  rv = flow.PushLayer(new TransportLayerDummy(true, &destroyed1));
+  ASSERT_TRUE(NS_FAILED(rv));
+  ASSERT_EQ(true, destroyed1);
+}
+
+
+TEST(PushTests, LayersFail) {
+  TransportFlow flow;
+  nsresult rv;
+  bool destroyed1, destroyed2, destroyed3;
+
+  rv = flow.PushLayer(new TransportLayerDummy(true, &destroyed1));
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+
+  nsAutoPtr<std::queue<TransportLayer *> > layers(
+      new std::queue<TransportLayer *>());
+
+  layers->push(new TransportLayerDummy(true, &destroyed2));
+  layers->push(new TransportLayerDummy(false, &destroyed3));
+
+  rv = flow.PushLayers(layers);
+  ASSERT_TRUE(NS_FAILED(rv));
+
+  ASSERT_EQ(TransportLayer::TS_ERROR, flow.state());
+  ASSERT_EQ(true, destroyed1);
+  ASSERT_EQ(true, destroyed2);
+  ASSERT_EQ(true, destroyed3);
+
+  layers = new std::queue<TransportLayer *>();
+  layers->push(new TransportLayerDummy(true, &destroyed2));
+  layers->push(new TransportLayerDummy(true, &destroyed3));
+  rv = flow.PushLayers(layers);
+
+  ASSERT_TRUE(NS_FAILED(rv));
+  ASSERT_EQ(true, destroyed2);
+  ASSERT_EQ(true, destroyed3);
 }
 
 }  // end namespace

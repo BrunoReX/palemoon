@@ -9,20 +9,20 @@
 
 // Keep others in (case-insensitive) order:
 #include "gfxMatrix.h"
-#include "mozilla/Preferences.h"
 #include "nsComputedDOMStyle.h"
 #include "nsFontMetrics.h"
 #include "nsIFrame.h"
 #include "nsIScriptError.h"
 #include "nsLayoutUtils.h"
 #include "SVGAnimationElement.h"
-#include "nsSVGSVGElement.h"
+#include "mozilla/dom/SVGSVGElement.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
+#include "nsContentUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsSVGSVGElement*
+SVGSVGElement*
 SVGContentUtils::GetOuterSVGElement(nsSVGElement *aSVGElement)
 {
   nsIContent *element = nullptr;
@@ -35,7 +35,7 @@ SVGContentUtils::GetOuterSVGElement(nsSVGElement *aSVGElement)
   }
 
   if (element && element->Tag() == nsGkAtoms::svg) {
-    return static_cast<nsSVGSVGElement*>(element);
+    return static_cast<SVGSVGElement*>(element);
   }
   return nullptr;
 }
@@ -71,7 +71,7 @@ float
 SVGContentUtils::GetFontSize(nsIFrame *aFrame)
 {
   NS_ABORT_IF_FALSE(aFrame, "NULL frame in GetFontSize");
-  return GetFontSize(aFrame->GetStyleContext());
+  return GetFontSize(aFrame->StyleContext());
 }
 
 float
@@ -82,7 +82,7 @@ SVGContentUtils::GetFontSize(nsStyleContext *aStyleContext)
   nsPresContext *presContext = aStyleContext->PresContext();
   NS_ABORT_IF_FALSE(presContext, "NULL pres context in GetFontSize");
 
-  nscoord fontSize = aStyleContext->GetStyleFont()->mSize;
+  nscoord fontSize = aStyleContext->StyleFont()->mSize;
   return nsPresContext::AppUnitsToFloatCSSPixels(fontSize) / 
          presContext->TextZoom();
 }
@@ -109,7 +109,7 @@ float
 SVGContentUtils::GetFontXHeight(nsIFrame *aFrame)
 {
   NS_ABORT_IF_FALSE(aFrame, "NULL frame in GetFontXHeight");
-  return GetFontXHeight(aFrame->GetStyleContext());
+  return GetFontXHeight(aFrame->StyleContext());
 }
 
 float
@@ -260,34 +260,31 @@ SVGContentUtils::AngleBisect(float a1, float a2)
 {
   float delta = fmod(a2 - a1, static_cast<float>(2*M_PI));
   if (delta < 0) {
-    delta += 2*M_PI;
+    delta += static_cast<float>(2*M_PI);
   }
   /* delta is now the angle from a1 around to a2, in the range [0, 2*M_PI) */
   float r = a1 + delta/2;
   if (delta >= M_PI) {
     /* the arc from a2 to a1 is smaller, so use the ray on that side */
-    r += M_PI;
+    r += static_cast<float>(M_PI);
   }
   return r;
 }
 
 gfxMatrix
-SVGContentUtils::GetViewBoxTransform(const nsSVGElement* aElement,
-                                     float aViewportWidth, float aViewportHeight,
+SVGContentUtils::GetViewBoxTransform(float aViewportWidth, float aViewportHeight,
                                      float aViewboxX, float aViewboxY,
                                      float aViewboxWidth, float aViewboxHeight,
                                      const SVGAnimatedPreserveAspectRatio &aPreserveAspectRatio)
 {
-  return GetViewBoxTransform(aElement,
-                             aViewportWidth, aViewportHeight,
+  return GetViewBoxTransform(aViewportWidth, aViewportHeight,
                              aViewboxX, aViewboxY,
                              aViewboxWidth, aViewboxHeight,
                              aPreserveAspectRatio.GetAnimValue());
 }
 
 gfxMatrix
-SVGContentUtils::GetViewBoxTransform(const nsSVGElement* aElement,
-                                     float aViewportWidth, float aViewportHeight,
+SVGContentUtils::GetViewBoxTransform(float aViewportWidth, float aViewportHeight,
                                      float aViewboxX, float aViewboxY,
                                      float aViewboxWidth, float aViewboxHeight,
                                      const SVGPreserveAspectRatio &aPreserveAspectRatio)

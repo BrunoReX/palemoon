@@ -6,16 +6,22 @@
 #ifndef __NS_SVGBOOLEAN_H__
 #define __NS_SVGBOOLEAN_H__
 
-#include "nsAutoPtr.h"
-#include "nsCycleCollectionParticipant.h"
+#include "nsCOMPtr.h"
 #include "nsError.h"
 #include "nsISMILAttr.h"
-#include "nsISupportsImpl.h"
-#include "nsSVGElement.h"
 #include "mozilla/Attributes.h"
 
-class nsISMILAnimationElement;
+class nsIAtom;
+class nsISupports;
 class nsSMILValue;
+class nsSVGElement;
+
+namespace mozilla {
+namespace dom {
+class SVGAnimationElement;
+class SVGAnimatedBoolean;
+}
+}
 
 class nsSVGBoolean
 {
@@ -38,8 +44,8 @@ public:
   bool GetAnimValue() const
     { return mAnimVal; }
 
-  nsresult ToDOMAnimatedBoolean(nsISupports **aResult,
-                                nsSVGElement* aSVGElement);
+  already_AddRefed<mozilla::dom::SVGAnimatedBoolean>
+    ToDOMAnimatedBoolean(nsSVGElement* aSVGElement);
   // Returns a new nsISMILAttr object that the caller must delete
   nsISMILAttr* ToSMILAttr(nsSVGElement* aSVGElement);
 
@@ -65,12 +71,12 @@ public:
 
     // nsISMILAttr methods
     virtual nsresult ValueFromString(const nsAString& aStr,
-                                     const nsISMILAnimationElement* aSrcElement,
+                                     const mozilla::dom::SVGAnimationElement* aSrcElement,
                                      nsSMILValue& aValue,
-                                     bool& aPreventCachingOfSandwich) const;
-    virtual nsSMILValue GetBaseValue() const;
-    virtual void ClearAnimValue();
-    virtual nsresult SetAnimValue(const nsSMILValue& aValue);
+                                     bool& aPreventCachingOfSandwich) const MOZ_OVERRIDE;
+    virtual nsSMILValue GetBaseValue() const MOZ_OVERRIDE;
+    virtual void ClearAnimValue() MOZ_OVERRIDE;
+    virtual nsresult SetAnimValue(const nsSMILValue& aValue) MOZ_OVERRIDE;
   };
 };
 #endif //__NS_SVGBOOLEAN_H__

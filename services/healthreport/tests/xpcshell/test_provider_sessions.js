@@ -6,7 +6,7 @@
 const {utils: Cu} = Components;
 
 
-Cu.import("resource://gre/modules/commonjs/promise/core.js");
+Cu.import("resource://gre/modules/Promise.jsm");
 Cu.import("resource://gre/modules/Metrics.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://gre/modules/services-common/utils.js");
@@ -27,7 +27,6 @@ add_test(function test_constructor() {
 add_task(function test_init() {
   let storage = yield Metrics.Storage("init");
   let provider = new SessionsProvider();
-  provider.initPreferences("testing.init.");
   yield provider.init(storage);
   yield provider.shutdown();
 
@@ -61,7 +60,6 @@ function getProvider(name, now=new Date(), init=true) {
   return Task.spawn(function () {
     let storage = yield Metrics.Storage(name);
     let provider = new SessionsProvider();
-    provider.initPreferences("testing." + name + ".healthreport.provider.");
 
     let recorder = new SessionRecorder("testing." + name + ".sessions.");
     monkeypatchStartupInfo(recorder, now);
@@ -83,7 +81,7 @@ add_task(function test_current_session() {
   yield sleep(25);
   recorder.onActivity(true);
 
-  let current = provider.getMeasurement("current", 2);
+  let current = provider.getMeasurement("current", 3);
   let values = yield current.getValues();
   let fields = values.singular;
 
@@ -120,17 +118,21 @@ add_task(function test_collect() {
   recorder = new SessionRecorder("testing.collect.sessions.");
   recorder.onStartup();
 
-  yield provider.collectConstantData();
+  // Collecting the provider should prune all previous sessions.
   let sessions = recorder.getPreviousSessions();
+  do_check_eq(Object.keys(sessions).length, 6);
+  yield provider.collectConstantData();
+  sessions = recorder.getPreviousSessions();
   do_check_eq(Object.keys(sessions).length, 0);
 
-  let daily = provider.getMeasurement("previous", 2);
+  // And those previous sessions should make it to storage.
+  let daily = provider.getMeasurement("previous", 3);
   let values = yield daily.getValues();
   do_check_true(values.days.hasDay(now));
   do_check_eq(values.days.size, 1);
-
   let day = values.days.getDay(now);
   do_check_eq(day.size, 5);
+  let previousStorageCount = day.get("main").length;
 
   for (let field of ["cleanActiveTicks", "cleanTotalTime", "main", "firstPaint", "sessionRestored"]) {
     do_check_true(day.has(field));
@@ -138,7 +140,12 @@ add_task(function test_collect() {
     do_check_eq(day.get(field).length, 6);
   }
 
-  // Fake an aborted sessions.
+  let lastIndex = yield provider.getState("lastSession");
+  do_check_eq(lastIndex, "" + (previousStorageCount - 1)); // 0-indexed
+
+  // Fake an aborted session. If we create a 2nd recorder against the same
+  // prefs branch as a running one, this simulates what would happen if the
+  // first recorder didn't shut down.
   let recorder2 = new SessionRecorder("testing.collect.sessions.");
   recorder2.onStartup();
   do_check_eq(Object.keys(recorder.getPreviousSessions()).length, 1);
@@ -147,14 +154,37 @@ add_task(function test_collect() {
 
   values = yield daily.getValues();
   day = values.days.getDay(now);
+  do_check_eq(day.size, previousStorageCount + 1);
+  previousStorageCount = day.get("main").length;
   for (let field of ["abortedActiveTicks", "abortedTotalTime"]) {
     do_check_true(day.has(field));
     do_check_true(Array.isArray(day.get(field)));
     do_check_eq(day.get(field).length, 1);
   }
 
+  lastIndex = yield provider.getState("lastSession");
+  do_check_eq(lastIndex, "" + (previousStorageCount - 1));
+
   recorder.onShutdown();
   recorder2.onShutdown();
+
+  // If we try to insert a already-inserted session, it will be ignored.
+  recorder = new SessionRecorder("testing.collect.sessions.");
+  recorder._currentIndex = recorder._currentIndex - 1;
+  recorder._prunedIndex = recorder._currentIndex;
+  recorder.onStartup();
+  // Session is left over from recorder2.
+  sessions = recorder.getPreviousSessions();
+  do_check_eq(Object.keys(sessions).length, 1);
+  do_check_true(previousStorageCount - 1 in sessions);
+  yield provider.collectConstantData();
+  lastIndex = yield provider.getState("lastSession");
+  do_check_eq(lastIndex, "" + (previousStorageCount - 1));
+  values = yield daily.getValues();
+  day = values.days.getDay(now);
+  // We should not get additional entry.
+  do_check_eq(day.get("main").length, previousStorageCount);
+  recorder.onShutdown();
 
   yield provider.shutdown();
   yield storage.close();
@@ -163,14 +193,18 @@ add_task(function test_collect() {
 add_task(function test_serialization() {
   let [provider, storage, recorder] = yield getProvider("serialization");
 
-  let current = provider.getMeasurement("current", 2);
+  yield sleep(1025);
+  recorder.onActivity(true);
+
+  let current = provider.getMeasurement("current", 3);
   let data = yield current.getValues();
   do_check_true("singular" in data);
 
   let serializer = current.serializer(current.SERIALIZE_JSON);
   let fields = serializer.singular(data.singular);
 
-  do_check_eq(fields.activeTicks, 0);
+  do_check_eq(fields._v, 3);
+  do_check_eq(fields.activeTicks, 1);
   do_check_eq(fields.startDay, Metrics.dateToDays(recorder.startDate));
   do_check_eq(fields.main, 500);
   do_check_eq(fields.firstPaint, 1000);
@@ -180,3 +214,4 @@ add_task(function test_serialization() {
   yield provider.shutdown();
   yield storage.close();
 });
+

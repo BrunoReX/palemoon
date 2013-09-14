@@ -179,7 +179,7 @@ public:
     }
 
     JSString* s = JS_NewStringCopyZ(aCx, format);
-    jsval v = STRING_TO_JSVAL(s);
+    JS::Value v = STRING_TO_JSVAL(s);
     if (!JS_SetProperty(aCx, o, "format", &v)) {
       return NS_ERROR_FAILURE;
     }
@@ -228,6 +228,6 @@ protected:
   uint32_t mMaxQualityIndex;
 };
 
-}; // namespace mozilla
+} // namespace mozilla
 
 #endif // DOM_CAMERA_CAMERA_RECORDER_PROFILES_H

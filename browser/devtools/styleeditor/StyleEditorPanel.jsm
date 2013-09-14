@@ -4,13 +4,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 
 this.EXPORTED_SYMBOLS = ["StyleEditorPanel"];
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/commonjs/promise/core.js");
-Cu.import("resource:///modules/devtools/EventEmitter.jsm");
+Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/commonjs/sdk/core/promise.js");
+Cu.import("resource:///modules/devtools/shared/event-emitter.js");
+Cu.import("resource:///modules/devtools/StyleEditorDebuggee.jsm");
+Cu.import("resource:///modules/devtools/StyleEditorUI.jsm");
+Cu.import("resource:///modules/devtools/StyleEditorUtil.jsm");
+
 
 XPCOMUtils.defineLazyModuleGetter(this, "StyleEditorChrome",
                         "resource:///modules/devtools/StyleEditorChrome.jsm");
@@ -20,105 +25,106 @@ this.StyleEditorPanel = function StyleEditorPanel(panelWin, toolbox) {
 
   this._toolbox = toolbox;
   this._target = toolbox.target;
-
-  this.reset = this.reset.bind(this);
-  this.newPage = this.newPage.bind(this);
-  this.destroy = this.destroy.bind(this);
-
-  this._target.on("will-navigate", this.reset);
-  this._target.on("navigate", this.newPage);
-  this._target.on("close", this.destroy);
-
   this._panelWin = panelWin;
   this._panelDoc = panelWin.document;
+
+  this.destroy = this.destroy.bind(this);
+  this._showError = this._showError.bind(this);
 }
 
 StyleEditorPanel.prototype = {
+  get target() this._toolbox.target,
+
+  get panelWindow() this._panelWin,
+
   /**
    * open is effectively an asynchronous constructor
    */
-  open: function StyleEditor_open() {
-    let contentWin = this._toolbox.target.window;
+  open: function() {
     let deferred = Promise.defer();
 
-    this.setPage(contentWin).then(function() {
+    let promise;
+    // We always interact with the target as if it were remote
+    if (!this.target.isRemote) {
+      promise = this.target.makeRemote();
+    } else {
+      promise = Promise.resolve(this.target);
+    }
+
+    promise.then(() => {
+      this.target.on("close", this.destroy);
+
+      this._debuggee = new StyleEditorDebuggee(this.target);
+
+      this.UI = new StyleEditorUI(this._debuggee, this._panelDoc);
+      this.UI.on("error", this._showError);
+
       this.isReady = true;
       deferred.resolve(this);
-    }.bind(this));
+    })
 
     return deferred.promise;
   },
 
   /**
-   * Target getter.
+   * Show an error message from the style editor in the toolbox
+   * notification box.
+   *
+   * @param  {string} event
+   *         Type of event
+   * @param  {string} errorCode
+   *         Error code of error to report
    */
-  get target() this._target,
-
-  /**
-   * Panel window getter.
-   */
-  get panelWindow() this._panelWin,
-
-  /**
-   * StyleEditorChrome instance getter.
-   */
-  get styleEditorChrome() this._panelWin.styleEditorChrome,
-
-  /**
-   * Set the page to target.
-   */
-  setPage: function StyleEditor_setPage(contentWindow) {
-    if (this._panelWin.styleEditorChrome) {
-      this._panelWin.styleEditorChrome.contentWindow = contentWindow;
-      this.selectStyleSheet(null, null, null);
-    } else {
-      let chromeRoot = this._panelDoc.getElementById("style-editor-chrome");
-      let chrome = new StyleEditorChrome(chromeRoot, contentWindow);
-      let promise = chrome.open();
-
-      this._panelWin.styleEditorChrome = chrome;
-      this.selectStyleSheet(null, null, null);
-      return promise;
+  _showError: function(event, errorCode) {
+    let message = _(errorCode);
+    let notificationBox = this._toolbox.getNotificationBox();
+    let notification = notificationBox.getNotificationWithValue("styleeditor-error");
+    if (!notification) {
+      notificationBox.appendNotification(message,
+        "styleeditor-error", "", notificationBox.PRIORITY_CRITICAL_LOW);
     }
   },
 
   /**
-   * Navigated to a new page.
-   */
-  newPage: function StyleEditor_newPage(event, window) {
-    this.setPage(window);
-  },
-
-  /**
-   * No window available anymore.
-   */
-  reset: function StyleEditor_reset() {
-    this._panelWin.styleEditorChrome.resetChrome();
-  },
-
-  /**
    * Select a stylesheet.
+   *
+   * @param {string} href
+   *        Url of stylesheet to find and select in editor
+   * @param {number} line
+   *        Line number to jump to after selecting. One-indexed
+   * @param {number} col
+   *        Column number to jump to after selecting. One-indexed
    */
-  selectStyleSheet: function StyleEditor_selectStyleSheet(stylesheet, line, col) {
-    this._panelWin.styleEditorChrome.selectStyleSheet(stylesheet, line, col);
+  selectStyleSheet: function(href, line, col) {
+    if (!this._debuggee || !this.UI) {
+      return;
+    }
+    let stylesheet = this._debuggee.styleSheetFromHref(href);
+    this.UI.selectStyleSheet(href, line - 1, col - 1);
   },
 
   /**
-   * Destroy StyleEditor
+   * Destroy the style editor.
    */
-  destroy: function StyleEditor_destroy() {
+  destroy: function() {
     if (!this._destroyed) {
       this._destroyed = true;
 
-      this._target.off("will-navigate", this.reset);
-      this._target.off("navigate", this.newPage);
       this._target.off("close", this.destroy);
       this._target = null;
       this._toolbox = null;
-      this._panelWin = null;
       this._panelDoc = null;
+
+      this._debuggee.destroy();
+      this.UI.destroy();
     }
 
     return Promise.resolve(null);
   },
 }
+
+XPCOMUtils.defineLazyGetter(StyleEditorPanel.prototype, "strings",
+  function () {
+    return Services.strings.createBundle(
+            "chrome://browser/locale/devtools/styleeditor.properties");
+  });

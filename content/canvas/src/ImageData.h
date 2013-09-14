@@ -60,7 +60,7 @@ public:
     return mData;
   }
 
-  JSObject* WrapObject(JSContext* cx, JSObject* scope);
+  JSObject* WrapObject(JSContext* cx, JS::Handle<JSObject*> scope);
 
 private:
   void HoldData();
@@ -69,7 +69,7 @@ private:
   ImageData() MOZ_DELETE;
 
   uint32_t mWidth, mHeight;
-  JSObject* mData;
+  JS::Heap<JSObject*> mData;
 };
 
 } // namespace dom

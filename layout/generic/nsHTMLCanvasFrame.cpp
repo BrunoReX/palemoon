@@ -19,6 +19,7 @@
 #include "nsTransform2D.h"
 
 #include "gfxContext.h"
+#include <algorithm>
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -42,7 +43,7 @@ public:
   virtual nsRegion GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
                                    bool* aSnap) {
     *aSnap = false;
-    nsIFrame* f = GetUnderlyingFrame();
+    nsIFrame* f = Frame();
     HTMLCanvasElement *canvas =
       HTMLCanvasElement::FromContent(f->GetContent());
     nsRegion result;
@@ -54,7 +55,7 @@ public:
 
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) {
     *aSnap = true;
-    nsHTMLCanvasFrame* f = static_cast<nsHTMLCanvasFrame*>(GetUnderlyingFrame());
+    nsHTMLCanvasFrame* f = static_cast<nsHTMLCanvasFrame*>(Frame());
     return f->GetInnerArea() + ToReferenceFrame();
   }
 
@@ -93,19 +94,17 @@ NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
 NS_IMPL_FRAMEARENA_HELPERS(nsHTMLCanvasFrame)
 
-NS_IMETHODIMP
+void
 nsHTMLCanvasFrame::Init(nsIContent* aContent,
                         nsIFrame*   aParent,
                         nsIFrame*   aPrevInFlow)
 {
-  nsresult rv = nsSplittableFrame::Init(aContent, aParent, aPrevInFlow);
+  nsContainerFrame::Init(aContent, aParent, aPrevInFlow);
 
   // We can fill in the canvas before the canvas frame is created, in
   // which case we never get around to marking the layer active. Therefore,
   // we mark it active here when we create the frame.
   MarkLayersActive(nsChangeHint(0));
-
-  return rv;
 }
 
 nsHTMLCanvasFrame::~nsHTMLCanvasFrame()
@@ -203,7 +202,7 @@ nsHTMLCanvasFrame::Reflow(nsPresContext*           aPresContext,
   if (GetPrevInFlow()) {
     nscoord y = GetContinuationOffset(&aMetrics.width);
     aMetrics.height -= y + mBorderPadding.top;
-    aMetrics.height = NS_MAX(0, aMetrics.height);
+    aMetrics.height = std::max(0, aMetrics.height);
   }
 
   aMetrics.SetOverflowAreasToDesiredBounds();
@@ -281,30 +280,24 @@ nsHTMLCanvasFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
   return layer.forget();
 }
 
-NS_IMETHODIMP
+void
 nsHTMLCanvasFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                                     const nsRect&           aDirtyRect,
                                     const nsDisplayListSet& aLists)
 {
   if (!IsVisibleForPainting(aBuilder))
-    return NS_OK;
+    return;
 
-  nsresult rv = DisplayBorderBackgroundOutline(aBuilder, aLists);
-  NS_ENSURE_SUCCESS(rv, rv);
+  DisplayBorderBackgroundOutline(aBuilder, aLists);
 
-  nsDisplayList replacedContent;
+  DisplayListClipState::AutoClipContainingBlockDescendantsToContentBox
+    clip(aBuilder, this, DisplayListClipState::ASSUME_DRAWING_RESTRICTED_TO_CONTENT_RECT);
 
-  rv = replacedContent.AppendNewToTop(
-      new (aBuilder) nsDisplayCanvas(aBuilder, this));
-  NS_ENSURE_SUCCESS(rv, rv);
+  aLists.Content()->AppendNewToTop(
+    new (aBuilder) nsDisplayCanvas(aBuilder, this));
 
-  rv = DisplaySelectionOverlay(aBuilder, &replacedContent,
-                               nsISelectionDisplay::DISPLAY_IMAGES);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  WrapReplacedContentForBorderRadius(aBuilder, &replacedContent, aLists);
-
-  return NS_OK;
+  DisplaySelectionOverlay(aBuilder, aLists.Content(),
+                          nsISelectionDisplay::DISPLAY_IMAGES);
 }
 
 nsIAtom*
@@ -332,7 +325,7 @@ nsHTMLCanvasFrame::GetContinuationOffset(nscoord* aWidth) const
       offset += rect.height;
     }
     offset -= mBorderPadding.top;
-    offset = NS_MAX(0, offset);
+    offset = std::max(0, offset);
   }
   return offset;
 }

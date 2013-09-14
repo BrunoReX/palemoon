@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_macro_assembler_x86_h__
-#define jsion_macro_assembler_x86_h__
+#ifndef ion_x86_MacroAssembler_x86_h
+#define ion_x86_MacroAssembler_x86_h
 
 #include "ion/shared/MacroAssembler-x86-shared.h"
 #include "ion/IonFrames.h"
@@ -28,6 +27,16 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
     bool dynamicAlignment_;
     bool enoughMemory_;
 
+    struct Double {
+        double value;
+        AbsoluteLabel uses;
+        Double(double value) : value(value) {}
+    };
+    Vector<Double, 0, SystemAllocPolicy> doubles_;
+
+    typedef HashMap<double, size_t, DefaultHasher<double>, SystemAllocPolicy> DoubleMap;
+    DoubleMap doubleMap_;
+
   protected:
     MoveResolver moveResolver_;
 
@@ -47,6 +56,7 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
   public:
     using MacroAssemblerX86Shared::Push;
     using MacroAssemblerX86Shared::callWithExitFrame;
+    using MacroAssemblerX86Shared::branch32;
 
     enum Result {
         GENERAL,
@@ -61,6 +71,10 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         enoughMemory_(true)
     {
     }
+
+    // The buffer is about to be linked, make sure any constant pools or excess
+    // bookkeeping has been flushed to the instruction stream.
+    void finish();
 
     bool oom() const {
         return MacroAssemblerX86Shared::oom() || !enoughMemory_;
@@ -97,6 +111,14 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
     }
     void moveValue(const Value &val, const ValueOperand &dest) {
         moveValue(val, dest.typeReg(), dest.payloadReg());
+    }
+    void moveValue(const ValueOperand &src, const ValueOperand &dest) {
+        JS_ASSERT(src.typeReg() != dest.payloadReg());
+        JS_ASSERT(src.payloadReg() != dest.typeReg());
+        if (src.typeReg() != dest.typeReg())
+            movl(src.typeReg(), dest.typeReg());
+        if (src.payloadReg() != dest.payloadReg())
+            movl(src.payloadReg(), dest.payloadReg());
     }
 
     /////////////////////////////////////////////////////////////////
@@ -178,6 +200,10 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         push(ImmTag(JSVAL_TYPE_TO_TAG(type)));
         push(reg);
     }
+    void pushValue(const Address &addr) {
+        push(tagOf(addr));
+        push(payloadOf(addr));
+    }
     void storePayload(const Value &val, Operand dest) {
         jsval_layout jv = JSVAL_TO_IMPL(val);
         if (val.isMarkable())
@@ -193,6 +219,9 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
     }
 
     void movePtr(const Register &src, const Register &dest) {
+        movl(src, dest);
+    }
+    void movePtr(const Register &src, const Operand &dest) {
         movl(src, dest);
     }
 
@@ -252,17 +281,7 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         cmpl(tagOf(address), ImmTag(JSVAL_LOWER_INCL_TAG_OF_GCTHING_SET));
         return cond == Equal ? AboveOrEqual : Below;
     }
-    Condition testGCThing(Condition cond, const BaseIndex &address) {
-        JS_ASSERT(cond == Equal || cond == NotEqual);
-        cmpl(tagOf(address), ImmTag(JSVAL_LOWER_INCL_TAG_OF_GCTHING_SET));
-        return cond == Equal ? AboveOrEqual : Below;
-    }
     Condition testMagic(Condition cond, const Address &address) {
-        JS_ASSERT(cond == Equal || cond == NotEqual);
-        cmpl(tagOf(address), ImmTag(JSVAL_TAG_MAGIC));
-        return cond;
-    }
-    Condition testMagic(Condition cond, const BaseIndex &address) {
         JS_ASSERT(cond == Equal || cond == NotEqual);
         cmpl(tagOf(address), ImmTag(JSVAL_TAG_MAGIC));
         return cond;
@@ -289,6 +308,20 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         JS_ASSERT(cond == Equal || cond == NotEqual);
         cmpl(ToType(operand), ImmTag(JSVAL_TAG_INT32));
         return cond;
+    }
+    Condition testInt32(Condition cond, const Address &address) {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        return testInt32(cond, Operand(address));
+    }
+    Condition testDouble(Condition cond, const Operand &operand) {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        Condition actual = (cond == Equal) ? Below : AboveOrEqual;
+        cmpl(ToType(operand), ImmTag(JSVAL_TAG_CLEAR));
+        return actual;
+    }
+    Condition testDouble(Condition cond, const Address &address) {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        return testDouble(cond, Operand(address));
     }
     Condition testUndefined(Condition cond, const ValueOperand &value) {
         return testUndefined(cond, value.typeReg());
@@ -327,7 +360,64 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         return testPrimitive(cond, value.typeReg());
     }
 
+
+    Condition testUndefined(Condition cond, const BaseIndex &address) {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        cmpl(tagOf(address), ImmTag(JSVAL_TAG_UNDEFINED));
+        return cond;
+    }
+    Condition testNull(Condition cond, const BaseIndex &address) {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        cmpl(tagOf(address), ImmTag(JSVAL_TAG_NULL));
+        return cond;
+    }
+    Condition testBoolean(Condition cond, const BaseIndex &address) {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        cmpl(tagOf(address), ImmTag(JSVAL_TAG_BOOLEAN));
+        return cond;
+    }
+    Condition testString(Condition cond, const BaseIndex &address) {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        cmpl(tagOf(address), ImmTag(JSVAL_TAG_STRING));
+        return cond;
+    }
+    Condition testInt32(Condition cond, const BaseIndex &address) {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        cmpl(tagOf(address), ImmTag(JSVAL_TAG_INT32));
+        return cond;
+    }
+    Condition testObject(Condition cond, const BaseIndex &address) {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        cmpl(tagOf(address), ImmTag(JSVAL_TAG_OBJECT));
+        return cond;
+    }
+    Condition testDouble(Condition cond, const BaseIndex &address) {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        Condition actual = (cond == Equal) ? Below : AboveOrEqual;
+        cmpl(tagOf(address), ImmTag(JSVAL_TAG_CLEAR));
+        return actual;
+    }
+    Condition testMagic(Condition cond, const BaseIndex &address) {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        cmpl(tagOf(address), ImmTag(JSVAL_TAG_MAGIC));
+        return cond;
+    }
+    Condition testGCThing(Condition cond, const BaseIndex &address) {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        cmpl(tagOf(address), ImmTag(JSVAL_LOWER_INCL_TAG_OF_GCTHING_SET));
+        return cond == Equal ? AboveOrEqual : Below;
+    }
+
+
+
     void branchTestValue(Condition cond, const ValueOperand &value, const Value &v, Label *label);
+    void branchTestValue(Condition cond, const Address &valaddr, const ValueOperand &value,
+                         Label *label)
+    {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        branchPtr(cond, tagOf(valaddr), value.typeReg(), label);
+        branchPtr(cond, payloadOf(valaddr), value.payloadReg(), label);
+    }
 
     void cmpPtr(Register lhs, const ImmWord rhs) {
         cmpl(lhs, Imm32(rhs.value));
@@ -339,6 +429,9 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         cmpl(lhs, rhs);
     }
     void cmpPtr(const Operand &lhs, const ImmGCPtr rhs) {
+        cmpl(lhs, rhs);
+    }
+    void cmpPtr(const Operand &lhs, const Imm32 rhs) {
         cmpl(lhs, rhs);
     }
     void cmpPtr(const Address &lhs, Register rhs) {
@@ -386,8 +479,26 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
     void addPtr(Imm32 imm, const Address &dest) {
         addl(imm, Operand(dest));
     }
+    void addPtr(const Address &src, const Register &dest) {
+        addl(Operand(src), dest);
+    }
     void subPtr(Imm32 imm, const Register &dest) {
         subl(imm, dest);
+    }
+    void subPtr(const Register &src, const Register &dest) {
+        subl(src, dest);
+    }
+    void subPtr(const Address &addr, const Register &dest) {
+        subl(Operand(addr), dest);
+    }
+
+    void branch32(Condition cond, const AbsoluteAddress &lhs, Imm32 rhs, Label *label) {
+        cmpl(Operand(lhs), rhs);
+        j(cond, label);
+    }
+    void branch32(Condition cond, const AbsoluteAddress &lhs, Register rhs, Label *label) {
+        cmpl(Operand(lhs), rhs);
+        j(cond, label);
     }
 
     template <typename T, typename S>
@@ -401,6 +512,10 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         branchPtr(cond, lhs, ptr, label);
     }
 
+    void branchPrivatePtr(Condition cond, const Address &lhs, Register ptr, Label *label) {
+        branchPtr(cond, lhs, ptr, label);
+    }
+
     template <typename T, typename S>
     void branchPtr(Condition cond, T lhs, S ptr, RepatchLabel *label) {
         cmpl(Operand(lhs), ptr);
@@ -411,6 +526,7 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         jump(label);
         return CodeOffsetJump(size());
     }
+
     template <typename S, typename T>
     CodeOffsetJump branchPtrWithPatch(Condition cond, S lhs, T ptr, RepatchLabel *label) {
         branchPtr(cond, lhs, ptr, label);
@@ -428,6 +544,14 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         testl(lhs, rhs);
         j(cond, label);
     }
+    void branchTestPtr(Condition cond, Register lhs, Imm32 imm, Label *label) {
+        testl(lhs, imm);
+        j(cond, label);
+    }
+    void branchTestPtr(Condition cond, const Address &lhs, Imm32 imm, Label *label) {
+        testl(Operand(lhs), imm);
+        j(cond, label);
+    }
     void decBranchPtr(Condition cond, const Register &lhs, Imm32 imm, Label *label) {
         subPtr(imm, lhs);
         j(cond, label);
@@ -441,6 +565,9 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
     }
     void loadPtr(const Address &address, Register dest) {
         movl(Operand(address), dest);
+    }
+    void loadPtr(const Operand &src, Register dest) {
+        movl(src, dest);
     }
     void loadPtr(const BaseIndex &src, Register dest) {
         movl(Operand(src), dest);
@@ -459,6 +586,9 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
     }
     void storePtr(Register src, const Address &address) {
         movl(src, Operand(address));
+    }
+    void storePtr(Register src, const Operand &dest) {
+        movl(src, dest);
     }
     void storePtr(Register src, const AbsoluteAddress &address) {
         movl(src, Operand(address));
@@ -525,6 +655,24 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         cond = testMagic(cond, t);
         j(cond, label);
     }
+    void branchTestMagicValue(Condition cond, const ValueOperand &val, JSWhyMagic why,
+                              Label *label)
+    {
+        JS_ASSERT(cond == Equal || cond == NotEqual);
+        if (cond == Equal) {
+            // Test for magic
+            Label notmagic;
+            Condition testCond = testMagic(Equal, val);
+            j(InvertCondition(testCond), &notmagic);
+            // Test magic value
+            branch32(Equal, val.payloadReg(), Imm32(static_cast<int32_t>(why)), label);
+            bind(&notmagic);
+        } else {
+            Condition testCond = testMagic(NotEqual, val);
+            j(testCond, label);
+            branch32(NotEqual, val.payloadReg(), Imm32(static_cast<int32_t>(why)), label);
+        }
+    }
 
     // Note: this function clobbers the source register.
     void boxDouble(const FloatRegister &src, const ValueOperand &dest) {
@@ -542,6 +690,9 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
     }
     void unboxInt32(const Address &src, const Register &dest) {
         movl(payloadOf(src), dest);
+    }
+    void unboxDouble(const Address &src, const FloatRegister &dest) {
+        movsd(Operand(src), dest);
     }
     void unboxBoolean(const ValueOperand &src, const Register &dest) {
         movl(src.payloadReg(), dest);
@@ -580,7 +731,7 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         if (dest.isFloat()) {
             Label notInt32, end;
             branchTestInt32(Assembler::NotEqual, src, &notInt32);
-            cvtsi2sd(Operand(src.payloadReg()), dest.fpu());
+            cvtsi2sd(src.payloadReg(), dest.fpu());
             jump(&end);
             bind(&notInt32);
             unboxDouble(src, dest.fpu());
@@ -595,6 +746,10 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
             movl(src.payloadReg(), dest);
     }
 
+    void notBoolean(const ValueOperand &val) {
+        xorl(Imm32(1), val.payloadReg());
+    }
+
     // Extended unboxing API. If the payload is already in a register, returns
     // that register. Otherwise, provides a move to the given scratch register,
     // and returns that.
@@ -603,6 +758,12 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         return scratch;
     }
     Register extractObject(const ValueOperand &value, Register scratch) {
+        return value.payloadReg();
+    }
+    Register extractInt32(const ValueOperand &value, Register scratch) {
+        return value.payloadReg();
+    }
+    Register extractBoolean(const ValueOperand &value, Register scratch) {
         return value.payloadReg();
     }
     Register extractTag(const Address &address, Register scratch) {
@@ -620,8 +781,16 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         cvtsi2sd(operand.payloadReg(), dest);
     }
 
+    void loadConstantDouble(double d, const FloatRegister &dest);
     void loadStaticDouble(const double *dp, const FloatRegister &dest) {
         movsd(dp, dest);
+    }
+
+    void branchTruncateDouble(const FloatRegister &src, const Register &dest, Label *fail) {
+        const uint32_t IndefiniteIntegerValue = 0x80000000;
+        cvttsd2si(src, dest);
+        cmpl(dest, Imm32(IndefiniteIntegerValue));
+        j(Assembler::Equal, fail);
     }
 
     Condition testInt32Truthy(bool truthy, const ValueOperand &operand) {
@@ -666,8 +835,23 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
     void lshiftPtr(Imm32 imm, Register dest) {
         shll(imm, dest);
     }
+    void xorPtr(Imm32 imm, Register dest) {
+        xorl(imm, dest);
+    }
+    void xorPtr(Register src, Register dest) {
+        xorl(src, dest);
+    }
     void orPtr(Imm32 imm, Register dest) {
         orl(imm, dest);
+    }
+    void orPtr(Register src, Register dest) {
+        orl(src, dest);
+    }
+    void andPtr(Imm32 imm, Register dest) {
+        andl(imm, dest);
+    }
+    void andPtr(Register src, Register dest) {
+        andl(src, dest);
     }
 
     void loadInstructionPointerAfterCall(const Register &dest) {
@@ -694,6 +878,23 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         j(NonZero, &noOverflow);
         addl(Imm32(1), Operand(dest.offset(4)));
         bind(&noOverflow);
+    }
+
+
+    // If source is a double, load it into dest. If source is int32,
+    // convert it to double. Else, branch to failure.
+    void ensureDouble(const ValueOperand &source, FloatRegister dest, Label *failure) {
+        Label isDouble, done;
+        branchTestDouble(Assembler::Equal, source.typeReg(), &isDouble);
+        branchTestInt32(Assembler::NotEqual, source.typeReg(), failure);
+
+        convertInt32ToDouble(source.payloadReg(), dest);
+        jump(&done);
+
+        bind(&isDouble);
+        unboxDouble(source, dest);
+
+        bind(&done);
     }
 
     // Setup a call to C/C++ code, given the number of general arguments it
@@ -729,7 +930,7 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
     void callWithABI(const Address &fun, Result result = GENERAL);
 
     // Used from within an Exit frame to handle a pending exception.
-    void handleException();
+    void handleFailureWithHandler(void *handler);
 
     void makeFrameDescriptor(Register frameSizeReg, FrameType type) {
         shll(Imm32(FRAMESIZE_SHIFT), frameSizeReg);
@@ -737,10 +938,10 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
     }
 
     // Save an exit frame (which must be aligned to the stack pointer) to
-    // ThreadData::ionTop.
+    // ThreadData::ionTop of the main thread.
     void linkExitFrame() {
         JSCompartment *compartment = GetIonContext()->compartment;
-        movl(StackPointer, Operand(&compartment->rt->ionTop));
+        movl(StackPointer, Operand(&compartment->rt->mainThread.ionTop));
     }
 
     void callWithExitFrame(IonCode *target, Register dynStack) {
@@ -750,12 +951,28 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         call(target);
     }
 
+    // Save an exit frame to the thread data of the current thread, given a
+    // register that holds a PerThreadData *.
+    void linkParallelExitFrame(const Register &pt) {
+        movl(StackPointer, Operand(pt, offsetof(PerThreadData, ionTop)));
+    }
+
     void enterOsr(Register calleeToken, Register code) {
         push(Imm32(0)); // num actual args.
         push(calleeToken);
         push(Imm32(MakeFrameDescriptor(0, IonFrame_Osr)));
         call(code);
         addl(Imm32(sizeof(uintptr_t) * 2), esp);
+    }
+
+    // See CodeGeneratorX86 calls to noteAsmJSGlobalAccess.
+    void patchAsmJSGlobalAccess(unsigned offset, uint8_t *code, unsigned codeBytes,
+                                unsigned globalDataOffset)
+    {
+        uint8_t *nextInsn = code + offset;
+        JS_ASSERT(nextInsn <= code + codeBytes);
+        uint8_t *target = code + codeBytes + globalDataOffset;
+        ((int32_t *)nextInsn)[-1] = uintptr_t(target);
     }
 };
 
@@ -764,5 +981,4 @@ typedef MacroAssemblerX86 MacroAssemblerSpecific;
 } // namespace ion
 } // namespace js
 
-#endif // jsion_macro_assembler_x86_h__
-
+#endif /* ion_x86_MacroAssembler_x86_h */

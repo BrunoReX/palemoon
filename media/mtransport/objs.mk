@@ -66,6 +66,8 @@ MTRANSPORT_LCPPSRCS = \
   dtlsidentity.cpp \
   nricectx.cpp \
   nricemediastream.cpp \
+  nriceresolverfake.cpp \
+  nriceresolver.cpp \
   nr_socket_prsock.cpp \
   nr_timer.cpp \
   transportflow.cpp \
@@ -76,6 +78,12 @@ MTRANSPORT_LCPPSRCS = \
   transportlayerloopback.cpp \
   transportlayerprsock.cpp \
   $(NULL)
+
+ifeq (gonk,$(MOZ_WIDGET_TOOLKIT))
+MTRANSPORT_LCPPSRCS += \
+  gonk_addrs.cpp \
+  $(NULL)
+endif
 
 MTRANSPORT_CPPSRCS = $(addprefix $(topsrcdir)/media/mtransport/, $(MTRANSPORT_LCPPSRCS))
 

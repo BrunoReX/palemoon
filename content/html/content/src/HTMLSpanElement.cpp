@@ -12,7 +12,6 @@
 #include "nsRuleData.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Span)
-DOMCI_NODE_DATA(HTMLSpanElement, mozilla::dom::HTMLSpanElement)
 
 namespace mozilla {
 namespace dom {
@@ -25,19 +24,17 @@ NS_IMPL_ADDREF_INHERITED(HTMLSpanElement, Element)
 NS_IMPL_RELEASE_INHERITED(HTMLSpanElement, Element)
 
 // QueryInterface implementation for HTMLSpanElement
-NS_INTERFACE_TABLE_HEAD(HTMLSpanElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE0(HTMLSpanElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(HTMLSpanElement,
-                                               nsGenericHTMLElement)
-NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLSpanElement)
+NS_INTERFACE_MAP_BEGIN(HTMLSpanElement)
+  NS_HTML_CONTENT_INTERFACES(nsGenericHTMLElement)
+NS_ELEMENT_INTERFACE_MAP_END
 
 
 NS_IMPL_ELEMENT_CLONE(HTMLSpanElement)
 
 JSObject*
-HTMLSpanElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+HTMLSpanElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return HTMLSpanElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return HTMLSpanElementBinding::Wrap(aCx, aScope, this);
 }
 
 } // namespace dom

@@ -1,13 +1,13 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* $Id: sslauth.c,v 1.18 2012/04/25 14:50:12 gerv%gerv.net Exp $ */
 #include "cert.h"
 #include "secitem.h"
 #include "ssl.h"
 #include "sslimpl.h"
 #include "sslproto.h"
 #include "pk11func.h"
+#include "ocsp.h"
 
 /* NEED LOCKS IN HERE.  */
 CERTCertificate *
@@ -213,7 +213,9 @@ SSL_AuthCertificate(void *arg, PRFileDesc *fd, PRBool checkSig, PRBool isServer)
     CERTCertDBHandle * handle;
     sslSocket *        ss;
     SECCertUsage       certUsage;
-    const char *             hostname    = NULL;
+    const char *       hostname    = NULL;
+    PRTime             now = PR_Now();
+    SECItemArray *     certStatusArray;
     
     ss = ssl_FindSocket(fd);
     PORT_Assert(ss != NULL);
@@ -222,12 +224,19 @@ SSL_AuthCertificate(void *arg, PRFileDesc *fd, PRBool checkSig, PRBool isServer)
     }
 
     handle = (CERTCertDBHandle *)arg;
+    certStatusArray = &ss->sec.ci.sid->peerCertStatus;
+
+    if (certStatusArray->len) {
+        CERT_CacheOCSPResponseFromSideChannel(handle, ss->sec.peerCert,
+					now, &certStatusArray->items[0],
+					ss->pkcs11PinArg);
+    }
 
     /* this may seem backwards, but isn't. */
     certUsage = isServer ? certUsageSSLClient : certUsageSSLServer;
 
-    rv = CERT_VerifyCertNow(handle, ss->sec.peerCert, checkSig, certUsage,
-			    ss->pkcs11PinArg);
+    rv = CERT_VerifyCert(handle, ss->sec.peerCert, checkSig, certUsage,
+			 now, ss->pkcs11PinArg, NULL);
 
     if ( rv != SECSuccess || isServer )
 	return rv;

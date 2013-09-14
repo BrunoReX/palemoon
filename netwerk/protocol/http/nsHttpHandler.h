@@ -25,7 +25,6 @@
 #include "nsIStreamConverterService.h"
 #include "nsICacheSession.h"
 #include "nsICookieService.h"
-#include "nsIIDNService.h"
 #include "nsITimer.h"
 #include "nsIStrictTransportSecurityService.h"
 #include "nsISpeculativeConnect.h"
@@ -36,6 +35,14 @@ class nsHttpTransaction;
 class nsAHttpTransaction;
 class nsIHttpChannel;
 class nsIPrefBranch;
+class nsICancelable;
+
+namespace mozilla {
+namespace net {
+class ATokenBucketEvent;
+class EventTokenBucket;
+}
+}
 
 //-----------------------------------------------------------------------------
 // nsHttpHandler - protocol handler for HTTP and HTTPS
@@ -74,7 +81,6 @@ public:
     PRIntervalTime SpdyTimeout()             { return mSpdyTimeout; }
     uint16_t       MaxRequestAttempts()      { return mMaxRequestAttempts; }
     const char    *DefaultSocketType()       { return mDefaultSocketType.get(); /* ok to return null */ }
-    nsIIDNService *IDNConverter()            { return mIDNConverter; }
     uint32_t       PhishyUserPassLength()    { return mPhishyUserPassLength; }
     uint8_t        GetQoSBits()              { return mQoSBits; }
     uint16_t       GetIdleSynTimeout()       { return mIdleSynTimeout; }
@@ -91,14 +97,22 @@ public:
     bool           IsSpdyV2Enabled() { return mSpdyV2; }
     bool           IsSpdyV3Enabled() { return mSpdyV3; }
     bool           CoalesceSpdy() { return mCoalesceSpdy; }
-    bool           UseAlternateProtocol() { return mUseAlternateProtocol; }
+    bool           UseSpdyPersistentSettings() { return mSpdyPersistentSettings; }
     uint32_t       SpdySendingChunkSize() { return mSpdySendingChunkSize; }
     uint32_t       SpdySendBufferSize()      { return mSpdySendBufferSize; }
+    uint32_t       SpdyPushAllowance()       { return mSpdyPushAllowance; }
     PRIntervalTime SpdyPingThreshold() { return mSpdyPingThreshold; }
     PRIntervalTime SpdyPingTimeout() { return mSpdyPingTimeout; }
+    bool           AllowSpdyPush()   { return mAllowSpdyPush; }
     uint32_t       ConnectTimeout()  { return mConnectTimeout; }
     uint32_t       ParallelSpeculativeConnectLimit() { return mParallelSpeculativeConnectLimit; }
     bool           CritialRequestPrioritization() { return mCritialRequestPrioritization; }
+    double         BypassCacheLockThreshold() { return mBypassCacheLockThreshold; }
+
+    bool           UseRequestTokenBucket() { return mRequestTokenBucketEnabled; }
+    uint16_t       RequestTokenBucketMinParallelism() { return mRequestTokenBucketMinParallelism; }
+    uint32_t       RequestTokenBucketHz() { return mRequestTokenBucketHz; }
+    uint32_t       RequestTokenBucketBurst() {return mRequestTokenBucketBurst; }
 
     bool           PromptTempRedirect()      { return mPromptTempRedirect; }
 
@@ -120,10 +134,10 @@ public:
     //
     // - the handler keeps a count of active connections to enforce the
     //   steady-state max-connections pref.
-    // 
+    //
 
     // Called to kick-off a new transaction, by default the transaction
-    // will be put on the pending transaction queue if it cannot be 
+    // will be put on the pending transaction queue if it cannot be
     // initiated at this time.  Callable from any thread.
     nsresult InitiateTransaction(nsHttpTransaction *trans, int32_t priority)
     {
@@ -245,7 +259,7 @@ public:
     {
         return mPipelineRescheduleTimeout;
     }
-    
+
     PRIntervalTime GetPipelineTimeout()   { return mPipelineReadTimeout; }
 
     mozilla::net::SpdyInformation *SpdyInfo() { return &mSpdyInfo; }
@@ -259,6 +273,13 @@ public:
             uint32_t appId,
             bool inBrowser,
             nsACString& sessionName);
+
+    // When the disk cache is responding slowly its use is suppressed
+    // for 1 minute for most requests. Callable from main thread only.
+    mozilla::TimeStamp GetCacheSkippedUntil() { return mCacheSkippedUntil; }
+    void SetCacheSkippedUntil(mozilla::TimeStamp arg) { mCacheSkippedUntil = arg; }
+    void ClearCacheSkippedUntil() { mCacheSkippedUntil = mozilla::TimeStamp(); }
+
 private:
 
     //
@@ -284,7 +305,6 @@ private:
     nsCOMPtr<nsIStreamConverterService> mStreamConvSvc;
     nsCOMPtr<nsIObserverService>        mObserverService;
     nsCOMPtr<nsICookieService>          mCookieService;
-    nsCOMPtr<nsIIDNService>             mIDNConverter;
     nsCOMPtr<nsIStrictTransportSecurityService> mSTSService;
 
     // the authentication credentials cache
@@ -369,16 +389,17 @@ private:
     bool           mUseCache;
 
     bool           mPromptTempRedirect;
-    // mSendSecureXSiteReferrer: default is false, 
+    // mSendSecureXSiteReferrer: default is false,
     // if true allow referrer headers between secure non-matching hosts
     bool           mSendSecureXSiteReferrer;
 
     // Persistent HTTPS caching flag
     bool           mEnablePersistentHttpsCaching;
 
-    // For broadcasting the preference to not be tracked
+    // For broadcasting tracking preference
     bool           mDoNotTrackEnabled;
-    
+    uint8_t        mDoNotTrackValue;
+
     // Whether telemetry is reported or not
     bool           mTelemetryEnabled;
 
@@ -394,9 +415,11 @@ private:
     bool           mSpdyV2;
     bool           mSpdyV3;
     bool           mCoalesceSpdy;
-    bool           mUseAlternateProtocol;
+    bool           mSpdyPersistentSettings;
+    bool           mAllowSpdyPush;
     uint32_t       mSpdySendingChunkSize;
     uint32_t       mSpdySendBufferSize;
+    uint32_t       mSpdyPushAllowance;
     PRIntervalTime mSpdyPingThreshold;
     PRIntervalTime mSpdyPingTimeout;
 
@@ -404,16 +427,51 @@ private:
     // established. In milliseconds.
     uint32_t       mConnectTimeout;
 
+    // The maximum amount of time the nsICacheSession lock can be held
+    // before a new transaction bypasses the cache. In milliseconds.
+    double         mBypassCacheLockThreshold;
+
     // The maximum number of current global half open sockets allowable
     // when starting a new speculative connection.
     uint32_t       mParallelSpeculativeConnectLimit;
 
+    // For Rate Pacing of HTTP/1 requests through a netwerk/base/src/EventTokenBucket
+    // Active requests <= *MinParallelism are not subject to the rate pacing
+    bool           mRequestTokenBucketEnabled;
+    uint16_t       mRequestTokenBucketMinParallelism;
+    uint32_t       mRequestTokenBucketHz;  // EventTokenBucket HZ
+    uint32_t       mRequestTokenBucketBurst; // EventTokenBucket Burst
+
     // Whether or not to block requests for non head js/css items (e.g. media)
     // while those elements load.
     bool           mCritialRequestPrioritization;
-};
 
-//-----------------------------------------------------------------------------
+    // When the disk cache is responding slowly its use is suppressed
+    // for 1 minute for most requests.
+    mozilla::TimeStamp                mCacheSkippedUntil;
+
+private:
+    // For Rate Pacing Certain Network Events. Only assign this pointer on
+    // socket thread.
+    void MakeNewRequestTokenBucket();
+    nsRefPtr<mozilla::net::EventTokenBucket> mRequestTokenBucket;
+
+public:
+    // Socket thread only
+    nsresult SubmitPacedRequest(mozilla::net::ATokenBucketEvent *event,
+                                nsICancelable **cancel)
+    {
+        if (!mRequestTokenBucket)
+            return NS_ERROR_UNEXPECTED;
+        return mRequestTokenBucket->SubmitEvent(event, cancel);
+    }
+
+    // Socket thread only
+    void SetRequestTokenBucket(mozilla::net::EventTokenBucket *aTokenBucket)
+    {
+        mRequestTokenBucket = aTokenBucket;
+    }
+};
 
 extern nsHttpHandler *gHttpHandler;
 
@@ -429,7 +487,7 @@ class nsHttpsHandler : public nsIHttpProtocolHandler
 public:
     // we basically just want to override GetScheme and GetDefaultPort...
     // all other methods should be forwarded to the nsHttpHandler instance.
-    
+
     NS_DECL_ISUPPORTS
     NS_DECL_NSIPROTOCOLHANDLER
     NS_FORWARD_NSIPROXIEDPROTOCOLHANDLER (gHttpHandler->)

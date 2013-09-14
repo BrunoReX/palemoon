@@ -1,17 +1,82 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Assembler-x64.h"
 #include "gc/Marking.h"
+#include "ion/LIR.h"
 
 #include "jsscriptinlines.h"
 
 using namespace js;
 using namespace js::ion;
+
+ABIArgGenerator::ABIArgGenerator()
+  :
+#if defined(XP_WIN)
+    regIndex_(0),
+    stackOffset_(ShadowStackSpace),
+#else
+    intRegIndex_(0),
+    floatRegIndex_(0),
+    stackOffset_(0),
+#endif
+    current_()
+{}
+
+ABIArg
+ABIArgGenerator::next(MIRType type)
+{
+#if defined(XP_WIN)
+    JS_STATIC_ASSERT(NumIntArgRegs == NumFloatArgRegs);
+    if (regIndex_ == NumIntArgRegs) {
+        current_ = ABIArg(stackOffset_);
+        stackOffset_ += sizeof(uint64_t);
+        return current_;
+    }
+    switch (type) {
+      case MIRType_Int32:
+      case MIRType_Pointer:
+        current_ = ABIArg(IntArgRegs[regIndex_++]);
+        break;
+      case MIRType_Double:
+        current_ = ABIArg(FloatArgRegs[regIndex_++]);
+        break;
+      default:
+        JS_NOT_REACHED("Unexpected argument type");
+    }
+    return current_;
+#else
+    switch (type) {
+      case MIRType_Int32:
+      case MIRType_Pointer:
+        if (intRegIndex_ == NumIntArgRegs) {
+            current_ = ABIArg(stackOffset_);
+            stackOffset_ += sizeof(uint64_t);
+            break;
+        }
+        current_ = ABIArg(IntArgRegs[intRegIndex_++]);
+        break;
+      case MIRType_Double:
+        if (floatRegIndex_ == NumFloatArgRegs) {
+            current_ = ABIArg(stackOffset_);
+            stackOffset_ += sizeof(uint64_t);
+            break;
+        }
+        current_ = ABIArg(FloatArgRegs[floatRegIndex_++]);
+        break;
+      default:
+        JS_NOT_REACHED("Unexpected argument type");
+    }
+    return current_;
+#endif
+}
+
+const Register ABIArgGenerator::NonArgReturnVolatileReg0 = r10;
+const Register ABIArgGenerator::NonArgReturnVolatileReg1 = r11;
+const Register ABIArgGenerator::NonVolatileReg = r12;
 
 void
 Assembler::writeRelocation(JmpSrc src, Relocation::Kind reloc)
@@ -75,7 +140,7 @@ Assembler::PatchJumpEntry(uint8_t *entry, uint8_t *target)
 }
 
 void
-Assembler::flush()
+Assembler::finish()
 {
     if (!jumps_.length() || oom())
         return;

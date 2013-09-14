@@ -1,4 +1,5 @@
-/* vim: set ts=4 sw=4 tw=99 et:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Copyright (C) 2009 Apple Inc. All rights reserved.
  *
@@ -24,8 +25,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef YarrParser_h
-#define YarrParser_h
+#ifndef yarr_YarrParser_h
+#define yarr_YarrParser_h
 
 #include "Yarr.h"
 
@@ -845,4 +846,4 @@ ErrorCode parse(Delegate& delegate, const String& pattern, unsigned backReferenc
 
 } } // namespace JSC::Yarr
 
-#endif // YarrParser_h
+#endif /* yarr_YarrParser_h */

@@ -11,8 +11,10 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource:///modules/devtools/gDevTools.jsm");
 Cu.import("resource:///modules/devtools/FloatingScrollbars.jsm");
-Cu.import("resource:///modules/devtools/EventEmitter.jsm");
-Cu.import("resource:///modules/devtools/Target.jsm");
+Cu.import("resource:///modules/devtools/shared/event-emitter.js");
+
+var require = Cu.import("resource://gre/modules/devtools/Loader.jsm", {}).devtools.require;
+let Telemetry = require("devtools/shared/telemetry");
 
 this.EXPORTED_SYMBOLS = ["ResponsiveUIManager"];
 
@@ -109,6 +111,7 @@ function ResponsiveUI(aWindow, aTab)
   this.chromeDoc = aWindow.document;
   this.container = aWindow.gBrowser.getBrowserContainer(this.browser);
   this.stack = this.container.querySelector(".browserStack");
+  this._telemetry = new Telemetry();
 
   // Try to load presets from prefs
   if (Services.prefs.prefHasUserValue("devtools.responsiveUI.presets")) {
@@ -154,6 +157,7 @@ function ResponsiveUI(aWindow, aTab)
   this.bound_addPreset = this.addPreset.bind(this);
   this.bound_removePreset = this.removePreset.bind(this);
   this.bound_rotate = this.rotate.bind(this);
+  this.bound_close = this.close.bind(this);
   this.bound_startResizing = this.startResizing.bind(this);
   this.bound_stopResizing = this.stopResizing.bind(this);
   this.bound_onDrag = this.onDrag.bind(this);
@@ -178,12 +182,14 @@ function ResponsiveUI(aWindow, aTab)
 
   this.tab.__responsiveUI = this;
 
+  this._telemetry.toolOpened("responsive");
+
   ResponsiveUIManager.emit("on", this.tab, this);
 }
 
 ResponsiveUI.prototype = {
   _transitionsEnabled: true,
-  _floatingScrollbars: false, // See bug 799471
+  _floatingScrollbars: Services.appinfo.OS != "Darwin",
   get transitionsEnabled() this._transitionsEnabled,
   set transitionsEnabled(aValue) {
     this._transitionsEnabled = aValue;
@@ -222,6 +228,7 @@ ResponsiveUI.prototype = {
     this.tab.removeEventListener("TabClose", this);
     this.tabContainer.removeEventListener("TabSelect", this);
     this.rotatebutton.removeEventListener("command", this.bound_rotate, true);
+    this.closebutton.removeEventListener("command", this.bound_close, true);
     this.addbutton.removeEventListener("command", this.bound_addPreset, true);
     this.removebutton.removeEventListener("command", this.bound_removePreset, true);
 
@@ -235,6 +242,7 @@ ResponsiveUI.prototype = {
     this.stack.removeAttribute("responsivemode");
 
     delete this.tab.__responsiveUI;
+    this._telemetry.toolClosed("responsive");
     ResponsiveUIManager.emit("off", this.tab, this);
   },
 
@@ -292,6 +300,7 @@ ResponsiveUI.prototype = {
    *  <toolbar class="devtools-toolbar devtools-responsiveui-toolbar">
    *    <menulist class="devtools-menulist"/> // presets
    *    <toolbarbutton tabindex="0" class="devtools-toolbarbutton" label="rotate"/> // rotate
+   *    <toolbarbutton tabindex="0" class="devtools-toolbarbutton devtools-closebutton" tooltiptext="Leave Responsive Design View"/> // close
    *  </toolbar>
    *  <stack class="browserStack"> From tabbrowser.xml
    *    <browser/>
@@ -334,6 +343,13 @@ ResponsiveUI.prototype = {
     this.rotatebutton.className = "devtools-toolbarbutton";
     this.rotatebutton.addEventListener("command", this.bound_rotate, true);
 
+    this.closebutton = this.chromeDoc.createElement("toolbarbutton");
+    this.closebutton.setAttribute("tabindex", "0");
+    this.closebutton.className = "devtools-toolbarbutton devtools-closebutton";
+    this.closebutton.setAttribute("tooltiptext", this.strings.GetStringFromName("responsiveUI.close"));
+    this.closebutton.addEventListener("command", this.bound_close, true);
+
+    this.toolbar.appendChild(this.closebutton);
     this.toolbar.appendChild(this.menulist);
     this.toolbar.appendChild(this.rotatebutton);
 

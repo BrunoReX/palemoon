@@ -8,7 +8,6 @@
 #include "nsEventDispatcher.h"
 #include "nsGUIEvent.h"
 #include "nsIDocument.h"
-#include "nsIJSContextStack.h"
 #include "nsDOMJSUtils.h"
 #include "prprf.h"
 #include "nsGlobalWindow.h"
@@ -18,8 +17,6 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsDOMEventTargetHelper)
-
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(nsDOMEventTargetHelper)
   NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
@@ -28,8 +25,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsDOMEventTargetHelper)
   if (MOZ_UNLIKELY(cb.WantDebugInfo())) {
     char name[512];
     nsAutoString uri;
-    if (tmp->mOwner && tmp->mOwner->GetExtantDocument()) {
-      tmp->mOwner->GetExtantDocument()->GetDocumentURI(uri);
+    if (tmp->mOwnerWindow && tmp->mOwnerWindow->GetExtantDoc()) {
+      tmp->mOwnerWindow->GetExtantDoc()->GetDocumentURI(uri);
     }
     PR_snprintf(name, sizeof(name), "nsDOMEventTargetHelper %s",
                 NS_ConvertUTF16toUTF8(uri).get());
@@ -68,17 +65,19 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDOMEventTargetHelper)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsISupports)
   NS_INTERFACE_MAP_ENTRY(nsIDOMEventTarget)
+  NS_INTERFACE_MAP_ENTRY(mozilla::dom::EventTarget)
+  NS_INTERFACE_MAP_ENTRY(nsDOMEventTargetHelper)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsDOMEventTargetHelper)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsDOMEventTargetHelper)
 
-NS_IMPL_DOMTARGET_DEFAULTS(nsDOMEventTargetHelper);
+NS_IMPL_DOMTARGET_DEFAULTS(nsDOMEventTargetHelper)
 
 nsDOMEventTargetHelper::~nsDOMEventTargetHelper()
 {
-  if (mOwner) {
-    static_cast<nsGlobalWindow*>(mOwner)->RemoveEventTargetObject(this);
+  if (nsPIDOMWindow* owner = GetOwner()) {
+    static_cast<nsGlobalWindow*>(owner)->RemoveEventTargetObject(this);
   }
   if (mListenerManager) {
     mListenerManager->Disconnect();
@@ -89,32 +88,51 @@ nsDOMEventTargetHelper::~nsDOMEventTargetHelper()
 void
 nsDOMEventTargetHelper::BindToOwner(nsPIDOMWindow* aOwner)
 {
-  if (mOwner) {
-    static_cast<nsGlobalWindow*>(mOwner)->RemoveEventTargetObject(this);
-    mOwner = nullptr;
-    mHasOrHasHadOwner = false;
+  nsCOMPtr<nsIGlobalObject> glob = do_QueryInterface(aOwner);
+  BindToOwner(glob);
+}
+
+void
+nsDOMEventTargetHelper::BindToOwner(nsIGlobalObject* aOwner)
+{
+  if (mParentObject) {
+    if (mOwnerWindow) {
+      static_cast<nsGlobalWindow*>(mOwnerWindow)->RemoveEventTargetObject(this);
+      mOwnerWindow = nullptr;
+    }
+    mParentObject = nullptr;
+    mHasOrHasHadOwnerWindow = false;
   }
   if (aOwner) {
-    mOwner = aOwner;
-    mHasOrHasHadOwner = true;
-    static_cast<nsGlobalWindow*>(mOwner)->AddEventTargetObject(this);
+    mParentObject = aOwner;
+    // Let's cache the result of this QI for fast access and off main thread usage
+    mOwnerWindow = nsCOMPtr<nsPIDOMWindow>(do_QueryInterface(aOwner)).get();
+    if (mOwnerWindow) {
+      mHasOrHasHadOwnerWindow = true;
+      static_cast<nsGlobalWindow*>(mOwnerWindow)->AddEventTargetObject(this);
+    }
   }
 }
 
 void
 nsDOMEventTargetHelper::BindToOwner(nsDOMEventTargetHelper* aOther)
 {
-  if (mOwner) {
-    static_cast<nsGlobalWindow*>(mOwner)->RemoveEventTargetObject(this);
-    mOwner = nullptr;
-    mHasOrHasHadOwner = false;
+  if (mOwnerWindow) {
+    static_cast<nsGlobalWindow*>(mOwnerWindow)->RemoveEventTargetObject(this);
+    mOwnerWindow = nullptr;
+    mParentObject = nullptr;
+    mHasOrHasHadOwnerWindow = false;
   }
   if (aOther) {
-    mHasOrHasHadOwner = aOther->HasOrHasHadOwner();
-    if (aOther->GetOwner()) {
-      mOwner = aOther->GetOwner();
-      mHasOrHasHadOwner = true;
-      static_cast<nsGlobalWindow*>(mOwner)->AddEventTargetObject(this);
+    mHasOrHasHadOwnerWindow = aOther->HasOrHasHadOwner();
+    if (aOther->GetParentObject()) {
+      mParentObject = aOther->GetParentObject();
+      // Let's cache the result of this QI for fast access and off main thread usage
+      mOwnerWindow = nsCOMPtr<nsPIDOMWindow>(do_QueryInterface(mParentObject)).get();
+      if (mOwnerWindow) {
+        mHasOrHasHadOwnerWindow = true;
+        static_cast<nsGlobalWindow*>(mOwnerWindow)->AddEventTargetObject(this);
+      }
     }
   }
 }
@@ -122,7 +140,8 @@ nsDOMEventTargetHelper::BindToOwner(nsDOMEventTargetHelper* aOther)
 void
 nsDOMEventTargetHelper::DisconnectFromOwner()
 {
-  mOwner = nullptr;
+  mOwnerWindow = nullptr;
+  mParentObject = nullptr;
   // Event listeners can't be handled anymore, so we can release them here.
   if (mListenerManager) {
     mListenerManager->Disconnect();
@@ -172,6 +191,36 @@ nsDOMEventTargetHelper::AddEventListener(const nsAString& aType,
   return NS_OK;
 }
 
+void
+nsDOMEventTargetHelper::AddEventListener(const nsAString& aType,
+                                         nsIDOMEventListener* aListener,
+                                         bool aUseCapture,
+                                         const Nullable<bool>& aWantsUntrusted,
+                                         ErrorResult& aRv)
+{
+  bool wantsUntrusted;
+  if (aWantsUntrusted.IsNull()) {
+    nsresult rv;
+    nsIScriptContext* context = GetContextForEventHandlers(&rv);
+    if (NS_FAILED(rv)) {
+      aRv.Throw(rv);
+      return;
+    }
+    nsCOMPtr<nsIDocument> doc =
+      nsContentUtils::GetDocumentFromScriptContext(context);
+    wantsUntrusted = doc && !nsContentUtils::IsChromeDoc(doc);
+  } else {
+    wantsUntrusted = aWantsUntrusted.Value();
+  }
+
+  nsEventListenerManager* elm = GetListenerManager(true);
+  if (!elm) {
+    aRv.Throw(NS_ERROR_UNEXPECTED);
+    return;
+  }
+  elm->AddEventListener(aType, aListener, aUseCapture, wantsUntrusted);
+}
+
 NS_IMETHODIMP
 nsDOMEventTargetHelper::AddSystemEventListener(const nsAString& aType,
                                                nsIDOMEventListener *aListener,
@@ -211,7 +260,8 @@ nsDOMEventTargetHelper::DispatchEvent(nsIDOMEvent* aEvent, bool* aRetVal)
 nsresult
 nsDOMEventTargetHelper::DispatchTrustedEvent(const nsAString& aEventName)
 {
-  nsRefPtr<nsDOMEvent> event = new nsDOMEvent(nullptr, nullptr);
+  nsCOMPtr<nsIDOMEvent> event;
+  NS_NewDOMEvent(getter_AddRefs(event), this, nullptr, nullptr);
   nsresult rv = event->InitEvent(aEventName, false, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -232,20 +282,11 @@ nsDOMEventTargetHelper::SetEventHandler(nsIAtom* aType,
                                         JSContext* aCx,
                                         const JS::Value& aValue)
 {
-  JSObject* obj = GetWrapper();
-  if (!obj) {
-    return NS_OK;
-  }
-
   nsRefPtr<EventHandlerNonNull> handler;
   JSObject* callable;
   if (aValue.isObject() &&
       JS_ObjectIsCallable(aCx, callable = &aValue.toObject())) {
-    bool ok;
-    handler = new EventHandlerNonNull(aCx, obj, callable, &ok);
-    if (!ok) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    handler = new EventHandlerNonNull(callable);
   }
   ErrorResult rv;
   SetEventHandler(aType, handler, rv);
@@ -307,31 +348,8 @@ nsDOMEventTargetHelper::GetContextForEventHandlers(nsresult* aRv)
   if (NS_FAILED(*aRv)) {
     return nullptr;
   }
-  return mOwner ? static_cast<nsGlobalWindow*>(mOwner)->GetContextInternal()
-                : nullptr;
+  nsPIDOMWindow* owner = GetOwner();
+  return owner ? static_cast<nsGlobalWindow*>(owner)->GetContextInternal()
+               : nullptr;
 }
 
-void
-nsDOMEventTargetHelper::Init(JSContext* aCx)
-{
-  JSContext* cx = aCx;
-  if (!cx) {
-    nsIJSContextStack* stack = nsContentUtils::ThreadJSContextStack();
-
-    if (!stack)
-      return;
-
-    if (NS_FAILED(stack->Peek(&cx)) || !cx)
-      return;
-  }
-
-  NS_ASSERTION(cx, "Should have returned earlier ...");
-  nsIScriptContext* context = GetScriptContextFromJSContext(cx);
-  if (context) {
-    nsCOMPtr<nsPIDOMWindow> window =
-      do_QueryInterface(context->GetGlobalObject());
-    if (window) {
-      BindToOwner(window->GetCurrentInnerWindow());
-    }
-  }
-}

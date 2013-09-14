@@ -220,6 +220,8 @@ private:
  * items (where each |nsCSSSelectorList| object's |mSelectors| has
  * an |mNext| for the P or H1).  We represent them as linked lists.
  */
+class inDOMUtils;
+
 struct nsCSSSelectorList {
   nsCSSSelectorList(void);
   ~nsCSSSelectorList(void);
@@ -250,9 +252,11 @@ struct nsCSSSelectorList {
   nsCSSSelector*     mSelectors;
   int32_t            mWeight;
   nsCSSSelectorList* mNext;
-private: 
+protected:
+  friend class inDOMUtils;
   nsCSSSelectorList* Clone(bool aDeep) const;
 
+private:
   nsCSSSelectorList(const nsCSSSelectorList& aCopy) MOZ_DELETE;
   nsCSSSelectorList& operator=(const nsCSSSelectorList& aCopy) MOZ_DELETE;
 };
@@ -277,7 +281,7 @@ public:
   NS_DECL_ISUPPORTS
 
   // nsIStyleRule interface
-  virtual void MapRuleInfoInto(nsRuleData* aRuleData);
+  virtual void MapRuleInfoInto(nsRuleData* aRuleData) MOZ_OVERRIDE;
 #ifdef DEBUG
   virtual void List(FILE* out = stdout, int32_t aIndent = 0) const MOZ_OVERRIDE;
 #endif
@@ -313,7 +317,10 @@ public:
   nsCSSSelectorList* Selector() { return mSelector; }
 
   uint32_t GetLineNumber() const { return mLineNumber; }
-  void SetLineNumber(uint32_t aLineNumber) { mLineNumber = aLineNumber; }
+  uint32_t GetColumnNumber() const { return mColumnNumber; }
+  void SetLineNumberAndColumnNumber(uint32_t aLineNumber,
+                                    uint32_t aColumnNumber)
+  { mLineNumber = aLineNumber; mColumnNumber = aColumnNumber; }
 
   Declaration* GetDeclaration() const { return mDeclaration; }
 
@@ -352,10 +359,10 @@ public:
   virtual nsIDOMCSSRule* GetExistingDOMRule();
 
   // The new mapping function.
-  virtual void MapRuleInfoInto(nsRuleData* aRuleData);
+  virtual void MapRuleInfoInto(nsRuleData* aRuleData) MOZ_OVERRIDE;
 
 #ifdef DEBUG
-  virtual void List(FILE* out = stdout, int32_t aIndent = 0) const;
+  virtual void List(FILE* out = stdout, int32_t aIndent = 0) const MOZ_OVERRIDE;
 #endif
 
   virtual size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
@@ -369,7 +376,8 @@ private:
   ImportantRule*          mImportantRule; // initialized by RuleMatched
   DOMCSSStyleRule*        mDOMRule;
   // Keep the same type so that MSVC packs them.
-  uint32_t                mLineNumber : 31;
+  uint32_t                mLineNumber;
+  uint32_t                mColumnNumber : 31;
   uint32_t                mWasMatched : 1;
 
 private:

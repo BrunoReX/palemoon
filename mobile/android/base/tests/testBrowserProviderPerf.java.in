@@ -1,15 +1,11 @@
 #filter substitution
 package @ANDROID_PACKAGE_NAME@.tests;
 
-import @ANDROID_PACKAGE_NAME@.*;
-
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.SystemClock;
-import android.util.Log;
-
 import java.lang.reflect.Method;
 import java.util.UUID;
 import java.util.Random;
@@ -252,8 +248,9 @@ public class testBrowserProviderPerf extends ContentProviderTest {
         mProvider.bulkInsert(mFaviconsUri, faviconEntries);
     }
 
+    @Override
     public void setUp() throws Exception {
-        super.setUp("@ANDROID_PACKAGE_NAME@.db.BrowserProvider", "AUTHORITY");
+        super.setUp("org.mozilla.gecko.db.BrowserProvider", "AUTHORITY");
 
         mGenerator = new Random(19580427);
 

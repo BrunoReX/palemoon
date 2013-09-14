@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=99 ft=cpp:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef SPSProfiler_h__
-#define SPSProfiler_h__
+#ifndef vm_SPSProfiler_h
+#define vm_SPSProfiler_h
 
 #include <stddef.h>
 
@@ -110,15 +109,6 @@ namespace js {
 
 class ProfileEntry;
 
-#ifdef JS_METHODJIT
-namespace mjit {
-    struct JITChunk;
-    struct JITScript;
-    struct JSActiveFrame;
-    struct PCLengthEntry;
-}
-#endif
-
 typedef HashMap<JSScript*, const char*, DefaultHasher<JSScript*>, SystemAllocPolicy>
         ProfileStringMap;
 
@@ -134,16 +124,28 @@ class SPSProfiler
     uint32_t             *size_;
     uint32_t             max_;
     bool                 slowAssertions;
-    bool                 enabled_;
+    uint32_t             enabled_;
 
-    const char *allocProfileString(JSContext *cx, UnrootedScript script,
-                                   UnrootedFunction function);
-    void push(const char *string, void *sp, UnrootedScript script, jsbytecode *pc);
+    const char *allocProfileString(JSContext *cx, JSScript *script,
+                                   JSFunction *function);
+    void push(const char *string, void *sp, JSScript *script, jsbytecode *pc);
     void pop();
 
   public:
     SPSProfiler(JSRuntime *rt);
     ~SPSProfiler();
+
+    uint32_t **addressOfSizePointer() {
+        return &size_;
+    }
+
+    uint32_t *addressOfMaxSize() {
+        return &max_;
+    }
+
+    ProfileEntry **addressOfStack() {
+        return &stack_;
+    }
 
     uint32_t *sizePointer() { return size_; }
     uint32_t maxSize() { return max_; }
@@ -165,9 +167,9 @@ class SPSProfiler
      *   - exit: this function has ceased execution, and no further
      *           entries/exits will be made
      */
-    bool enter(JSContext *cx, UnrootedScript script, UnrootedFunction maybeFun);
-    void exit(JSContext *cx, UnrootedScript script, UnrootedFunction maybeFun);
-    void updatePC(UnrootedScript script, jsbytecode *pc) {
+    bool enter(JSContext *cx, JSScript *script, JSFunction *maybeFun);
+    void exit(JSContext *cx, JSScript *script, JSFunction *maybeFun);
+    void updatePC(JSScript *script, jsbytecode *pc) {
         if (enabled() && *size_ - 1 < max_) {
             JS_ASSERT(*size_ > 0);
             JS_ASSERT(stack_[*size_ - 1].script() == script);
@@ -175,85 +177,23 @@ class SPSProfiler
         }
     }
 
-#ifdef JS_METHODJIT
-    struct ICInfo
-    {
-        size_t base;
-        size_t size;
-        jsbytecode *pc;
+    /* Enter a C++ function. */
+    void enterNative(const char *string, void *sp);
+    void exitNative() { pop(); }
 
-        ICInfo(void *base, size_t size, jsbytecode *pc)
-          : base(size_t(base)), size(size), pc(pc)
-        {}
-    };
-
-    struct JMChunkInfo
-    {
-        size_t mainStart;               // bounds for the inline code
-        size_t mainEnd;
-        size_t stubStart;               // bounds of the ool code
-        size_t stubEnd;
-        mjit::PCLengthEntry *pcLengths; // pcLengths for this chunk
-        mjit::JITChunk *chunk;          // stored to test when removing
-
-        JMChunkInfo(mjit::JSActiveFrame *frame,
-                    mjit::PCLengthEntry *pcLengths,
-                    mjit::JITChunk *chunk);
-
-        jsbytecode *convert(UnrootedScript script, size_t ip);
-    };
-
-    struct JMScriptInfo
-    {
-        Vector<ICInfo, 0, SystemAllocPolicy> ics;
-        Vector<JMChunkInfo, 1, SystemAllocPolicy> chunks;
-    };
-
-    typedef HashMap<JSScript*, JMScriptInfo*, DefaultHasher<JSScript*>,
-                    SystemAllocPolicy> JITInfoMap;
-
-    /*
-     * This is the mapping which facilitates translation from an ip to a
-     * jsbytecode*. The mapping is from a JSScript* to a set of chunks and ics
-     * which are associated with the script. This way lookup/translation doesn't
-     * have to do something like iterate the entire map.
-     *
-     * Each IC is easy to test because they all have only one pc associated with
-     * them, and the range is easy to check. The main chunks of code are a bit
-     * harder because there are both the inline and out of line streams which
-     * need to be tested. Each of these streams is described by the pcLengths
-     * array stored within each chunk. This array describes the width of each
-     * opcode of the corresponding JSScript, and has the same number of entries
-     * as script->length.
-     */
-    JITInfoMap jminfo;
-
-    bool registerMJITCode(mjit::JITChunk *chunk,
-                          mjit::JSActiveFrame *outerFrame,
-                          mjit::JSActiveFrame **inlineFrames);
-    void discardMJITCode(mjit::JITScript *jscr,
-                         mjit::JITChunk *chunk, void* address);
-    bool registerICCode(mjit::JITChunk *chunk, UnrootedScript script, jsbytecode* pc,
-                        void *start, size_t size);
-    jsbytecode *ipToPC(RawScript script, size_t ip);
-
-  private:
-    JMChunkInfo *registerScript(mjit::JSActiveFrame *frame,
-                                mjit::PCLengthEntry *lenths,
-                                mjit::JITChunk *chunk);
-    void unregisterScript(UnrootedScript script, mjit::JITChunk *chunk);
-  public:
-#else
-    jsbytecode *ipToPC(RawScript script, size_t ip) { return NULL; }
-#endif
+    jsbytecode *ipToPC(JSScript *script, size_t ip) { return NULL; }
 
     void setProfilingStack(ProfileEntry *stack, uint32_t *size, uint32_t max);
-    const char *profileString(JSContext *cx, UnrootedScript script, UnrootedFunction maybeFun);
-    void onScriptFinalized(UnrootedScript script);
+    const char *profileString(JSContext *cx, JSScript *script, JSFunction *maybeFun);
+    void onScriptFinalized(JSScript *script);
 
     /* meant to be used for testing, not recommended to call in normal code */
     size_t stringsCount() { return strings.count(); }
     void stringsReset() { strings.clear(); }
+
+    uint32_t *addressOfEnabled() {
+        return &enabled_;
+    }
 };
 
 /*
@@ -371,7 +311,7 @@ class SPSInstrumentation
      * instrumentation should be emitted. This updates internal state to flag
      * that further instrumentation should actually be emitted.
      */
-    void setPushed(UnrootedScript script) {
+    void setPushed(JSScript *script) {
         if (!enabled())
             return;
         JS_ASSERT(frame->left == 0);
@@ -382,7 +322,7 @@ class SPSInstrumentation
      * Flags entry into a JS function for the first time. Before this is called,
      * no instrumentation is emitted, but after this instrumentation is emitted.
      */
-    bool push(JSContext *cx, UnrootedScript script, Assembler &masm, Register scratch) {
+    bool push(JSContext *cx, JSScript *script, Assembler &masm, Register scratch) {
         if (!enabled())
             return true;
         const char *string = profiler_->profileString(cx, script,
@@ -399,7 +339,7 @@ class SPSInstrumentation
      * sets the current PC to something non-null, however, so as soon as JIT
      * code is reentered this updates the current pc to NULL.
      */
-    void pushManual(UnrootedScript script, Assembler &masm, Register scratch) {
+    void pushManual(JSScript *script, Assembler &masm, Register scratch) {
         if (!enabled())
             return;
         masm.spsUpdatePCIdx(profiler_, ProfileEntry::NullPCIndex, scratch);
@@ -450,4 +390,4 @@ class SPSInstrumentation
 
 } /* namespace js */
 
-#endif /* SPSProfiler_h__ */
+#endif /* vm_SPSProfiler_h */

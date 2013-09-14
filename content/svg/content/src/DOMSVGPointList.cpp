@@ -12,6 +12,7 @@
 #include "nsSVGAttrTearoffTable.h"
 #include "nsContentUtils.h"
 #include "mozilla/dom/SVGPointListBinding.h"
+#include <algorithm>
 
 // See the comment in this file's header.
 
@@ -19,7 +20,7 @@
 namespace {
 
 void
-UpdateListIndicesFromIndex(nsTArray<mozilla::nsISVGPoint*>& aItemsArray,
+UpdateListIndicesFromIndex(FallibleTArray<mozilla::nsISVGPoint*>& aItemsArray,
                            uint32_t aStartingIndex)
 {
   uint32_t length = aItemsArray.Length();
@@ -35,10 +36,15 @@ UpdateListIndicesFromIndex(nsTArray<mozilla::nsISVGPoint*>& aItemsArray,
 
 namespace mozilla {
 
-static nsSVGAttrTearoffTable<void, DOMSVGPointList>
-  sSVGPointListTearoffTable;
+  static inline
+nsSVGAttrTearoffTable<void, DOMSVGPointList>&
+SVGPointListTearoffTable()
+{
+  static nsSVGAttrTearoffTable<void, DOMSVGPointList>
+    sSVGPointListTearoffTable;
+  return sSVGPointListTearoffTable;
+}
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(DOMSVGPointList)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(DOMSVGPointList)
   // No unlinking of mElement, we'd need to null out the value pointer (the
   // object it points to is held by the element) and null-check it everywhere.
@@ -67,10 +73,10 @@ DOMSVGPointList::GetDOMWrapper(void *aList,
                                bool aIsAnimValList)
 {
   nsRefPtr<DOMSVGPointList> wrapper =
-    sSVGPointListTearoffTable.GetTearoff(aList);
+    SVGPointListTearoffTable().GetTearoff(aList);
   if (!wrapper) {
     wrapper = new DOMSVGPointList(aElement, aIsAnimValList);
-    sSVGPointListTearoffTable.AddTearoff(aList, wrapper);
+    SVGPointListTearoffTable().AddTearoff(aList, wrapper);
   }
   return wrapper.forget();
 }
@@ -78,7 +84,7 @@ DOMSVGPointList::GetDOMWrapper(void *aList,
 /* static */ DOMSVGPointList*
 DOMSVGPointList::GetDOMWrapperIfExists(void *aList)
 {
-  return sSVGPointListTearoffTable.GetTearoff(aList);
+  return SVGPointListTearoffTable().GetTearoff(aList);
 }
 
 DOMSVGPointList::~DOMSVGPointList()
@@ -88,13 +94,13 @@ DOMSVGPointList::~DOMSVGPointList()
   void *key = mIsAnimValList ?
     InternalAList().GetAnimValKey() :
     InternalAList().GetBaseValKey();
-  sSVGPointListTearoffTable.RemoveTearoff(key);
+  SVGPointListTearoffTable().RemoveTearoff(key);
 }
 
 JSObject*
-DOMSVGPointList::WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap)
+DOMSVGPointList::WrapObject(JSContext *cx, JS::Handle<JSObject*> scope)
 {
-  return mozilla::dom::SVGPointListBinding::Wrap(cx, scope, this, triedToWrap);
+  return mozilla::dom::SVGPointListBinding::Wrap(cx, scope, this);
 }
 
 void
@@ -247,7 +253,7 @@ DOMSVGPointList::InsertItemBefore(nsISVGPoint& aNewItem, uint32_t aIndex,
     return nullptr;
   }
 
-  aIndex = NS_MIN(aIndex, LengthNoFlush());
+  aIndex = std::min(aIndex, LengthNoFlush());
   if (aIndex >= nsISVGPoint::MaxListIndex()) {
     aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return nullptr;

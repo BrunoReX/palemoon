@@ -9,17 +9,17 @@ const {classes: Cc, interfaces: Ci, results: Cr, utils: Cu} = Components;
 
 Cu.import("resource://services-common/log4moz.js");
 Cu.import("resource://services-common/observers.js");
-Cu.import("resource://services-common/preferences.js");
 Cu.import("resource://services-common/stringbundle.js");
 Cu.import("resource://services-common/utils.js");
 Cu.import("resource://services-common/async.js", this);
 Cu.import("resource://services-crypto/utils.js");
 Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
-Cu.import("resource://gre/modules/Services.jsm", this);
-Cu.import("resource://gre/modules/PlacesUtils.jsm", this);
-Cu.import("resource://gre/modules/NetUtil.jsm", this);
 Cu.import("resource://gre/modules/FileUtils.jsm", this);
+Cu.import("resource://gre/modules/NetUtil.jsm", this);
+Cu.import("resource://gre/modules/PlacesUtils.jsm", this);
+Cu.import("resource://gre/modules/Preferences.jsm");
+Cu.import("resource://gre/modules/Services.jsm", this);
+Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
 
 /*
  * Utility functions
@@ -324,12 +324,89 @@ this.Utils = {
     return Utils.encodeKeyBase32(atob(encodedKey));
   },
 
-  jsonLoad: function jsonLoad(path, that, callback) {
-    CommonUtils.jsonLoad("weave/" + path, that, callback);
+  /**
+   * Load a JSON file from disk in the profile directory.
+   *
+   * @param filePath
+   *        JSON file path load from profile. Loaded file will be
+   *        <profile>/<filePath>.json. i.e. Do not specify the ".json"
+   *        extension.
+   * @param that
+   *        Object to use for logging and "this" for callback.
+   * @param callback
+   *        Function to process json object as its first argument. If the file
+   *        could not be loaded, the first argument will be undefined.
+   */
+  jsonLoad: function jsonLoad(filePath, that, callback) {
+    let path = "weave/" + filePath + ".json";
+
+    if (that._log) {
+      that._log.trace("Loading json from disk: " + filePath);
+    }
+
+    let file = FileUtils.getFile("ProfD", path.split("/"), true);
+    if (!file.exists()) {
+      callback.call(that);
+      return;
+    }
+
+    let channel = NetUtil.newChannel(file);
+    channel.contentType = "application/json";
+
+    NetUtil.asyncFetch(channel, function (is, result) {
+      if (!Components.isSuccessCode(result)) {
+        callback.call(that);
+        return;
+      }
+      let string = NetUtil.readInputStreamToString(is, is.available());
+      is.close();
+      let json;
+      try {
+        json = JSON.parse(string);
+      } catch (ex) {
+        if (that._log) {
+          that._log.debug("Failed to load json: " +
+                          CommonUtils.exceptionStr(ex));
+        }
+      }
+      callback.call(that, json);
+    });
   },
 
-  jsonSave: function jsonSave(path, that, obj, callback) {
-    CommonUtils.jsonSave("weave/" + path, that, obj, callback);
+  /**
+   * Save a json-able object to disk in the profile directory.
+   *
+   * @param filePath
+   *        JSON file path save to <filePath>.json
+   * @param that
+   *        Object to use for logging and "this" for callback
+   * @param obj
+   *        Function to provide json-able object to save. If this isn't a
+   *        function, it'll be used as the object to make a json string.
+   * @param callback
+   *        Function called when the write has been performed. Optional.
+   *        The first argument will be a Components.results error
+   *        constant on error or null if no error was encountered (and
+   *        the file saved successfully).
+   */
+  jsonSave: function jsonSave(filePath, that, obj, callback) {
+    let path = "weave/" + filePath + ".json";
+    if (that._log) {
+      that._log.trace("Saving json to disk: " + path);
+    }
+
+    let file = FileUtils.getFile("ProfD", path.split("/"), true);
+    let json = typeof obj == "function" ? obj.call(that) : obj;
+    let out = JSON.stringify(json);
+
+    let fos = FileUtils.openSafeFileOutputStream(file);
+    let is = this._utf8Converter.convertToInputStream(out);
+    NetUtil.asyncCopy(is, fos, function (result) {
+      if (typeof callback == "function") {
+        let error = (result == Cr.NS_OK) ? null : result;
+        callback.call(that, error);
+      }
+    });
   },
 
   getIcon: function(iconUri, defaultIcon) {
@@ -544,12 +621,14 @@ let _sessionCID = Services.appinfo.ID == SEAMONKEY_ID ?
   "@mozilla.org/suite/sessionstore;1" :
   "@mozilla.org/browser/sessionstore;1";
 
-[["Form", "@mozilla.org/satchel/form-history;1", "nsIFormHistory2"],
+[
  ["Idle", "@mozilla.org/widget/idleservice;1", "nsIIdleService"],
  ["Session", _sessionCID, "nsISessionStore"]
 ].forEach(function([name, contract, iface]) {
   XPCOMUtils.defineLazyServiceGetter(Svc, name, contract, iface);
 });
+
+XPCOMUtils.defineLazyModuleGetter(Svc, "FormHistory", "resource://gre/modules/FormHistory.jsm");
 
 Svc.__defineGetter__("Crypto", function() {
   let cryptoSvc;

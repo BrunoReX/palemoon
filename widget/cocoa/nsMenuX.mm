@@ -37,6 +37,8 @@
 #include "nsBindingManager.h"
 #include "nsIServiceManager.h"
 #include "nsXULPopupManager.h"
+#include "nsContentUtils.h"
+#include "nsCxPusher.h"
 
 #include "jsapi.h"
 #include "nsIScriptGlobalObject.h"
@@ -47,6 +49,7 @@ static bool gConstructingMenu = false;
 static bool gMenuMethodsSwizzled = false;
 
 int32_t nsMenuX::sIndexingMenuLevel = 0;
+using mozilla::AutoPushJSContext;
 
 
 //
@@ -409,12 +412,12 @@ void nsMenuX::MenuConstruct()
       do_GetService(nsIXPConnect::GetCID(), &rv);
     if (NS_SUCCEEDED(rv)) {
       nsIDocument* ownerDoc = menuPopup->OwnerDoc();
-      nsIScriptGlobalObject* sgo;
-      if (ownerDoc && (sgo = ownerDoc->GetScriptGlobalObject())) {
+      nsCOMPtr<nsIScriptGlobalObject> sgo;
+      if (ownerDoc && (sgo = do_QueryInterface(ownerDoc->GetWindow()))) {
         nsCOMPtr<nsIScriptContext> scriptContext = sgo->GetContext();
         JSObject* global = sgo->GetGlobalJSObject();
         if (scriptContext && global) {
-          JSContext* cx = (JSContext*)scriptContext->GetNativeContext();
+          AutoPushJSContext cx(scriptContext->GetNativeContext());
           if (cx) {
             nsCOMPtr<nsIXPConnectJSObjectHolder> wrapper;
             xpconnect->WrapNative(cx, global,

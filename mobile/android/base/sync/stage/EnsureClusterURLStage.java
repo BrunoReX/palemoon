@@ -12,8 +12,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.security.GeneralSecurityException;
 
-import org.mozilla.gecko.sync.GlobalSession;
-import org.mozilla.gecko.sync.Logger;
+import org.mozilla.gecko.background.common.log.Logger;
 import org.mozilla.gecko.sync.NodeAuthenticationException;
 import org.mozilla.gecko.sync.NullClusterURLException;
 import org.mozilla.gecko.sync.ThreadPool;
@@ -25,10 +24,6 @@ import ch.boye.httpclientandroidlib.HttpResponse;
 import ch.boye.httpclientandroidlib.client.ClientProtocolException;
 
 public class EnsureClusterURLStage extends AbstractNonRepositorySyncStage {
-  public EnsureClusterURLStage(GlobalSession session) {
-    super(session);
-  }
-
   public interface ClusterURLFetchDelegate {
     /**
      * 200 - Success.

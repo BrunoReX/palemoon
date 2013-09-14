@@ -19,7 +19,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsIPresShell.h"
 #include "nsIDocShell.h"
-#include "nsIDocShellTreeItem.h"
 #include "nsISelectionController.h"
 #include "nsIWebNavigation.h"
 #include "nsIContentViewerEdit.h"
@@ -243,10 +242,10 @@ nsSelectMoveScrollCommand::DoCommand(const char *aCommandName, nsISupports *aCom
   if (!caretOn) {
     caretOn = Preferences::GetBool("accessibility.browsewithcaret");
     if (caretOn) {
-      nsCOMPtr<nsIDocShellTreeItem> dsti = do_QueryInterface(piWindow->GetDocShell());
-      if (dsti) {
+      nsCOMPtr<nsIDocShell> docShell = piWindow->GetDocShell();
+      if (docShell) {
         int32_t itemType;
-        dsti->GetItemType(&itemType);
+        docShell->GetItemType(&itemType);
         if (itemType == nsIDocShellTreeItem::typeChrome) {
           caretOn = false;
         }
@@ -346,7 +345,7 @@ nsClipboardCommand::IsCommandEnabled(const char* aCommandName, nsISupports *aCon
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aContext);
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
-  nsCOMPtr<nsIDocument> doc = do_QueryInterface(window->GetExtantDocument());
+  nsCOMPtr<nsIDocument> doc = window->GetExtantDoc();
   *outCmdEnabled = nsCopySupport::CanCopy(doc);
   return NS_OK;
 }

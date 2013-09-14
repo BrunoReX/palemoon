@@ -1,0 +1,65 @@
+***************
+*** 39,49 ****
+  #include "nsThreadUtils.h"
+  #include "nsIScrollableFrame.h"
+  #include "nsContentUtils.h"
+  #include "mozilla/dom/Element.h"
+  #include "mozilla/Preferences.h"
+  
+  #define AUTOMATIC_IMAGE_RESIZING_PREF "browser.enable_automatic_image_resizing"
+  #define CLICK_IMAGE_RESIZING_PREF "browser.enable_click_image_resizing"
+  //XXX A hack needed for Firefox's site specific zoom.
+  #define SITE_SPECIFIC_ZOOM "browser.zoom.siteSpecific"
+  
+--- 39,51 ----
+  #include "nsThreadUtils.h"
+  #include "nsIScrollableFrame.h"
+  #include "nsContentUtils.h"
++ #include "nsCSSParser.h"
+  #include "mozilla/dom/Element.h"
+  #include "mozilla/Preferences.h"
+  
+  #define AUTOMATIC_IMAGE_RESIZING_PREF "browser.enable_automatic_image_resizing"
+  #define CLICK_IMAGE_RESIZING_PREF "browser.enable_click_image_resizing"
++ #define STANDALONE_IMAGE_BACKGROUND_COLOR_PREF "browser.display.standalone_images.background_color"
+  //XXX A hack needed for Firefox's site specific zoom.
+  #define SITE_SPECIFIC_ZOOM "browser.zoom.siteSpecific"
+  
+***************
+*** 128,133 ****
+    int32_t                       mImageWidth;
+    int32_t                       mImageHeight;
+  
+    bool                          mResizeImageByDefault;
+    bool                          mClickResizingEnabled;
+    bool                          mImageIsOverflowing;
+--- 130,137 ----
+    int32_t                       mImageWidth;
+    int32_t                       mImageHeight;
+  
++   nsAutoString                  mBackgroundColor;
++ 
+    bool                          mResizeImageByDefault;
+    bool                          mClickResizingEnabled;
+    bool                          mImageIsOverflowing;
+***************
+*** 694,705 ****
+      head->AppendChildTo(styleContent, false);
+    }
+  
+-   // Add the image element
+-   Element* body = GetBodyElement();
+-   if (!body) {
+-     NS_WARNING("no body on image document!");
+-     return NS_ERROR_FAILURE;
+-   }
+  
+    nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::img, nullptr,
+                                             kNameSpaceID_XHTML,
+--- 718,723 ----
+      head->AppendChildTo(styleContent, false);
+    }
+  
+  
+    nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::img, nullptr,
+                                             kNameSpaceID_XHTML,

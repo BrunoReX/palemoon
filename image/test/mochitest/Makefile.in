@@ -67,6 +67,10 @@ MOCHITEST_FILES =   imgutils.js \
 		test_error_events.html \
 		error-early.png \
 		test_drawDiscardedImage.html \
+		short_header.gif \
+		test_short_gif_header.html \
+                INT32_MIN.bmp \
+                test_bug865919.html \
                 $(NULL)
 
 # Tests disabled due to intermittent orange
@@ -99,6 +103,17 @@ MOCHITEST_CHROME_FILES = imgutils.js \
                 test_net_failedtoprocess.html \
                 invalid.jpg \
                 damon.jpg \
+                test_removal_onload.html \
+                test_removal_ondecode.html \
+                invalid.jpg \
+                bad.jpg \
+                rillybad.jpg \
+                red.png \
+                lime100x100.svg \
+                test_synchronized_animation.html \
+                animated1.gif \
+                animated2.gif \
+                test_staticClone.html \
                 $(NULL)
 
 include $(topsrcdir)/config/rules.mk

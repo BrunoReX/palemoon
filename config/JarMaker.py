@@ -7,7 +7,6 @@ processing jar.mn files.
 
 See the documentation for jar.mn on MDC for further details on the format.
 '''
-
 import sys
 import os
 import os.path
@@ -81,6 +80,7 @@ class JarMaker(object):
     self.l10nbase = None
     self.l10nmerge = None
     self.relativesrcdir = None
+    self.rootManifestAppId = None
 
   def getCommandLineParser(self):
     '''Get a optparse.OptionParser for jarmaker.
@@ -117,6 +117,8 @@ class JarMaker(object):
                  help="relativesrcdir to be used for localization")
     p.add_option('-j', type="string",
                  help="jarfile directory")
+    p.add_option('--root-manifest-entry-appid', type="string",
+                 help="add an app id specific root chrome manifest entry.")
     return p
 
   def processIncludes(self, includes):
@@ -149,12 +151,24 @@ class JarMaker(object):
                                   '..', 'chrome.manifest')
 
     if self.useJarfileManifest:
-      self.updateManifest(jarPath + '.manifest', chromebasepath % '',
+      self.updateManifest(jarPath + '.manifest', chromebasepath.format(''),
                           register)
-      addEntriesToListFile(chromeManifest, ['manifest chrome/%s.manifest' % (os.path.basename(jarPath),)])
+      addEntriesToListFile(chromeManifest, ['manifest chrome/{0}.manifest'
+                                            .format(os.path.basename(jarPath))])
     if self.useChromeManifest:
-      self.updateManifest(chromeManifest, chromebasepath % 'chrome/',
+      self.updateManifest(chromeManifest, chromebasepath.format('chrome/'),
                           register)
+
+    # If requested, add a root chrome manifest entry (assumed to be in the parent directory
+    # of chromeManifest) with the application specific id. In cases where we're building
+    # lang packs, the root manifest must know about application sub directories.
+    if self.rootManifestAppId:
+      rootChromeManifest = os.path.join(os.path.normpath(os.path.dirname(chromeManifest)),
+                                        '..', 'chrome.manifest')
+      rootChromeManifest = os.path.normpath(rootChromeManifest)
+      chromeDir = os.path.basename(os.path.dirname(os.path.normpath(chromeManifest)))
+      logging.info("adding '%s' entry to root chrome manifest appid=%s" % (chromeDir, self.rootManifestAppId))
+      addEntriesToListFile(rootChromeManifest, ['manifest %s/chrome.manifest application=%s' % (chromeDir, self.rootManifestAppId)])
 
   def updateManifest(self, manifestPath, chromebasepath, register):
     '''updateManifest replaces the % in the chrome registration entries
@@ -244,9 +258,9 @@ class JarMaker(object):
     '''
 
     # chromebasepath is used for chrome registration manifests
-    # %s is getting replaced with chrome/ for chrome.manifest, and with
+    # {0} is getting replaced with chrome/ for chrome.manifest, and with
     # an empty string for jarfile.manifest
-    chromebasepath = '%s' + os.path.basename(jarfile)
+    chromebasepath = '{0}' + os.path.basename(jarfile)
     if self.outputFormat == 'jar':
       chromebasepath = 'jar:' + chromebasepath + '.jar!'
     chromebasepath += '/'
@@ -258,7 +272,7 @@ class JarMaker(object):
       jarfilepath = jarfile + '.jar'
       try:
         os.makedirs(os.path.dirname(jarfilepath))
-      except OSError, error:
+      except OSError as error:
         if error.errno != errno.EEXIST:
           raise
       jf = ZipFile(jarfilepath, 'a', lock = True)
@@ -331,7 +345,8 @@ class JarMaker(object):
       if realsrc is None:
         if jf is not None:
           jf.close()
-        raise RuntimeError('File "%s" not found in %s' % (src, ', '.join(src_base)))
+        raise RuntimeError('File "{0}" not found in {1}'
+                           .format(src, ', '.join(src_base)))
       if m.group('optPreprocess'):
         outf = outHelper.getOutput(out)
         inf = open(realsrc)
@@ -387,7 +402,7 @@ class JarMaker(object):
       # remove previous link or file
       try:
         os.remove(out)
-      except OSError, e:
+      except OSError as e:
         if e.errno != errno.ENOENT:
           raise
       return open(out, 'wb')
@@ -397,7 +412,7 @@ class JarMaker(object):
       if not os.path.isdir(outdir):
         try:
           os.makedirs(outdir)
-        except OSError, error:
+        except OSError as error:
           if error.errno != errno.EEXIST:
             raise
       return out
@@ -411,7 +426,7 @@ class JarMaker(object):
       # remove previous link or file
       try:
         os.remove(out)
-      except OSError, e:
+      except OSError as e:
         if e.errno != errno.ENOENT:
           raise
       if sys.platform != "win32":
@@ -447,6 +462,8 @@ def main():
   elif options.locale_mergedir:
     p.error('l10n-base required when using locale-mergedir')
   jm.localedirs = options.l10n_src
+  if options.root_manifest_entry_appid:
+    jm.rootManifestAppId = options.root_manifest_entry_appid
   noise = logging.INFO
   if options.verbose is not None:
     noise = (options.verbose and logging.DEBUG) or logging.WARN

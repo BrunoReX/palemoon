@@ -32,8 +32,7 @@
  * loaded data fire before the call returns. If FLAG_SYNC_DECODE is not passed,
  * all, some, or none of the notifications may fire before the call returns.
  */
-class imgDecoderObserver : public mozilla::RefCounted<imgDecoderObserver>,
-                           public mozilla::SupportsWeakPtr<imgDecoderObserver>
+class imgDecoderObserver : public mozilla::RefCounted<imgDecoderObserver>
 {
 public:
   virtual ~imgDecoderObserver() = 0;
@@ -69,10 +68,15 @@ public:
   /**
    * Decode notification.
    *
+   * Called when we know a frame has begun decoding.
+   */
+  virtual void OnStartFrame() = 0;
+
+  /**
+   * Decode notification.
+   *
    * called when there is more to paint.
    */
-  virtual void OnDataAvailable(const nsIntRect * aRect) = 0;
-
   virtual void FrameChanged(const nsIntRect * aDirtyRect) = 0;
 
   /**
@@ -102,7 +106,7 @@ public:
    * (used only for observers of imgIRequest objects, which are nsIRequests,
    * not imgIDecoder objects)
    */
-  virtual void OnStopRequest(bool aIsLastPart) = 0;
+  virtual void OnStopRequest(bool aIsLastPart, nsresult aStatus) = 0;
 
   /**
    * Called when the decoded image data is discarded. This means that the frames
@@ -110,6 +114,16 @@ public:
    * image will initiate a new series of progressive decode notifications.
    */
   virtual void OnDiscard() = 0;
+
+  /**
+   * Called when we are asked to Draw an image that is not locked.
+   */
+  virtual void OnUnlockedDraw() = 0;
+
+  /**
+   * Called when an image is realized to be in error state.
+   */
+  virtual void OnError() = 0;
 };
 
 // We must define a destructor because derived classes call our destructor from

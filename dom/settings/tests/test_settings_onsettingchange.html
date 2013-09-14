@@ -1,17 +1,17 @@
 <!DOCTYPE html>
 <html>
 <!--
-https://bugzilla.mozilla.org/show_bug.cgi?id={678695}
+https://bugzilla.mozilla.org/show_bug.cgi?id=678695
 -->
 <head>
-  <title>Test for Bug {678695} Settings API</title>
+  <title>Test for Bug 678695 Settings API</title>
   <script type="text/javascript" src="/MochiKit/MochiKit.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
 
-<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id={678695}">Mozilla Bug {678695}</a>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=678695">Mozilla Bug 678695</a>
 <p id="display"></p>
 <div id="content" style="display: none">
 
@@ -21,9 +21,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id={678695}
 
 "use strict";
 
-var comp = SpecialPowers.wrap(Components);
-comp.utils.import("resource://gre/modules/SettingsChangeNotifier.jsm");
-SpecialPowers.setBoolPref("dom.mozSettings.enabled", true);
+if (SpecialPowers.isMainProcess()) {
+  SpecialPowers.Cu.import("resource://gre/modules/SettingsChangeNotifier.jsm");
+}
+
 SpecialPowers.addPermission("settings-write", true, document);
 SpecialPowers.addPermission("settings-read", true, document);
 
@@ -62,6 +63,17 @@ function onsettingschangeWithNext(event) {
   dump("onsettingschangewithnext called!\n");
   is(event.settingName, "screen.brightness", "Same settingName");
   is(event.settingValue, "0.7", "Same settingvalue");
+  next();
+};
+
+var cset = {'a':'b','c':[{'d':'e'}]};
+
+function onComplexSettingschangeWithNext(event) {
+  is(event.settingName, "test.key", "Same settingName");
+  is(event.settingValue['a'], "b", "Same settingvalue");
+  var c = event.settingValue['c'];
+  ok(Array.isArray(c), "c is array!");
+  is(c[0]['d'], 'e', "Right settingValue!");
   next();
 };
 
@@ -151,7 +163,7 @@ var steps = [
     }
     req.onerror = onFailure;
   },
-  
+
   function() {
     ok(true, "delete onsettingschange");
     var lock = mozSettings.createLock();
@@ -250,6 +262,22 @@ var steps = [
     req.onerror = onFailure;
   },
   function () {
+    ok(true, "Deleting database");
+    var lock = mozSettings.createLock();
+    req = lock.clear();
+    req.onsuccess = function () {
+      ok(true, "Deleted the database");
+      navigator.mozSettings.onsettingchange = onComplexSettingschangeWithNext;
+    };
+    req.onerror = onFailure;
+    req2 = navigator.mozSettings.createLock().set({'test.key': cset});
+    req2.onsuccess = function () {
+      ok(true, "set done");
+    }
+    req2.onerror = onFailure;
+  },
+  
+  function () {
     ok(true, "all done!\n");
     SimpleTest.finish();
   }
@@ -269,20 +297,8 @@ function next() {
   index += 1;
 }
 
-function permissionTest() {
-  if (gSettingsEnabled) {
-    next();
-  } else {
-    is(mozSettings, null, "mozSettings is null when not enabled.");
-    SimpleTest.finish();
-  }
-}
-
-var gSettingsEnabled = SpecialPowers.getBoolPref("dom.mozSettings.enabled");
 SimpleTest.waitForExplicitFinish();
-addLoadEvent(permissionTest);
-
-ok(true, "test passed");
+addLoadEvent(next);
 </script>
 </pre>
 </body>

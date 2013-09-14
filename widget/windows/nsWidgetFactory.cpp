@@ -17,6 +17,7 @@
 #include "nsScreenManagerWin.h"
 #include "nsSound.h"
 #include "WinMouseScrollHandler.h"
+#include "KeyboardLayout.h"
 #include "GfxInfo.h"
 #include "nsToolkit.h"
 
@@ -152,7 +153,7 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsDeviceContextSpecWin)
 namespace mozilla {
 namespace widget {
 // This constructor should really be shared with all platforms.
-NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(GfxInfo, Init);
+NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(GfxInfo, Init)
 }
 }
 
@@ -259,6 +260,7 @@ static const mozilla::Module::ContractIDEntry kWidgetContracts[] = {
 static void
 nsWidgetWindowsModuleDtor()
 {
+  KeyboardLayout::Shutdown();
   MouseScrollHandler::Shutdown();
   nsLookAndFeel::Shutdown();
   nsToolkit::Shutdown();

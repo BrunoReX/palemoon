@@ -10,9 +10,12 @@ import org.mozilla.gecko.db.BrowserContract.Combined;
 import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.db.BrowserDB.URLColumns;
 import org.mozilla.gecko.gfx.BitmapUtils;
-import org.mozilla.gecko.util.GeckoAsyncTask;
+import org.mozilla.gecko.util.GamepadUtils;
 import org.mozilla.gecko.util.GeckoEventListener;
 import org.mozilla.gecko.util.StringUtils;
+import org.mozilla.gecko.util.ThreadUtils;
+import org.mozilla.gecko.util.UiAsyncTask;
+import org.mozilla.gecko.widget.FaviconView;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -22,18 +25,13 @@ import android.app.Activity;
 import android.content.Context;
 import android.database.Cursor;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.drawable.Drawable;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Handler;
 import android.os.Message;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Log;
-import android.view.animation.AccelerateInterpolator;
-import android.view.animation.AlphaAnimation;
-import android.view.animation.Animation;
-import android.view.animation.TranslateAnimation;
 import android.view.ContextMenu;
 import android.view.ContextMenu.ContextMenuInfo;
 import android.view.LayoutInflater;
@@ -43,29 +41,31 @@ import android.view.View.OnClickListener;
 import android.view.View.OnLongClickListener;
 import android.view.ViewGroup;
 import android.view.ViewGroup.LayoutParams;
+import android.view.animation.AccelerateInterpolator;
+import android.view.animation.AlphaAnimation;
+import android.view.animation.Animation;
+import android.view.animation.TranslateAnimation;
 import android.widget.AdapterView;
 import android.widget.FilterQueryProvider;
-import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.SimpleCursorAdapter;
-import android.widget.TabHost.TabContentFactory;
 import android.widget.TextView;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
 public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
-    public static final String LOGTAG = "ALL_PAGES";
+    public static final String LOGTAG = "GeckoAllPagesTab";
     private static final String TAG = "allPages";
 
     private static final int SUGGESTION_TIMEOUT = 3000;
     private static final int SUGGESTION_MAX = 3;
     private static final int ANIMATION_DURATION = 250;
+    // The maximum number of rows deep in a search we'll dig for an autocomplete result
+    private static final int MAX_AUTOCOMPLETE_SEARCH = 20;
 
     private String mSearchTerm;
     private ArrayList<SearchEngine> mSearchEngines;
@@ -79,6 +79,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
     private View mSuggestionsOptInPrompt;
     private Handler mHandler;
     private ListView mListView;
+    private volatile AutocompleteHandler mAutocompleteHandler = null;
 
     private static final int MESSAGE_LOAD_FAVICONS = 1;
     private static final int MESSAGE_UPDATE_FAVICONS = 2;
@@ -86,7 +87,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
 
     private class SearchEntryViewHolder {
         public FlowLayout suggestionView;
-        public ImageView iconView;
+        public FaviconView iconView;
         public LinearLayout userEnteredView;
         public TextView userEnteredTextView;
     }
@@ -101,14 +102,17 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
         mHandler = new AllPagesHandler();
     }
 
+    @Override
     public boolean onBackPressed() {
         return false;
     }
 
+    @Override
     public int getTitleStringId() {
         return R.string.awesomebar_all_pages_title;
     }
 
+    @Override
     public String getTag() {
         return TAG;
     }
@@ -120,6 +124,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
         return mListView;
     }
 
+    @Override
     public View getView() {
         if (mView == null) {
             mView = (LinearLayout) (LayoutInflater.from(mContext).inflate(R.layout.awesomebar_allpages_list, null));
@@ -129,10 +134,12 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
             list.setTag(TAG);
             ((Activity)mContext).registerForContextMenu(list);
             list.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+                @Override
                 public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                      handleItemClick(parent, view, position, id);
                 }
             });
+            list.setOnKeyListener(GamepadUtils.getListItemClickDispatcher());
 
             AwesomeBarCursorAdapter adapter = getCursorAdapter();
             list.setAdapter(adapter);
@@ -142,23 +149,35 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
         return mView;
     }
 
+    @Override
     public void destroy() {
-        AwesomeBarCursorAdapter adapter = getCursorAdapter();
-        unregisterEventListener("SearchEngines:Data");
-        if (adapter == null) {
-            return;
-        }
+        super.destroy();
 
-        Cursor cursor = adapter.getCursor();
-        if (cursor != null)
-            cursor.close();
+        unregisterEventListener("SearchEngines:Data");
 
         mHandler.removeMessages(MESSAGE_UPDATE_FAVICONS);
         mHandler.removeMessages(MESSAGE_LOAD_FAVICONS);
         mHandler = null;
+
+        // Can't use getters for adapter or listview. They will create them if null.
+        if (mCursorAdapter != null && mListView != null) {
+            mListView.setAdapter(null);
+            final Cursor cursor = mCursorAdapter.getCursor();
+            // Gingerbread locks the DB when closing a cursor, so do it in the
+            // background.
+            ThreadUtils.postToBackgroundThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (cursor != null && !cursor.isClosed())
+                        cursor.close();
+                }
+            });
+        }
     }
 
-    public void filter(String searchTerm) {
+    public void filter(String searchTerm, AutocompleteHandler handler) {
+        mAutocompleteHandler = handler;
+
         AwesomeBarCursorAdapter adapter = getCursorAdapter();
         adapter.filter(searchTerm);
 
@@ -171,11 +190,67 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
         }
     }
 
+    private void findAutocompleteFor(String searchTerm, Cursor cursor) {
+        if (TextUtils.isEmpty(searchTerm) || cursor == null || mAutocompleteHandler == null)
+            return;
+
+        // avoid searching the path if we don't have to. Currently just decided by if there is
+        // a '/' character in the string
+        final String res = searchHosts(searchTerm, cursor, searchTerm.indexOf("/") > 0);
+
+        if (res != null) {
+            ThreadUtils.postToUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    // Its possible that mAutocompleteHandler has been destroyed
+                    if (mAutocompleteHandler != null) {
+                        mAutocompleteHandler.onAutocomplete(res);
+                        mAutocompleteHandler = null;
+                    }
+                }
+            });
+        }
+    }
+
+    private String searchHosts(String searchTerm, Cursor cursor, boolean searchPath) {
+        int i = 0;
+        if (cursor.moveToFirst()) {
+            int urlIndex = cursor.getColumnIndexOrThrow(URLColumns.URL);
+            do {
+                final Uri url = Uri.parse(cursor.getString(urlIndex));
+                String host = StringUtils.stripCommonSubdomains(url.getHost());
+                // host may be null for about pages
+                if (host == null)
+                    continue;
+
+                StringBuilder hostBuilder = new StringBuilder(host);
+               if (hostBuilder.indexOf(searchTerm) == 0) {
+                    return hostBuilder.append("/").toString();
+                }
+
+                if (searchPath) {
+                    List<String> path = url.getPathSegments();
+
+                    for (String seg : path) {
+                        hostBuilder.append("/").append(seg);
+                        if (hostBuilder.indexOf(searchTerm) == 0) {
+                            return hostBuilder.append("/").toString();
+                        }
+                    }
+                }
+
+                i++;
+            } while (i < MAX_AUTOCOMPLETE_SEARCH && cursor.moveToNext());
+        }
+        return null;
+    }
+
     /**
      * Query for suggestions, but don't show them yet.
      */
     private void primeSuggestions() {
-        GeckoAppShell.getHandler().post(new Runnable() {
+        ThreadUtils.postToBackgroundThread(new Runnable() {
+            @Override
             public void run() {
                 mSuggestClient.query(mSearchTerm);
             }
@@ -190,10 +265,12 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
 
         if (mSuggestClient != null && mSuggestionsEnabled) {
             mSuggestTask = new AsyncTask<String, Void, ArrayList<String>>() {
+                @Override
                 protected ArrayList<String> doInBackground(String... query) {
                     return mSuggestClient.query(query[0]);
                 }
 
+                @Override
                 protected void onPostExecute(ArrayList<String> suggestions) {
                     setSuggestions(suggestions);
                 }
@@ -208,6 +285,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
             mCursorAdapter = new AwesomeBarCursorAdapter(mContext);
 
             mCursorAdapter.setFilterQueryProvider(new FilterQueryProvider() {
+                @Override
                 public Cursor runQuery(CharSequence constraint) {
                     long start = SystemClock.uptimeMillis();
 
@@ -217,13 +295,13 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
                     postLoadFavicons();
 
                     long end = SystemClock.uptimeMillis();
-                    int time = (int)(end - start);
-                    Log.i(LOGTAG, "Got cursor in " + time + "ms");
-
                     if (!mTelemetrySent && TextUtils.isEmpty(constraint)) {
+                        int time = (int)(end - start);
                         Telemetry.HistogramAdd("FENNEC_AWESOMEBAR_ALLPAGES_EMPTY_TIME", time);
                         mTelemetrySent = true;
                     }
+
+                    findAutocompleteFor(constraint.toString(), c);
                     return c;
                 }
             });
@@ -243,16 +321,14 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
             mCursor = cursor;
         }
 
+        @Override
         public void onClick() {
-            AwesomeBarTabs.OnUrlOpenListener listener = getUrlListener();
-            if (listener == null)
-                return;
-
             String url = mCursor.getString(mCursor.getColumnIndexOrThrow(URLColumns.URL));
             String title = mCursor.getString(mCursor.getColumnIndexOrThrow(URLColumns.TITLE));
-            listener.onUrlOpen(url, title);
+            sendToListener(url, title);
         }
 
+        @Override
         public ContextMenuSubject getSubject() {
             // Use the history id in order to allow removing history entries
             int id = mCursor.getInt(mCursor.getColumnIndexOrThrow(Combined.HISTORY_ID));
@@ -269,8 +345,11 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
 
             if (bitmap != null) {
                 ByteArrayOutputStream stream = new ByteArrayOutputStream();
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
-                favicon = stream.toByteArray();
+                if (bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) {
+                    favicon = stream.toByteArray();
+                } else {
+                    Log.w(LOGTAG, "Favicon compression failed.");
+                }
             }
 
             return new ContextMenuSubject(id, url, favicon,
@@ -281,18 +360,20 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
     }
 
     private class AwesomeBarSearchEngineItem implements AwesomeBarItem {
-        private String mSearchEngine;
+        private SearchEngine mSearchEngine;
 
-        public AwesomeBarSearchEngineItem(String searchEngine) {
+        public AwesomeBarSearchEngineItem(SearchEngine searchEngine) {
             mSearchEngine = searchEngine;
         }
 
+        @Override
         public void onClick() {
             AwesomeBarTabs.OnUrlOpenListener listener = getUrlListener();
             if (listener != null)
                 listener.onSearch(mSearchEngine, mSearchTerm);
         }
 
+        @Override
         public ContextMenuSubject getSubject() {
             // Do not show context menu for search engine items
             return null;
@@ -348,7 +429,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
             }
 
             // return search engine
-            return new AwesomeBarSearchEngineItem(mSearchEngines.get(engineIndex).name);
+            return new AwesomeBarSearchEngineItem(mSearchEngines.get(engineIndex));
         }
 
         private int getEngineIndex(int position) {
@@ -412,7 +493,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
 
                     viewHolder = new SearchEntryViewHolder();
                     viewHolder.suggestionView = (FlowLayout) convertView.findViewById(R.id.suggestion_layout);
-                    viewHolder.iconView = (ImageView) convertView.findViewById(R.id.suggestion_icon);
+                    viewHolder.iconView = (FaviconView) convertView.findViewById(R.id.suggestion_icon);
                     viewHolder.userEnteredView = (LinearLayout) convertView.findViewById(R.id.suggestion_user_entered);
                     viewHolder.userEnteredTextView = (TextView) convertView.findViewById(R.id.suggestion_text);
 
@@ -431,7 +512,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
                     viewHolder = new AwesomeEntryViewHolder();
                     viewHolder.titleView = (TextView) convertView.findViewById(R.id.title);
                     viewHolder.urlView = (TextView) convertView.findViewById(R.id.url);
-                    viewHolder.faviconView = (ImageView) convertView.findViewById(R.id.favicon);
+                    viewHolder.faviconView = (FaviconView) convertView.findViewById(R.id.favicon);
                     viewHolder.bookmarkIconView = (ImageView) convertView.findViewById(R.id.bookmark_icon);
 
                     convertView.setTag(viewHolder);
@@ -445,7 +526,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
                     throw new IllegalStateException("Couldn't move cursor to position " + position);
 
                 updateTitle(viewHolder.titleView, cursor);
-                updateUrl(viewHolder.urlView, cursor);
+                updateUrl(viewHolder, cursor);
                 updateBookmarkIcon(viewHolder.bookmarkIconView, cursor);
                 displayFavicon(viewHolder);
             }
@@ -456,6 +537,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
         private void bindSearchEngineView(final SearchEngine engine, final SearchEntryViewHolder viewHolder) {
             // when a suggestion is clicked, do a search
             OnClickListener clickListener = new OnClickListener() {
+                @Override
                 public void onClick(View v) {
                     AwesomeBarTabs.OnUrlOpenListener listener = getUrlListener();
                     if (listener != null) {
@@ -465,10 +547,10 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
                         // first suggestion item) and the search matches a URL
                         // pattern, go to that URL. Otherwise, do a search for
                         // the term.
-                        if (v != viewHolder.userEnteredView && !StringUtils.isSearchQuery(suggestion)) {
+                        if (v != viewHolder.userEnteredView && !StringUtils.isSearchQuery(suggestion, false)) {
                             listener.onUrlOpen(suggestion, null);
                         } else {
-                            listener.onSearch(engine.name, suggestion);
+                            listener.onSearch(engine, suggestion);
                         }
                     }
                 }
@@ -476,6 +558,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
 
             // when a suggestion is long-clicked, copy the suggestion into the URL EditText
             OnLongClickListener longClickListener = new OnLongClickListener() {
+                @Override
                 public boolean onLongClick(View v) {
                     AwesomeBarTabs.OnUrlOpenListener listener = getUrlListener();
                     if (listener != null) {
@@ -489,7 +572,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
 
             // set the search engine icon (e.g., Google) for the row
             FlowLayout suggestionView = viewHolder.suggestionView;
-            updateFavicon(viewHolder.iconView, engine.icon);
+            updateFavicon(viewHolder.iconView, engine.icon, engine.name);
 
             // user-entered search term is first suggestion
             viewHolder.userEnteredTextView.setText(mSearchTerm);
@@ -537,22 +620,6 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
         }
     };
 
-    private class SearchEngine {
-        public String name;
-        public Bitmap icon;
-        public ArrayList<String> suggestions;
-
-        public SearchEngine(String name) {
-            this(name, null);
-        }
-
-        public SearchEngine(String name, Bitmap icon) {
-            this.name = name;
-            this.icon = icon;
-            this.suggestions = new ArrayList<String>();
-        }
-    };
-
     /**
      * Sets suggestions associated with the current suggest engine.
      * If there is no suggest engine, this does nothing.
@@ -580,11 +647,12 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
             for (int i = 0; i < engines.length(); i++) {
                 JSONObject engineJSON = engines.getJSONObject(i);
                 String name = engineJSON.getString("name");
+                String identifier = engineJSON.getString("identifier");
                 String iconURI = engineJSON.getString("iconURI");
                 Bitmap icon = BitmapUtils.getBitmapFromDataURI(iconURI);
                 if (name.equals(suggestEngine) && suggestTemplate != null) {
                     // suggest engine should be at the front of the list
-                    searchEngines.add(0, new SearchEngine(name, icon));
+                    searchEngines.add(0, new SearchEngine(name, identifier, icon));
 
                     // The only time Tabs.getInstance().getSelectedTab() should
                     // be null is when we're restoring after a crash. We should
@@ -592,9 +660,9 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
                     // should be safe to assume that null means non-private.
                     Tab tab = Tabs.getInstance().getSelectedTab();
                     if (tab == null || !tab.isPrivate())
-                        mSuggestClient = new SuggestClient(GeckoApp.mAppContext, suggestTemplate, SUGGESTION_TIMEOUT, SUGGESTION_MAX);
+                        mSuggestClient = new SuggestClient(getView().getContext(), suggestTemplate, SUGGESTION_TIMEOUT, SUGGESTION_MAX);
                 } else {
-                    searchEngines.add(new SearchEngine(name, icon));
+                    searchEngines.add(new SearchEngine(name, identifier, icon));
                 }
             }
 
@@ -623,6 +691,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
         final View yesButton = mSuggestionsOptInPrompt.findViewById(R.id.suggestions_prompt_yes);
         final View noButton = mSuggestionsOptInPrompt.findViewById(R.id.suggestions_prompt_no);
         OnClickListener listener = new OnClickListener() {
+            @Override
             public void onClick(View v) {
                 // Prevent the buttons from being clicked multiple times (bug 816902)
                 yesButton.setOnClickListener(null);
@@ -657,7 +726,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
         anim1.setDuration(ANIMATION_DURATION);
         anim1.setInterpolator(new AccelerateInterpolator());
         anim1.setFillAfter(true);
-        mSuggestionsOptInPrompt.setAnimation(anim1);
+        final View promptContainer = mSuggestionsOptInPrompt.findViewById(R.id.prompt_container);
 
         TranslateAnimation anim2 = new TranslateAnimation(0, 0, 0, -1 * mSuggestionsOptInPrompt.getHeight());
         anim2.setDuration(ANIMATION_DURATION);
@@ -665,19 +734,23 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
         anim2.setStartOffset(anim1.getDuration());
         final LinearLayout view = (LinearLayout)getView();
         anim2.setAnimationListener(new Animation.AnimationListener() {
+            @Override
             public void onAnimationStart(Animation a) {
                 // Increase the height of the view so a gap isn't shown during animation
                 view.getLayoutParams().height = view.getHeight() +
                         mSuggestionsOptInPrompt.getHeight();
                 view.requestLayout();
             }
+            @Override
             public void onAnimationRepeat(Animation a) {}
+            @Override
             public void onAnimationEnd(Animation a) {
                 // Removing the view immediately results in a NPE in
                 // dispatchDraw(), possibly because this callback executes
                 // before drawing is finished. Posting this as a Runnable fixes
                 // the issue.
                 view.post(new Runnable() {
+                    @Override
                     public void run() {
                         view.removeView(mSuggestionsOptInPrompt);
                         getListView().clearAnimation();
@@ -697,13 +770,16 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
             }
         });
 
-        mSuggestionsOptInPrompt.startAnimation(anim1);
+        promptContainer.startAnimation(anim1);
+        mSuggestionsOptInPrompt.startAnimation(anim2);
         getListView().startAnimation(anim2);
     }
 
+    @Override
     public void handleMessage(String event, final JSONObject message) {
         if (event.equals("SearchEngines:Data")) {
-            GeckoAppShell.getMainHandler().post(new Runnable() {
+            ThreadUtils.postToUiThread(new Runnable() {
+                @Override
                 public void run() {
                     setSearchEngines(message);
                 }
@@ -739,6 +815,7 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
         }
     }
 
+    @Override
     public ContextMenuSubject getSubject(ContextMenu menu, View view, ContextMenuInfo menuInfo) {
         ContextMenuSubject subject = null;
 
@@ -754,17 +831,12 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
         if (subject == null)
             return subject;
 
-        MenuInflater inflater = new MenuInflater(mContext);
-        inflater.inflate(R.menu.awesomebar_contextmenu, menu);
+        setupMenu(menu, subject);
+
         menu.findItem(R.id.remove_bookmark).setVisible(false);
         menu.findItem(R.id.edit_bookmark).setVisible(false);
         menu.findItem(R.id.open_in_reader).setVisible(subject.display == Combined.DISPLAY_READER);
 
-        // Hide "Remove" item if there isn't a valid history ID
-        if (subject.id < 0)
-            menu.findItem(R.id.remove_history).setVisible(false);
-
-        menu.setHeaderTitle(subject.title);
         return subject;
     }
 
@@ -808,8 +880,8 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
                 if (b == null)
                     continue;
 
-                Bitmap favicon = BitmapFactory.decodeByteArray(b, 0, b.length);
-                if (favicon == null || favicon.getWidth() <= 0 || favicon.getHeight() <= 0)
+                Bitmap favicon = BitmapUtils.decodeByteArray(b);
+                if (favicon == null)
                     continue;
 
                 favicon = Favicons.getInstance().scaleImage(favicon);
@@ -826,28 +898,34 @@ public class AllPagesTab extends AwesomeBarTab implements GeckoEventListener {
         if (urls.size() == 0)
             return;
 
-        (new GeckoAsyncTask<Void, Void, Cursor>(GeckoApp.mAppContext, GeckoAppShell.getHandler()) {
+        (new UiAsyncTask<Void, Void, Void>(ThreadUtils.getBackgroundHandler()) {
             @Override
-            public Cursor doInBackground(Void... params) {
-                return BrowserDB.getFaviconsForUrls(getContentResolver(), urls);
+            public Void doInBackground(Void... params) {
+                Cursor cursor = BrowserDB.getFaviconsForUrls(getContentResolver(), urls);
+                storeFaviconsInMemCache(cursor);
+                return null;
             }
 
             @Override
-            public void onPostExecute(Cursor c) {
-                storeFaviconsInMemCache(c);
+            public void onPostExecute(Void result) {
                 postUpdateFavicons();
             }
         }).execute();
     }
 
     private void displayFavicon(AwesomeEntryViewHolder viewHolder) {
-        final String url = viewHolder.urlView.getText().toString();
+        final String url = viewHolder.url;
         Bitmap bitmap = Favicons.getInstance().getFaviconFromMemCache(url);
-        updateFavicon(viewHolder.faviconView, bitmap);
+        updateFavicon(viewHolder.faviconView, bitmap, url);
     }
 
     private void updateFavicons() {
         ListView listView = getListView();
+        AwesomeBarCursorAdapter adapter = getCursorAdapter();
+        Cursor cursor = adapter.getCursor();
+        if (cursor == null)
+            return;
+
         for (int i = 0; i < listView.getChildCount(); i++) {
             final View view = listView.getChildAt(i);
             final Object tag = view.getTag();

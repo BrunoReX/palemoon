@@ -10,20 +10,7 @@ FAIL_ON_WARNINGS := 1
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE		= content
-LIBRARY_NAME	= gkcongstreamer_s
 LIBXUL_LIBRARY 	= 1
-
-
-EXPORTS		+= \
-		GStreamerDecoder.h \
-		GStreamerReader.h \
-		$(NULL)
-
-CPPSRCS		= \
-		GStreamerReader.cpp \
-		GStreamerDecoder.cpp \
-		$(NULL)
 
 FORCE_STATIC_LIB = 1
 

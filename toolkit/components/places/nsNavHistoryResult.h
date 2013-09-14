@@ -26,7 +26,6 @@ class nsNavHistoryQueryOptions;
 class nsNavHistoryContainerResultNode;
 class nsNavHistoryFolderResultNode;
 class nsNavHistoryQueryResultNode;
-class nsNavHistoryVisitResultNode;
 
 /**
  * hashkey wrapper using int64_t KeyType
@@ -65,8 +64,6 @@ private:
   NS_DECL_NSINAVBOOKMARKOBSERVER                                        \
   NS_IMETHOD OnTitleChanged(nsIURI* aURI, const nsAString& aPageTitle,  \
                             const nsACString& aGUID);                   \
-  NS_IMETHOD OnBeforeDeleteURI(nsIURI *aURI, const nsACString& aGUID,   \
-                               uint16_t aReason);                       \
   NS_IMETHOD OnDeleteURI(nsIURI *aURI, const nsACString& aGUID,         \
                          uint16_t aReason);                             \
   NS_IMETHOD OnClearHistory();                                          \
@@ -292,9 +289,9 @@ public:
   // would take a vtable slot for every one of (potentially very many) nodes.
   // Note that GetType() already has a vtable slot because its on the iface.
   bool IsTypeContainer(uint32_t type) {
-    return (type == nsINavHistoryResultNode::RESULT_TYPE_QUERY ||
-            type == nsINavHistoryResultNode::RESULT_TYPE_FOLDER ||
-            type == nsINavHistoryResultNode::RESULT_TYPE_FOLDER_SHORTCUT);
+    return type == nsINavHistoryResultNode::RESULT_TYPE_QUERY ||
+           type == nsINavHistoryResultNode::RESULT_TYPE_FOLDER ||
+           type == nsINavHistoryResultNode::RESULT_TYPE_FOLDER_SHORTCUT;
   }
   bool IsContainer() {
     uint32_t type;
@@ -302,27 +299,16 @@ public:
     return IsTypeContainer(type);
   }
   static bool IsTypeURI(uint32_t type) {
-    return (type == nsINavHistoryResultNode::RESULT_TYPE_URI ||
-            type == nsINavHistoryResultNode::RESULT_TYPE_VISIT ||
-            type == nsINavHistoryResultNode::RESULT_TYPE_FULL_VISIT);
+    return type == nsINavHistoryResultNode::RESULT_TYPE_URI;
   }
   bool IsURI() {
     uint32_t type;
     GetType(&type);
     return IsTypeURI(type);
   }
-  static bool IsTypeVisit(uint32_t type) {
-    return (type == nsINavHistoryResultNode::RESULT_TYPE_VISIT ||
-            type == nsINavHistoryResultNode::RESULT_TYPE_FULL_VISIT);
-  }
-  bool IsVisit() {
-    uint32_t type;
-    GetType(&type);
-    return IsTypeVisit(type);
-  }
   static bool IsTypeFolder(uint32_t type) {
-    return (type == nsINavHistoryResultNode::RESULT_TYPE_FOLDER ||
-            type == nsINavHistoryResultNode::RESULT_TYPE_FOLDER_SHORTCUT);
+    return type == nsINavHistoryResultNode::RESULT_TYPE_FOLDER ||
+           type == nsINavHistoryResultNode::RESULT_TYPE_FOLDER_SHORTCUT;
   }
   bool IsFolder() {
     uint32_t type;
@@ -330,7 +316,7 @@ public:
     return IsTypeFolder(type);
   }
   static bool IsTypeQuery(uint32_t type) {
-    return (type == nsINavHistoryResultNode::RESULT_TYPE_QUERY);
+    return type == nsINavHistoryResultNode::RESULT_TYPE_QUERY;
   }
   bool IsQuery() {
     uint32_t type;
@@ -340,15 +326,11 @@ public:
   bool IsSeparator() {
     uint32_t type;
     GetType(&type);
-    return (type == nsINavHistoryResultNode::RESULT_TYPE_SEPARATOR);
+    return type == nsINavHistoryResultNode::RESULT_TYPE_SEPARATOR;
   }
   nsNavHistoryContainerResultNode* GetAsContainer() {
     NS_ASSERTION(IsContainer(), "Not a container");
     return reinterpret_cast<nsNavHistoryContainerResultNode*>(this);
-  }
-  nsNavHistoryVisitResultNode* GetAsVisit() {
-    NS_ASSERTION(IsVisit(), "Not a visit");
-    return reinterpret_cast<nsNavHistoryVisitResultNode*>(this);
   }
   nsNavHistoryFolderResultNode* GetAsFolder() {
     NS_ASSERTION(IsFolder(), "Not a folder");
@@ -384,69 +366,10 @@ public:
   bool mHidden;
 
   // Transition type used when this node represents a single visit.
-  int32_t mTransitionType;
+  uint32_t mTransitionType;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsNavHistoryResultNode, NS_NAVHISTORYRESULTNODE_IID)
-
-// nsNavHistoryVisitResultNode
-
-#define NS_IMPLEMENT_VISITRESULT \
-  NS_IMETHOD GetUri(nsACString& aURI) { aURI = mURI; return NS_OK; } \
-  NS_IMETHOD GetSessionId(int64_t* aSessionId) \
-    { *aSessionId = mSessionId; return NS_OK; }
-
-class nsNavHistoryVisitResultNode : public nsNavHistoryResultNode,
-                                    public nsINavHistoryVisitResultNode
-{
-public:
-  nsNavHistoryVisitResultNode(const nsACString& aURI, const nsACString& aTitle,
-                              uint32_t aAccessCount, PRTime aTime,
-                              const nsACString& aIconURI, int64_t aSession);
-
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_FORWARD_COMMON_RESULTNODE_TO_BASE
-  NS_IMETHOD GetType(uint32_t* type)
-    { *type = nsNavHistoryResultNode::RESULT_TYPE_VISIT; return NS_OK; }
-  NS_IMPLEMENT_VISITRESULT
-
-public:
-
-  int64_t mSessionId;
-};
-
-
-// nsNavHistoryFullVisitResultNode
-
-#define NS_IMPLEMENT_FULLVISITRESULT \
-  NS_IMPLEMENT_VISITRESULT \
-  NS_IMETHOD GetVisitId(int64_t *aVisitId) \
-    { *aVisitId = mVisitId; return NS_OK; } \
-  NS_IMETHOD GetReferringVisitId(int64_t *aReferringVisitId) \
-    { *aReferringVisitId = mReferringVisitId; return NS_OK; } \
-  NS_IMETHOD GetTransitionType(int32_t *aTransitionType) \
-    { *aTransitionType = mTransitionType; return NS_OK; }
-
-class nsNavHistoryFullVisitResultNode : public nsNavHistoryVisitResultNode,
-                                        public nsINavHistoryFullVisitResultNode
-{
-public:
-  nsNavHistoryFullVisitResultNode(
-    const nsACString& aURI, const nsACString& aTitle, uint32_t aAccessCount,
-    PRTime aTime, const nsACString& aIconURI, int64_t aSession,
-    int64_t aVisitId, int64_t aReferringVisitId, int32_t aTransitionType);
-
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_FORWARD_COMMON_RESULTNODE_TO_BASE
-  NS_IMETHOD GetType(uint32_t* type)
-    { *type = nsNavHistoryResultNode::RESULT_TYPE_FULL_VISIT; return NS_OK; }
-  NS_IMPLEMENT_FULLVISITRESULT
-
-public:
-  int64_t mVisitId;
-  int64_t mReferringVisitId;
-  int32_t mTransitionType;
-};
 
 
 // nsNavHistoryContainerResultNode
@@ -633,8 +556,6 @@ public:
   }
   nsNavHistoryResultNode* FindChildURI(const nsACString& aSpec,
                                        uint32_t* aNodeIndex);
-  nsNavHistoryContainerResultNode* FindChildContainerByName(const nsACString& aTitle,
-                                                            uint32_t* aNodeIndex);
   // returns the index of the given node, -1 if not found
   int32_t FindChild(nsNavHistoryResultNode* aNode)
     { return mChildren.IndexOf(aNode); }
@@ -645,18 +566,18 @@ public:
                              bool aIsTemporary = false,
                              bool aIgnoreDuplicates = false);
   bool EnsureItemPosition(uint32_t aIndex);
-  void MergeResults(nsCOMArray<nsNavHistoryResultNode>* aNodes);
-  nsresult ReplaceChildURIAt(uint32_t aIndex, nsNavHistoryResultNode* aNode);
+
   nsresult RemoveChildAt(int32_t aIndex, bool aIsTemporary = false);
 
   void RecursiveFindURIs(bool aOnlyOne,
                          nsNavHistoryContainerResultNode* aContainer,
                          const nsCString& aSpec,
                          nsCOMArray<nsNavHistoryResultNode>* aMatches);
-  nsresult UpdateURIs(bool aRecursive, bool aOnlyOne, bool aUpdateSort,
-                      const nsCString& aSpec,
-                      nsresult (*aCallback)(nsNavHistoryResultNode*,void*, nsNavHistoryResult*),
-                      void* aClosure);
+  bool UpdateURIs(bool aRecursive, bool aOnlyOne, bool aUpdateSort,
+                  const nsCString& aSpec,
+                  nsresult (*aCallback)(nsNavHistoryResultNode*, const void*,
+                                        const nsNavHistoryResult*),
+                  const void* aClosure);
   nsresult ChangeTitles(nsIURI* aURI, const nsACString& aNewTitle,
                         bool aRecursive, bool aOnlyOne);
 

@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+"use strict";
+
 function dump(a) {
   Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService).logStringMessage(a);
 }
@@ -31,15 +33,20 @@ var Downloads = {
     this._dlmgr = Cc["@mozilla.org/download-manager;1"].getService(Ci.nsIDownloadManager);
     this._progressAlert = new AlertDownloadProgressListener();
     this._dlmgr.addPrivacyAwareListener(this._progressAlert);
-    Services.obs.addObserver(this, "xpcom-shutdown", true);
     Services.obs.addObserver(this, "last-pb-context-exited", true);
   },
 
-  openDownload: function dl_openDownload(aFileURI) {
-    let f = this._getLocalFile(aFileURI);
+  openDownload: function dl_openDownload(aDownload) {
+    let fileUri = aDownload.target.spec;
+    let guid = aDownload.guid;
+    let f = this._getLocalFile(fileUri);
     try {
       f.launch();
-    } catch (ex) { }
+    } catch (ex) {
+      // in case we are not able to open the file (i.e. there is no app able to handle it)
+      // we just open the browser tab showing it 
+      BrowserApp.addTab("about:downloads?id=" + guid);
+    }
   },
 
   cancelDownload: function dl_cancelDownload(aDownload) {
@@ -63,7 +70,7 @@ var Downloads = {
         if (aTopic == "alertclickcallback") {
           if (aDownload.state == Ci.nsIDownloadManager.DOWNLOAD_FINISHED) {
             // Only open the downloaded file if the download is complete
-            self.openDownload(aDownload.target.spec);
+            self.openDownload(aDownload);
           } else if (aDownload.state == Ci.nsIDownloadManager.DOWNLOAD_DOWNLOADING &&
                      !cancelPrompt) {
             cancelPrompt = true;
@@ -91,12 +98,6 @@ var Downloads = {
     }
 
     var notifier = Cc["@mozilla.org/alerts-service;1"].getService(Ci.nsIAlertsService);
-
-    if (aDownload.isPrivate) {
-      // temporary workaround for private downloads being stuck in the
-      // notification bar (bug 823285)
-      aTitle = "download";
-    }
     notifier.showAlertNotification(aIcon, aTitle, aMessage, true, "", observer,
                                    aDownload.target.spec.replace("file:", "download:"));
   },
@@ -106,7 +107,7 @@ var Downloads = {
     let alertsService = Cc["@mozilla.org/alerts-service;1"].getService(Ci.nsIAlertsService);
     let progressListener = alertsService.QueryInterface(Ci.nsIAlertsProgressListener);
     let download;
-    while (download = this._privateDownloads.pop()) {
+    while ((download = this._privateDownloads.pop())) {
       try {
         let notificationName = download.target.spec.replace("file:", "download:");
         progressListener.onCancel(notificationName);

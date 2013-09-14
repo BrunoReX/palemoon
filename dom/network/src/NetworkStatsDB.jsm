@@ -25,11 +25,12 @@ const VALUES_MAX_LENGTH = 6 * 30;
 // Constant defining the rate of the samples. Daily.
 const SAMPLE_RATE = 1000 * 60 * 60 * 24;
 
-this.NetworkStatsDB = function NetworkStatsDB(aGlobal) {
+this.NetworkStatsDB = function NetworkStatsDB(aGlobal, aConnectionTypes) {
   if (DEBUG) {
     debug("Constructor");
   }
-  this.initDBHelper(DB_NAME, DB_VERSION, STORE_NAME, aGlobal);
+  this._connectionTypes = aConnectionTypes;
+  this.initDBHelper(DB_NAME, DB_VERSION, [STORE_NAME], aGlobal);
 }
 
 NetworkStatsDB.prototype = {
@@ -42,7 +43,7 @@ NetworkStatsDB.prototype = {
     function errorCb(error) {
       txnCb(error, null);
     }
-    return this.newTxn(txn_type, callback, successCb, errorCb);
+    return this.newTxn(txn_type, STORE_NAME, callback, successCb, errorCb);
   },
 
   upgradeSchema: function upgradeSchema(aTransaction, aDb, aOldVersion, aNewVersion) {
@@ -67,14 +68,41 @@ NetworkStatsDB.prototype = {
         if (DEBUG) {
           debug("Created object stores and indexes");
         }
+
+        // There could be a time delay between the point when the network
+        // interface comes up and the point when the database is initialized.
+        // In this short interval some traffic data are generated but are not
+        // registered by the first sample. The initialization of the database
+        // should make up the missing sample.
+        let stats = [];
+        for (let connection in this._connectionTypes) {
+          let connectionType = this._connectionTypes[connection].name;
+          let timestamp = this.normalizeDate(new Date());
+          stats.push({ connectionType: connectionType,
+                       timestamp:      timestamp,
+                       rxBytes:        0,
+                       txBytes:        0,
+                       rxTotalBytes:   0,
+                       txTotalBytes:   0 });
+        }
+        this._saveStats(aTransaction, objectStore, stats);
+        if (DEBUG) {
+          debug("Database initialized");
+        }
       }
     }
   },
 
+   normalizeDate: function normalizeDate(aDate) {
+    // Convert to UTC according to timezone and
+    // filter timestamp to get SAMPLE_RATE precission
+    let timestamp = aDate.getTime() - (new Date()).getTimezoneOffset() * 60 * 1000;
+    timestamp = Math.floor(timestamp / SAMPLE_RATE) * SAMPLE_RATE;
+    return timestamp;
+  },
+
   saveStats: function saveStats(stats, aResultCb) {
-    // Filter timestamp to get SAMPLE_RATE precission
-    let offset = new Date().getTimezoneOffset() * 60 * 1000;
-    let timestamp = Math.floor((stats.date.getTime() - offset) / SAMPLE_RATE) * SAMPLE_RATE + offset;
+    let timestamp = this.normalizeDate(stats.date);
 
     stats = {connectionType: stats.connectionType,
              timestamp:      timestamp,
@@ -85,7 +113,8 @@ NetworkStatsDB.prototype = {
 
     this.dbNewTxn("readwrite", function(txn, store) {
       if (DEBUG) {
-        debug("Going to store " + JSON.stringify(stats));
+        debug("Filtered time: " + new Date(timestamp));
+        debug("New stats: " + JSON.stringify(stats));
       }
 
       let request = store.index("connectionType").openCursor(stats.connectionType, "prev");
@@ -99,7 +128,7 @@ NetworkStatsDB.prototype = {
 
         // There are old samples
         if (DEBUG) {
-          debug(JSON.stringify(cursor.value));
+          debug("Last value " + JSON.stringify(cursor.value));
         }
 
         // Remove stats previous to now - VALUE_MAX_LENGTH
@@ -120,6 +149,13 @@ NetworkStatsDB.prototype = {
 
     // Get difference between last and new sample.
     let diff = (newSample.timestamp - lastSample.timestamp) / SAMPLE_RATE;
+    if (diff % 1) {
+      // diff is decimal, so some error happened because samples are stored as a multiple
+      // of SAMPLE_RATE
+      txn.abort();
+      throw new Error("Error processing samples");
+    }
+
     if (DEBUG) {
       debug("New: " + newSample.timestamp + " - Last: " + lastSample.timestamp + " - diff: " + diff);
     }
@@ -139,7 +175,8 @@ NetworkStatsDB.prototype = {
       return;
     }
     if (diff > 1) {
-      // Some samples lost. Device off during one or more samplerate periods
+      // Some samples lost. Device off during one or more samplerate periods.
+      // Time or timezone changed
       // Add lost samples with 0 bytes and the actual one.
       if (diff > VALUES_MAX_LENGTH) {
         diff = VALUES_MAX_LENGTH;
@@ -161,22 +198,21 @@ NetworkStatsDB.prototype = {
       this._saveStats(txn, store, data);
       return;
     }
-    if (diff == 0) {
+    if (diff == 0 || diff < 0) {
       // New element received before samplerate period.
-      // It means that device has been restarted (or clock change).
+      // It means that device has been restarted (or clock / timezone change).
       // Update element.
+
+      // If diff < 0, clock or timezone changed back. Place data in the last sample.
 
       lastSample.rxBytes += rxDiff;
       lastSample.txBytes += txDiff;
       lastSample.rxTotalBytes = newSample.rxTotalBytes;
       lastSample.txTotalBytes = newSample.txTotalBytes;
-      let req = lastSampleCursor.update(lastSample);
-    }
-    if (diff < 0) {
-      // Only possible if clock changed.
       if (DEBUG) {
-        debug("This stat record older than last one");
+        debug("Update: " + JSON.stringify(lastSample));
       }
+      let req = lastSampleCursor.update(lastSample);
     }
   },
 
@@ -220,12 +256,14 @@ NetworkStatsDB.prototype = {
   },
 
   find: function find(aResultCb, aOptions) {
-    // Filter end and start date to adapt them to SAMPLE_RATE precision.
-    let offset = new Date().getTimezoneOffset() * 60 * 1000;
-    let start = Math.floor((aOptions.start - offset) / SAMPLE_RATE) * SAMPLE_RATE + offset;
-    let end = Math.floor((aOptions.end - offset) / SAMPLE_RATE) * SAMPLE_RATE + offset;
+    let offset = (new Date()).getTimezoneOffset() * 60 * 1000;
+    let start = this.normalizeDate(aOptions.start);
+    let end = this.normalizeDate(aOptions.end);
+
     if (DEBUG) {
       debug("Find: connectionType:" + aOptions.connectionType + " start: " + start + " end: " + end);
+      debug("Start time: " + new Date(start));
+      debug("End time: " + new Date(end));
     }
 
     this.dbNewTxn("readonly", function(txn, store) {
@@ -244,27 +282,28 @@ NetworkStatsDB.prototype = {
         if (cursor){
           data.push({ rxBytes: cursor.value.rxBytes,
                       txBytes: cursor.value.txBytes,
-                      date: new Date(cursor.value.timestamp) });
+                      date: new Date(cursor.value.timestamp + offset) });
           cursor.continue();
           return;
         }
 
         // When requested samples (start / end) are not in the range of now and
         // now - VALUES_MAX_LENGTH, fill with empty samples.
-        this.fillResultSamples(start, end, data);
+        this.fillResultSamples(start + offset, end + offset, data);
 
         txn.result.connectionType = aOptions.connectionType;
-        txn.result.start = new Date(aOptions.start);
-        txn.result.end = new Date(aOptions.end);
+        txn.result.start = aOptions.start;
+        txn.result.end = aOptions.end;
         txn.result.data = data;
       }.bind(this);
     }.bind(this), aResultCb);
   },
 
   findAll: function findAll(aResultCb, aOptions) {
-let offset = new Date().getTimezoneOffset() * 60 * 1000;
-    let start = Math.floor((aOptions.start - offset) / SAMPLE_RATE) * SAMPLE_RATE + offset;
-    let end = Math.floor((aOptions.end - offset) / SAMPLE_RATE) * SAMPLE_RATE + offset;
+    let offset = (new Date()).getTimezoneOffset() * 60 * 1000;
+    let start = this.normalizeDate(aOptions.start);
+    let end = this.normalizeDate(aOptions.end);
+
     if (DEBUG) {
       debug("FindAll: start: " + start + " end: " + end + "\n");
     }
@@ -284,24 +323,25 @@ let offset = new Date().getTimezoneOffset() * 60 * 1000;
       let request = store.index("timestamp").openCursor(range).onsuccess = function(event) {
         var cursor = event.target.result;
         if (cursor) {
-          if (data.length > 0 && data[data.length - 1].date.getTime() == cursor.value.timestamp) {
+          if (data.length > 0 &&
+              data[data.length - 1].date.getTime() == cursor.value.timestamp + offset) {
             // Time is the same, so add values.
             data[data.length - 1].rxBytes += cursor.value.rxBytes;
             data[data.length - 1].txBytes += cursor.value.txBytes;
           } else {
             data.push({ rxBytes: cursor.value.rxBytes,
                         txBytes: cursor.value.txBytes,
-                        date: new Date(cursor.value.timestamp) });
+                        date: new Date(cursor.value.timestamp + offset) });
           }
           cursor.continue();
           return;
         }
 
-        this.fillResultSamples(start, end, data);
+        this.fillResultSamples(start + offset, end + offset, data);
 
         txn.result.connectionType = aOptions.connectionType;
-        txn.result.start = new Date(aOptions.start);
-        txn.result.end = new Date(aOptions.end);
+        txn.result.start = aOptions.start;
+        txn.result.end = aOptions.end;
         txn.result.data = data;
       }.bind(this);
     }.bind(this), aResultCb);

@@ -9,12 +9,12 @@
 #include "mozilla/ModuleUtils.h"
 #include "nsIWebBrowserChrome.h"
 #include "nsCURILoader.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsNetUtil.h"
 #include "nsIURL.h"
 #include "nsIURI.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeOwner.h"
-#include "nsIEditorDocShell.h"
 #include "nsISimpleEnumerator.h"
 #include "nsPIDOMWindow.h"
 #include "nsIPrefBranch.h"
@@ -53,15 +53,20 @@
 
 #include "nsTypeAheadFind.h"
 
-NS_INTERFACE_MAP_BEGIN(nsTypeAheadFind)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsTypeAheadFind)
   NS_INTERFACE_MAP_ENTRY(nsITypeAheadFind)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsITypeAheadFind)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
   NS_INTERFACE_MAP_ENTRY(nsIObserver)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_ADDREF(nsTypeAheadFind)
-NS_IMPL_RELEASE(nsTypeAheadFind)
+NS_IMPL_CYCLE_COLLECTING_ADDREF(nsTypeAheadFind)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(nsTypeAheadFind)
+
+NS_IMPL_CYCLE_COLLECTION_9(nsTypeAheadFind, mFoundLink, mFoundEditable,
+                           mCurrentWindow, mStartFindRange, mSearchRange,
+                           mStartPointRange, mEndPointRange, mSoundInterface,
+                           mFind)
 
 static NS_DEFINE_CID(kFrameTraversalCID, NS_FRAMETRAVERSAL_CID);
 
@@ -89,9 +94,10 @@ nsresult
 nsTypeAheadFind::Init(nsIDocShell* aDocShell)
 {
   nsCOMPtr<nsIPrefBranch> prefInternal(do_GetService(NS_PREFSERVICE_CONTRACTID));
-  mSearchRange = new nsRange();
-  mStartPointRange = new nsRange();
-  mEndPointRange = new nsRange();
+
+  mSearchRange = nullptr;
+  mStartPointRange = nullptr;
+  mEndPointRange = nullptr;
   if (!prefInternal || !EnsureFind())
     return NS_ERROR_FAILURE;
 
@@ -161,12 +167,12 @@ nsTypeAheadFind::SetDocShell(nsIDocShell* aDocShell)
 
   nsCOMPtr<nsIPresShell> presShell;
   presShell = aDocShell->GetPresShell();
-  mPresShell = do_GetWeakReference(presShell);      
+  mPresShell = do_GetWeakReference(presShell);
 
   mStartFindRange = nullptr;
-  mStartPointRange = new nsRange();
-  mSearchRange = new nsRange();
-  mEndPointRange = new nsRange();
+  mStartPointRange = nullptr;
+  mSearchRange = nullptr;
+  mEndPointRange = nullptr;
 
   mFoundLink = nullptr;
   mFoundEditable = nullptr;
@@ -356,6 +362,10 @@ nsTypeAheadFind::FindItNow(nsIPresShell *aPresShell, bool aIsLinksOnly,
   }
 
   int16_t rangeCompareResult = 0;
+  if (!mStartPointRange) {
+    mStartPointRange = new nsRange(presShell->GetDocument());
+  }
+
   mStartPointRange->CompareBoundaryPoints(nsIDOMRange::START_TO_START, mSearchRange, &rangeCompareResult);
   // No need to wrap find in doc if starting at beginning
   bool hasWrapped = (rangeCompareResult < 0);
@@ -616,6 +626,10 @@ nsTypeAheadFind::FindItNow(nsIPresShell *aPresShell, bool aIsLinksOnly,
         // at end of document and go to beginning
         nsCOMPtr<nsIDOMRange> tempRange;
         mStartPointRange->CloneRange(getter_AddRefs(tempRange));
+        if (!mEndPointRange) {
+          mEndPointRange = new nsRange(presShell->GetDocument());
+        }
+
         mStartPointRange = mEndPointRange;
         mEndPointRange = tempRange;
       }
@@ -714,6 +728,14 @@ nsTypeAheadFind::GetSearchContainers(nsISupports *aContainer,
 
   uint32_t childCount = rootContent->GetChildCount();
 
+  if (!mSearchRange) {
+    mSearchRange = new nsRange(rootContent);
+  }
+
+  if (!mEndPointRange) {
+    mEndPointRange = new nsRange(rootContent);
+  }
+
   mSearchRange->SelectNodeContents(rootNode);
 
   mEndPointRange->SetEnd(rootNode, childCount);
@@ -729,6 +751,10 @@ nsTypeAheadFind::GetSearchContainers(nsISupports *aContainer,
       nsISelectionController::SELECTION_NORMAL, getter_AddRefs(selection));
     if (selection)
       selection->GetRangeAt(0, getter_AddRefs(currentSelectionRange));
+  }
+
+  if (!mStartPointRange) {
+    mStartPointRange = new nsRange(doc);
   }
 
   if (!currentSelectionRange) {
@@ -1093,7 +1119,7 @@ nsTypeAheadFind::IsRangeVisible(nsIPresShell *aPresShell,
   if (!frame)    
     return false;  // No frame! Not visible then.
 
-  if (!frame->GetStyleVisibility()->IsVisible())
+  if (!frame->StyleVisibility()->IsVisible())
     return false;
 
   // Detect if we are _inside_ a text control, or something else with its own
@@ -1193,14 +1219,13 @@ nsTypeAheadFind::GetPresShell()
   if (!mPresShell)
     return nullptr;
 
-  nsIPresShell *shell = nullptr;
-  CallQueryReferent(mPresShell.get(), &shell);
+  nsCOMPtr<nsIPresShell> shell = do_QueryReferent(mPresShell);
   if (shell) {
     nsPresContext *pc = shell->GetPresContext();
     if (!pc || !nsCOMPtr<nsISupports>(pc->GetContainer())) {
-      NS_RELEASE(shell);
+      return nullptr;
     }
   }
 
-  return shell;
+  return shell.forget();
 }

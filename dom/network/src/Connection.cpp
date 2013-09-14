@@ -26,15 +26,15 @@ namespace network {
 const char* Connection::sMeteredPrefName     = "dom.network.metered";
 const bool  Connection::sMeteredDefaultValue = false;
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED_0(Connection, nsDOMEventTargetHelper)
-
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(Connection)
+NS_INTERFACE_MAP_BEGIN(Connection)
   NS_INTERFACE_MAP_ENTRY(nsIDOMMozConnection)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(MozConnection)
 NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 
-NS_IMPL_ADDREF_INHERITED(Connection, nsDOMEventTargetHelper)
-NS_IMPL_RELEASE_INHERITED(Connection, nsDOMEventTargetHelper)
+// Don't use |Connection| alone, since that confuses nsTraceRefcnt since
+// we're not the only class with that name.
+NS_IMPL_ADDREF_INHERITED(dom::network::Connection, nsDOMEventTargetHelper)
+NS_IMPL_RELEASE_INHERITED(dom::network::Connection, nsDOMEventTargetHelper)
 
 NS_IMPL_EVENT_HANDLER(Connection, change)
 

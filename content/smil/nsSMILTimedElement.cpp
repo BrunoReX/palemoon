@@ -5,6 +5,7 @@
 
 #include "mozilla/DebugOnly.h"
 
+#include "mozilla/dom/SVGAnimationElement.h"
 #include "nsSMILTimedElement.h"
 #include "nsAttrValueInlines.h"
 #include "nsSMILAnimationFunction.h"
@@ -26,8 +27,10 @@
 #include "nsString.h"
 #include "mozilla/AutoRestore.h"
 #include "nsCharSeparatedTokenizer.h"
+#include <algorithm>
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 //----------------------------------------------------------------------
 // Helper class: InstanceTimeComparator
@@ -115,7 +118,7 @@ namespace
 // If several of these objects are allocated on the stack, the update will not
 // be performed until the last object for a given nsSMILTimedElement is
 // destroyed.
-class NS_STACK_CLASS nsSMILTimedElement::AutoIntervalUpdateBatcher
+class MOZ_STACK_CLASS nsSMILTimedElement::AutoIntervalUpdateBatcher
 {
 public:
   AutoIntervalUpdateBatcher(nsSMILTimedElement& aTimedElement)
@@ -262,7 +265,7 @@ nsSMILTimedElement::~nsSMILTimedElement()
 }
 
 void
-nsSMILTimedElement::SetAnimationElement(nsISMILAnimationElement* aElement)
+nsSMILTimedElement::SetAnimationElement(SVGAnimationElement* aElement)
 {
   NS_ABORT_IF_FALSE(aElement, "NULL owner element");
   NS_ABORT_IF_FALSE(!mAnimationElement, "Re-setting owner");
@@ -273,6 +276,14 @@ nsSMILTimeContainer*
 nsSMILTimedElement::GetTimeContainer()
 {
   return mAnimationElement ? mAnimationElement->GetTimeContainer() : nullptr;
+}
+
+dom::Element*
+nsSMILTimedElement::GetTargetElement()
+{
+  return mAnimationElement ?
+      mAnimationElement->GetTargetElementContent() :
+      nullptr;
 }
 
 //----------------------------------------------------------------------
@@ -431,7 +442,7 @@ nsSMILTimedElement::RemoveInstanceTime(nsSMILInstanceTime* aInstanceTime,
 
 namespace
 {
-  class NS_STACK_CLASS RemoveByCreator
+  class MOZ_STACK_CLASS RemoveByCreator
   {
   public:
     RemoveByCreator(const nsSMILTimeValueSpec* aCreator) : mCreator(aCreator)
@@ -474,8 +485,8 @@ void
 nsSMILTimedElement::SetTimeClient(nsSMILAnimationFunction* aClient)
 {
   //
-  // No need to check for NULL. A NULL parameter simply means to remove the
-  // previous client which we do by setting to NULL anyway.
+  // No need to check for nullptr. A nullptr parameter simply means to remove the
+  // previous client which we do by setting to nullptr anyway.
   //
 
   mClient = aClient;
@@ -762,13 +773,13 @@ nsSMILTimedElement::Rewind()
   if (mAnimationElement->HasAnimAttr(nsGkAtoms::begin)) {
     nsAutoString attValue;
     mAnimationElement->GetAnimAttr(nsGkAtoms::begin, attValue);
-    SetBeginSpec(attValue, &mAnimationElement->AsElement(), RemoveNonDynamic);
+    SetBeginSpec(attValue, mAnimationElement, RemoveNonDynamic);
   }
 
   if (mAnimationElement->HasAnimAttr(nsGkAtoms::end)) {
     nsAutoString attValue;
     mAnimationElement->GetAnimAttr(nsGkAtoms::end, attValue);
-    SetEndSpec(attValue, &mAnimationElement->AsElement(), RemoveNonDynamic);
+    SetEndSpec(attValue, mAnimationElement, RemoveNonDynamic);
   }
 
   mPrevRegisteredMilestone = sMaxMilestone;
@@ -1294,7 +1305,7 @@ namespace
   // pointers instead.
   // Without this we'd have to either templatize ClearSpecs and all its callers
   // or pass bool flags around to specify which removal function to use here.
-  class NS_STACK_CLASS RemoveByFunction
+  class MOZ_STACK_CLASS RemoveByFunction
   {
   public:
     RemoveByFunction(nsSMILTimedElement::RemovalTestFunction aFunction)
@@ -1372,7 +1383,7 @@ nsSMILTimedElement::ApplyEarlyEnd(const nsSMILTimeValue& aSampleTime)
 
 namespace
 {
-  class NS_STACK_CLASS RemoveReset
+  class MOZ_STACK_CLASS RemoveReset
   {
   public:
     RemoveReset(const nsSMILInstanceTime* aCurrentIntervalBegin)
@@ -1531,7 +1542,7 @@ nsSMILTimedElement::FilterIntervals()
 
 namespace
 {
-  class NS_STACK_CLASS RemoveFiltered
+  class MOZ_STACK_CLASS RemoveFiltered
   {
   public:
     RemoveFiltered(nsSMILTimeValue aCutoff) : mCutoff(aCutoff) { }
@@ -1551,7 +1562,7 @@ namespace
     nsSMILTimeValue mCutoff;
   };
 
-  class NS_STACK_CLASS RemoveBelowThreshold
+  class MOZ_STACK_CLASS RemoveBelowThreshold
   {
   public:
     RemoveBelowThreshold(uint32_t aThreshold,
@@ -1822,7 +1833,7 @@ nsSMILTimedElement::CalcActiveEnd(const nsSMILTimeValue& aBegin,
     nsSMILTime activeDur = aEnd.GetMillis() - aBegin.GetMillis();
 
     if (result.IsDefinite()) {
-      result.SetMillis(NS_MIN(result.GetMillis(), activeDur));
+      result.SetMillis(std::min(result.GetMillis(), activeDur));
     } else {
       result.SetMillis(activeDur);
     }
@@ -1847,7 +1858,7 @@ nsSMILTimedElement::GetRepeatDuration() const
     if (mSimpleDur.IsDefinite()) {
       nsSMILTime activeDur =
         nsSMILTime(mRepeatCount * double(mSimpleDur.GetMillis()));
-      result.SetMillis(NS_MIN(activeDur, mRepeatDur.GetMillis()));
+      result.SetMillis(std::min(activeDur, mRepeatDur.GetMillis()));
     } else {
       result = mRepeatDur;
     }
@@ -2186,7 +2197,7 @@ nsSMILTimedElement::GetNextMilestone(nsSMILMilestone& aNextMilestone) const
             (mCurrentRepeatIteration + 1) * mSimpleDur.GetMillis());
       }
       nsSMILTimeValue nextMilestone =
-        NS_MIN(mCurrentInterval->End()->Time(), nextRepeat);
+        std::min(mCurrentInterval->End()->Time(), nextRepeat);
 
       // Check for an early end before that time
       nsSMILInstanceTime* earlyEnd = CheckForEarlyEnd(nextMilestone);
@@ -2259,7 +2270,7 @@ nsSMILTimedElement::FireTimeEventAsync(uint32_t aMsg, int32_t aDetail)
     return;
 
   nsCOMPtr<nsIRunnable> event =
-    new AsyncTimeEventRunner(&mAnimationElement->AsElement(), aMsg, aDetail);
+    new AsyncTimeEventRunner(mAnimationElement, aMsg, aDetail);
   NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL);
 }
 

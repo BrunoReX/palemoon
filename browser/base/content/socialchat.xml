@@ -7,69 +7,196 @@
 
   <binding id="chatbox">
     <content orient="vertical" mousethrough="never">
-      <xul:hbox class="chat-titlebar" xbl:inherits="minimized,selected,activity"
-                onclick="document.getBindingParent(this).onTitlebarClick(event);" align="baseline">
-        <xul:image class="chat-status-icon" xbl:inherits="src=image"/>
-        <xul:label class="chat-title" flex="1" xbl:inherits="value=label" crop="center"/>
-        <xul:toolbarbutton class="chat-close-button chat-toolbarbutton"
+      <xul:hbox class="chat-titlebar" xbl:inherits="minimized,selected,activity" align="baseline">
+        <xul:hbox flex="1" onclick="document.getBindingParent(this).onTitlebarClick(event);">
+          <xul:image class="chat-status-icon" xbl:inherits="src=image"/>
+          <xul:label class="chat-title" flex="1" xbl:inherits="value=label" crop="center"/>
+        </xul:hbox>
+        <xul:toolbarbutton id="notification-icon" class="notification-anchor-icon chat-toolbarbutton"
+                   oncommand="document.getBindingParent(this).showNotifications(); event.stopPropagation();"/>
+        <xul:toolbarbutton anonid="minimize" class="chat-minimize-button chat-toolbarbutton"
+                           oncommand="document.getBindingParent(this).toggle();"/>
+        <xul:toolbarbutton anonid="swap" class="chat-swap-button chat-toolbarbutton"
+                           oncommand="document.getBindingParent(this).swapWindows();"/>
+        <xul:toolbarbutton anonid="close" class="chat-close-button chat-toolbarbutton"
                            oncommand="document.getBindingParent(this).close();"/>
       </xul:hbox>
-      <xul:iframe anonid="iframe" class="chat-frame" flex="1"
-                  xbl:inherits="src,origin,collapsed=minimized" type="content"/>
+      <xul:browser anonid="content" class="chat-frame" flex="1"
+                  context="contentAreaContextMenu"
+                  disableglobalhistory="true"
+                  tooltip="aHTMLTooltip"
+                  xbl:inherits="src,origin" type="content"/>
     </content>
 
     <implementation implements="nsIDOMEventListener">
-      <field name="iframe" readonly="true">
-        document.getAnonymousElementByAttribute(this, "anonid", "iframe");
+      <constructor><![CDATA[
+        let Social = Components.utils.import("resource:///modules/Social.jsm", {}).Social;
+        this.content.__defineGetter__("popupnotificationanchor",
+                                      () => document.getAnonymousElementByAttribute(this, "id", "notification-icon"));
+        Social.setErrorListener(this.content, function(aBrowser) {
+          aBrowser.webNavigation.loadURI("about:socialerror?mode=compactInfo", null, null, null, null);
+        });
+        if (!this.chatbar) {
+          document.getAnonymousElementByAttribute(this, "anonid", "minimize").hidden = true;
+          document.getAnonymousElementByAttribute(this, "anonid", "close").hidden = true;
+        }
+        let contentWindow = this.contentWindow;
+        this.addEventListener("DOMContentLoaded", function DOMContentLoaded(event) {
+          if (event.target != this.contentDocument)
+            return;
+          this.removeEventListener("DOMContentLoaded", DOMContentLoaded, true);
+          this.isActive = !this.minimized;
+          // process this._callbacks, then set to null so the chatbox creator
+          // knows to make new callbacks immediately.
+          if (this._callbacks) {
+            for (let callback of this._callbacks) {
+              if (callback)
+                callback(contentWindow);
+            }
+            this._callbacks = null;
+          }
+
+          // content can send a socialChatActivity event to have the UI update.
+          let chatActivity = function() {
+            this.setAttribute("activity", true);
+            if (this.chatbar)
+              this.chatbar.updateTitlebar(this);
+          }.bind(this);
+          contentWindow.addEventListener("socialChatActivity", chatActivity);
+          contentWindow.addEventListener("unload", function unload() {
+            contentWindow.removeEventListener("unload", unload);
+            contentWindow.removeEventListener("socialChatActivity", chatActivity);
+          });
+        }, true);
+        if (this.src)
+          this.setAttribute("src", this.src);
+      ]]></constructor>
+
+      <field name="content" readonly="true">
+        document.getAnonymousElementByAttribute(this, "anonid", "content");
       </field>
+
+      <property name="contentWindow">
+        <getter>
+          return this.content.contentWindow;
+        </getter>
+      </property>
+
+      <property name="contentDocument">
+        <getter>
+          return this.content.contentDocument;
+        </getter>
+      </property>
 
       <property name="minimized">
         <getter>
           return this.getAttribute("minimized") == "true";
         </getter>
         <setter><![CDATA[
-          this.isActive = !val;
-          let parent = this.parentNode;
+          // Note that this.isActive is set via our transitionend handler so
+          // the content doesn't see intermediate values.
+          let parent = this.chatbar;
           if (val) {
             this.setAttribute("minimized", "true");
             // If this chat is the selected one a new one needs to be selected.
-            if (parent.selectedChat == this)
+            if (parent && parent.selectedChat == this)
               parent._selectAnotherChat();
           } else {
             this.removeAttribute("minimized");
             // this chat gets selected.
-            parent.selectedChat = this;
+            if (parent)
+              parent.selectedChat = this;
           }
         ]]></setter>
       </property>
 
+      <property name="chatbar">
+        <getter>
+          if (this.parentNode.nodeName == "chatbar")
+            return this.parentNode;
+          return null;
+        </getter>
+      </property>
+
       <property name="isActive">
         <getter>
-          return this.iframe.docShell.isActive;
+          return this.content.docShell.isActive;
         </getter>
         <setter>
-          this.iframe.docShell.isActive = !!val;
+          this.content.docShell.isActive = !!val;
 
           // let the chat frame know if it is being shown or hidden
-          let evt = this.iframe.contentDocument.createEvent("CustomEvent");
+          let evt = this.contentDocument.createEvent("CustomEvent");
           evt.initCustomEvent(val ? "socialFrameShow" : "socialFrameHide", true, true, {});
-          this.iframe.contentDocument.documentElement.dispatchEvent(evt);
+          this.contentDocument.documentElement.dispatchEvent(evt);
         </setter>
       </property>
+      
+      <method name="showNotifications">
+        <body><![CDATA[
+        PopupNotifications._reshowNotifications(this.content.popupnotificationanchor,
+                                                this.content);
+        ]]></body>
+      </method>
+
+      <method name="swapDocShells">
+        <parameter name="aTarget"/>
+        <body><![CDATA[
+          aTarget.setAttribute('label', this.contentDocument.title);
+          aTarget.content.setAttribute("origin", this.content.getAttribute("origin"));
+          aTarget.content.popupnotificationanchor.className = this.content.popupnotificationanchor.className;
+          this.content.socialErrorListener.remove();
+          aTarget.content.socialErrorListener.remove();
+          this.content.swapDocShells(aTarget.content);
+          Social.setErrorListener(this.content, function(aBrowser) {}); // 'this' will be destroyed soon.
+          Social.setErrorListener(aTarget.content, function(aBrowser) {
+            aBrowser.webNavigation.loadURI("about:socialerror?mode=compactInfo", null, null, null, null);
+          });
+        ]]></body>
+      </method>
 
       <method name="onTitlebarClick">
         <parameter name="aEvent"/>
         <body><![CDATA[
-          if (aEvent.button == 0) // left-click: toggle minimized.
+          if (!this.chatbar)
+            return;
+          if (aEvent.button == 0) { // left-click: toggle minimized.
             this.toggle();
-          else if (aEvent.button == 1) // middle-click: close chat
+            // if we restored it, we want to focus it.
+            if (!this.minimized)
+              this.chatbar.focus();
+          } else if (aEvent.button == 1) // middle-click: close chat
             this.close();
         ]]></body>
       </method>
 
       <method name="close">
         <body><![CDATA[
-          this.parentNode.remove(this);
+        if (this.chatbar)
+          this.chatbar.remove(this);
+        else
+          window.close();
+        ]]></body>
+      </method>
+
+      <method name="swapWindows">
+        <body><![CDATA[
+        let provider = Social._getProviderFromOrigin(this.content.getAttribute("origin"));
+        if (this.chatbar) {
+          this.chatbar.detachChatbox(this, { "centerscreen": "yes" }, win => {
+            win.document.title = provider.name;
+          });
+        } else {
+          // attach this chatbox to the topmost browser window
+          let findChromeWindowForChats = Cu.import("resource://gre/modules/MozSocialAPI.jsm").findChromeWindowForChats;
+          let win = findChromeWindowForChats();
+          let chatbar = win.SocialChatBar.chatbar;
+          chatbar.openChat(provider, "about:blank", win => {
+            this.swapDocShells(chatbar.selectedChat);
+            chatbar.focus();
+            this.close();
+          });
+        }
         ]]></body>
       </method>
 
@@ -81,12 +208,14 @@
     </implementation>
 
     <handlers>
-      <handler event="focus">
-        this.parentNode.selectedChat = this;
+      <handler event="focus" phase="capturing">
+        if (this.chatbar)
+          this.chatbar.selectedChat = this;
       </handler>
       <handler event="DOMTitleChanged"><![CDATA[
-        this.setAttribute('label', this.iframe.contentDocument.title);
-        this.parentNode.updateTitlebar(this);
+        this.setAttribute('label', this.contentDocument.title);
+        if (this.chatbar)
+          this.chatbar.updateTitlebar(this);
       ]]></handler>
       <handler event="DOMLinkAdded"><![CDATA[
         // much of this logic is from DOMLinkHandler in browser.js
@@ -104,28 +233,32 @@
 
         // we made it this far, use it
         this.setAttribute('image', uri.spec);
-        this.parentNode.updateTitlebar(this);
+        if (this.chatbar)
+          this.chatbar.updateTitlebar(this);
       ]]></handler>
+      <handler event="transitionend">
+        if (this.isActive == this.minimized)
+          this.isActive = !this.minimized;
+      </handler>
     </handlers>
   </binding>
 
   <binding id="chatbar">
     <content>
       <xul:hbox align="end" pack="end" anonid="innerbox" class="chatbar-innerbox" mousethrough="always" flex="1">
+        <xul:spacer flex="1" anonid="spacer" class="chatbar-overflow-spacer"/>
         <xul:toolbarbutton anonid="nub" class="chatbar-button" type="menu" collapsed="true" mousethrough="never">
           <xul:menupopup anonid="nubMenu" oncommand="document.getBindingParent(this).showChat(event.target.chat)"/>
         </xul:toolbarbutton>
-        <xul:spacer flex="1" anonid="spacer" class="chatbar-overflow-spacer"/>
         <children/>
       </xul:hbox>
     </content>
 
     <implementation implements="nsIDOMEventListener">
       <constructor>
-        // to avoid reflows we cache the values for various widths.
-        this.cachedWidthOpen = 0;
-        this.cachedWidthMinimized = 0;
+        // to avoid reflows we cache the width of the nub.
         this.cachedWidthNub = 0;
+        this._selectedChat = null;
       </constructor>
 
       <field name="innerbox" readonly="true">
@@ -144,8 +277,25 @@
         <body><![CDATA[
           if (!this.selectedChat)
             return;
-          let commandDispatcher = gBrowser.ownerDocument.commandDispatcher;
-          commandDispatcher.advanceFocusIntoSubtree(this.selectedChat);
+          Services.focus.focusedWindow = this.selectedChat.contentWindow;
+        ]]></body>
+      </method>
+
+      <method name="_isChatFocused">
+        <parameter name="aChatbox"/>
+        <body><![CDATA[
+          // If there are no XBL bindings for the chat it can't be focused.
+          if (!aChatbox.content)
+            return false;
+          let fw = Services.focus.focusedWindow;
+          if (!fw)
+            return false;
+          // We want to see if the focused window is in the subtree below our browser...
+          let containingBrowser = fw.QueryInterface(Ci.nsIInterfaceRequestor)
+                                    .getInterface(Ci.nsIWebNavigation)
+                                    .QueryInterface(Ci.nsIDocShell)
+                                    .chromeEventHandler;
+          return containingBrowser == aChatbox.content;
         ]]></body>
       </method>
 
@@ -167,7 +317,6 @@
             this._selectedChat = val;
             if (val) {
               this._selectedChat.setAttribute("selected", "true");
-              this.focus();
             }
           }
           if (val) {
@@ -230,9 +379,12 @@
           // It's possible in the future we will track most-recently-selected
           // chats or similar to find the "best" candidate - for now though
           // the choice is somewhat arbitrary.
+          let moveFocus = this.selectedChat && this._isChatFocused(this.selectedChat);
           for (let other of this.children) {
             if (other != this.selectedChat && !other.minimized && !other.collapsed) {
               this.selectedChat = other;
+              if (moveFocus)
+                this.focus();
               return;
             }
           }
@@ -268,25 +420,11 @@
       <method name="getTotalChildWidth">
         <parameter name="aChatbox"/>
         <body><![CDATA[
-          // gets the width of a child, using/setting the cached value for
-          // children of this type.
-          // DOES NOT take collapsed into account - ie, this is the width
-          // of a child assuming it is *not* collapsed.  (collapsed chats
-          // have a width of zero as they are not shown).
-          if (aChatbox.minimized) {
-            if (!this.cachedWidthMinimized) {
-              if (aChatbox.collapsed)
-                throw new Error("can't calculate size of collapsed chat!");
-              this.cachedWidthMinimized = this.calcTotalWidthOf(aChatbox);
-            }
-            return this.cachedWidthMinimized;
-          }
-          if (!this.cachedWidthOpen) {
-            if (aChatbox.collapsed)
-              throw new Error("can't calculate size of collapsed chat!");
-            this.cachedWidthOpen = this.calcTotalWidthOf(aChatbox);
-          }
-          return this.cachedWidthOpen;
+          // These are from the CSS for the chatbox and must be kept in sync.
+          // We can't use calcTotalWidthOf due to the transitions...
+          const CHAT_WIDTH_OPEN = 260;
+          const CHAT_WIDTH_MINIMIZED = 160;
+          return aChatbox.minimized ? CHAT_WIDTH_MINIMIZED : CHAT_WIDTH_OPEN;
         ]]></body>
       </method>
 
@@ -300,7 +438,7 @@
           aChatbox.isActive = false;
           let menu = document.createElementNS("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul", "menuitem");
           menu.setAttribute("class", "menuitem-iconic");
-          menu.setAttribute("label", aChatbox.iframe.contentDocument.title);
+          menu.setAttribute("label", aChatbox.contentDocument.title);
           menu.setAttribute("image", aChatbox.getAttribute("image"));
           menu.chat = aChatbox;
           this.menuitemMap.set(aChatbox, menu);
@@ -344,17 +482,20 @@
         <body><![CDATA[
           this._remove(aChatbox);
           // The removal of a chat may mean a collapsed one can spring up,
-          // or that the popup should be hidden.
+          // or that the popup should be hidden.  We also defer the selection
+          // of another chat until after a resize, as a new candidate may
+          // become uncollapsed after the resize.
           this.resize();
+          if (this.selectedChat == aChatbox) {
+            this._selectAnotherChat();
+          }
         ]]></body>
       </method>
 
       <method name="_remove">
         <parameter name="aChatbox"/>
         <body><![CDATA[
-          if (this.selectedChat == aChatbox) {
-            this._selectAnotherChat();
-          }
+          aChatbox.content.socialErrorListener.remove();
           this.removeChild(aChatbox);
           // child might have been collapsed.
           let menuitem = this.menuitemMap.get(aChatbox);
@@ -377,46 +518,6 @@
         ]]></body>
       </method>
 
-      <method name="initChatBox">
-        <!-- ideally this would be a method on the chatbox itself, but the
-             vagaries of XBL bindings means that in some edge cases the
-             chatbox methods don't exist yet when we need them to...
-        -->
-        <parameter name="aChatBox"/>
-        <parameter name="aProvider"/>
-        <parameter name="aURL"/>
-        <parameter name="aCallback"/>
-        <body><![CDATA[
-          // callbacks to be called when onload fires - more might be added
-          // if the same chat is requested before onload has fired.  Set back
-          // to null in DOMContentLoaded, so null means DOMContentLoaded has
-          // already fired and new callbacks can be made immediately.
-          aChatBox._callbacks = [aCallback];
-          let iframeWindow = aChatBox.iframe.contentWindow;
-          aChatBox.addEventListener("DOMContentLoaded", function DOMContentLoaded() {
-            aChatBox.removeEventListener("DOMContentLoaded", DOMContentLoaded);
-            aChatBox.isActive = !aChatBox.minimized;
-            for (let callback of aChatBox._callbacks) {
-              if (callback)
-                callback(iframeWindow);
-            }
-            aChatBox._callbacks = null;
-            function chatActivity() {
-              aChatBox.setAttribute("activity", true);
-              aChatBox.parentNode.updateTitlebar(aChatBox);
-            };
-
-            iframeWindow.addEventListener("socialChatActivity", chatActivity);
-            iframeWindow.addEventListener("unload", function unload() {
-              iframeWindow.removeEventListener("unload", unload);
-              iframeWindow.removeEventListener("socialChatActivity", chatActivity);
-            });
-          });
-
-          aChatBox.setAttribute("origin", aProvider.origin);
-          aChatBox.setAttribute("src", aURL);
-        ]]></body>
-      </method>
       <method name="openChat">
         <parameter name="aProvider"/>
         <parameter name="aURL"/>
@@ -431,7 +532,7 @@
               if (aCallback) {
                 if (cb._callbacks == null) {
                   // DOMContentLoaded has already fired, so callback now.
-                  aCallback(cb.iframe.contentWindow);
+                  aCallback(cb.contentWindow);
                 } else {
                   // DOMContentLoaded for this chat is yet to fire...
                   cb._callbacks.push(aCallback);
@@ -442,11 +543,16 @@
             this.chatboxForURL.delete(aURL);
           }
           cb = document.createElementNS("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul", "chatbox");
+          // _callbacks is a javascript property instead of a <field> as it
+          // must exist before the (possibly delayed) bindings are created.
+          cb._callbacks = [aCallback];
+          // src also a javascript property; the src attribute is set in the ctor.
+          cb.src = aURL;
           if (aMode == "minimized")
             cb.setAttribute("minimized", "true");
+          cb.setAttribute("origin", aProvider.origin);
           this.insertBefore(cb, this.firstChild);
           this.selectedChat = cb;
-          this.initChatBox(cb, aProvider, aURL, aCallback);
           this.chatboxForURL.set(aURL, Cu.getWeakReference(cb));
           this.resize();
         ]]></body>
@@ -514,13 +620,47 @@
       <method name="handleEvent">
         <parameter name="aEvent"/>
         <body><![CDATA[
-          if (aEvent.type == "resize") {
+          if (aEvent.type == "resize" && aEvent.eventPhase == aEvent.BUBBLING_PHASE) {
             this.resize();
           }
         ]]></body>
       </method>
 
+      <method name="_getDragTarget">
+        <parameter name="event"/>
+        <body><![CDATA[
+          return event.target.localName == "chatbox" ? event.target : null;
+        ]]></body>
+      </method>
+
+      <!-- Moves a chatbox to a new window. -->
+      <method name="detachChatbox">
+        <parameter name="aChatbox"/>
+        <parameter name="aOptions"/>
+        <parameter name="aCallback"/>
+        <body><![CDATA[
+          let options = "";
+          for (let name in aOptions)
+            options += "," + name + "=" + aOptions[name];
+
+          let otherWin = window.openDialog("chrome://browser/content/chatWindow.xul", null, "chrome,all" + options);
+
+          otherWin.addEventListener("load", function _chatLoad(event) {
+            if (event.target != otherWin.document)
+              return;
+
+            otherWin.removeEventListener("load", _chatLoad, true);
+            let otherChatbox = otherWin.document.getElementById("chatter");
+            aChatbox.swapDocShells(otherChatbox);
+            aChatbox.close();
+            if (aCallback)
+              aCallback(otherWin);
+          }, true);
+        ]]></body>
+      </method>
+
     </implementation>
+
     <handlers>
       <handler event="popupshown"><![CDATA[
         this.nub.removeAttribute("activity");
@@ -530,6 +670,76 @@
       ]]></handler>
       <handler event="unload"><![CDATA[
         window.removeEventListener("resize", this);
+      ]]></handler>
+
+      <handler event="dragstart"><![CDATA[
+        // chat window dragging is essentially duplicated from tabbrowser.xml
+        // to acheive the same visual experience
+        let chatbox = this._getDragTarget(event);
+        if (!chatbox) {
+          return;
+        }
+
+        let dt = event.dataTransfer;
+        // we do not set a url in the drag data to prevent moving to tabbrowser
+        // or otherwise having unexpected drop handlers do something with our
+        // chatbox
+        dt.mozSetDataAt("application/x-moz-chatbox", chatbox, 0);
+
+        // Set the cursor to an arrow during tab drags.
+        dt.mozCursor = "default";
+
+        // Create a canvas to which we capture the current tab.
+        // Until canvas is HiDPI-aware (bug 780362), we need to scale the desired
+        // canvas size (in CSS pixels) to the window's backing resolution in order
+        // to get a full-resolution drag image for use on HiDPI displays.
+        let windowUtils = window.getInterface(Ci.nsIDOMWindowUtils);
+        let scale = windowUtils.screenPixelsPerCSSPixel / windowUtils.fullZoom;
+        let canvas = document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
+        canvas.mozOpaque = true;
+        canvas.width = 160 * scale;
+        canvas.height = 90 * scale;
+        PageThumbs.captureToCanvas(chatbox.contentWindow, canvas);
+        dt.setDragImage(canvas, -16 * scale, -16 * scale);
+
+        event.stopPropagation();
+      ]]></handler>
+
+      <handler event="dragend"><![CDATA[
+        let dt = event.dataTransfer;
+        let draggedChat = dt.mozGetDataAt("application/x-moz-chatbox", 0);
+        if (dt.mozUserCancelled || dt.dropEffect != "none") {
+          return;
+        }
+
+        let eX = event.screenX;
+        let eY = event.screenY;
+        // screen.availLeft et. al. only check the screen that this window is on,
+        // but we want to look at the screen the tab is being dropped onto.
+        let sX = {}, sY = {}, sWidth = {}, sHeight = {};
+        Cc["@mozilla.org/gfx/screenmanager;1"]
+          .getService(Ci.nsIScreenManager)
+          .screenForRect(eX, eY, 1, 1)
+          .GetAvailRect(sX, sY, sWidth, sHeight);
+        // default size for the chat window as used in chatWindow.xul, use them
+        // here to attempt to keep the window fully within the screen when
+        // opening at the drop point. If the user has resized the window to
+        // something larger (which gets persisted), at least a good portion of
+        // the window should still be within the screen.
+        let winWidth = 400;
+        let winHeight = 420;
+        // ensure new window entirely within screen
+        let left = Math.min(Math.max(eX, sX.value),
+                            sX.value + sWidth.value - winWidth);
+        let top = Math.min(Math.max(eY, sY.value),
+                           sY.value + sHeight.value - winHeight);
+
+        let provider = Social._getProviderFromOrigin(draggedChat.content.getAttribute("origin"));
+        this.detachChatbox(draggedChat, { screenX: left, screenY: top }, win => {
+          win.document.title = provider.name;
+        });
+
+        event.stopPropagation();
       ]]></handler>
     </handlers>
   </binding>

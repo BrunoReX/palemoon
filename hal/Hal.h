@@ -8,6 +8,7 @@
 #define mozilla_Hal_h
 
 #include "mozilla/hal_sandbox/PHal.h"
+#include "mozilla/HalTypes.h"
 #include "base/basictypes.h"
 #include "mozilla/Types.h"
 #include "nsTArray.h"
@@ -15,6 +16,7 @@
 #include "mozilla/dom/battery/Types.h"
 #include "mozilla/dom/network/Types.h"
 #include "mozilla/dom/power/Types.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/hal_sandbox/PHal.h"
 #include "mozilla/dom/ScreenOrientation.h"
 
@@ -247,7 +249,7 @@ void AdjustSystemClock(int64_t aDeltaMilliseconds);
 
 /**
  * Set timezone
- * @param aTimezoneSpec The definition can be found in 
+ * @param aTimezoneSpec The definition can be found in
  * http://en.wikipedia.org/wiki/List_of_tz_database_time_zones
  */
 void SetTimezone(const nsCString& aTimezoneSpec);
@@ -301,14 +303,14 @@ void NotifySystemTimezoneChange(
 
 /**
  * Reboot the device.
- * 
+ *
  * This API is currently only allowed to be used from the main process.
  */
 void Reboot();
 
 /**
  * Power off the device.
- * 
+ *
  * This API is currently only allowed to be used from the main process.
  */
 void PowerOff();
@@ -340,26 +342,25 @@ void RegisterWakeLockObserver(WakeLockObserver* aObserver);
 void UnregisterWakeLockObserver(WakeLockObserver* aObserver);
 
 /**
- * Adjust the wake lock counts.
+ * Adjust a wake lock's counts on behalf of a given process.
+ *
+ * In most cases, you shouldn't need to pass the aProcessID argument; the
+ * default of CONTENT_PROCESS_ID_UNKNOWN is probably what you want.
+ *
  * @param aTopic        lock topic
  * @param aLockAdjust   to increase or decrease active locks
  * @param aHiddenAdjust to increase or decrease hidden locks
+ * @param aProcessID    indicates which process we're modifying the wake lock
+ *                      on behalf of.  It is interpreted as
+ *
+ *                      CONTENT_PROCESS_ID_UNKNOWN: The current process
+ *                      CONTENT_PROCESS_ID_MAIN: The root process
+ *                      X: The process with ContentChild::GetID() == X
  */
 void ModifyWakeLock(const nsAString &aTopic,
                     hal::WakeLockControl aLockAdjust,
-                    hal::WakeLockControl aHiddenAdjust);
-
-/**
- * Adjust the wake lock counts. Do not call this function directly.
- * @param aTopic        lock topic
- * @param aLockAdjust   to increase or decrease active locks
- * @param aHiddenAdjust to increase or decrease hidden locks
- * @param aProcessID    unique id per-ContentChild or 0 for chrome
- */
-void ModifyWakeLockInternal(const nsAString &aTopic,
-                            hal::WakeLockControl aLockAdjust,
-                            hal::WakeLockControl aHiddenAdjust,
-                            uint64_t aProcessID);
+                    hal::WakeLockControl aHiddenAdjust,
+                    uint64_t aProcessID = hal::CONTENT_PROCESS_ID_UNKNOWN);
 
 /**
  * Query the wake lock numbers of aTopic.
@@ -422,7 +423,7 @@ void RegisterSwitchObserver(hal::SwitchDevice aDevice, hal::SwitchObserver *aSwi
 void UnregisterSwitchObserver(hal::SwitchDevice aDevice, hal::SwitchObserver *aSwitchObserver);
 
 /**
- * Notify the state of the switch. 
+ * Notify the state of the switch.
  *
  * This API is internal to hal; clients shouldn't call it directly.
  */
@@ -469,13 +470,21 @@ void NotifyAlarmFired();
 bool SetAlarm(int32_t aSeconds, int32_t aNanoseconds);
 
 /**
- * Set the priority of the given process.
+ * Set the priority of the given process.  A process's priority is a two-tuple
+ * consisting of a hal::ProcessPriority value and a hal::ProcessCPUPriority
+ * value.
+ *
+ * Two processes with the same ProcessCPUPriority value don't necessarily have
+ * the same CPU priority; the CPU priority we assign to a process is a function
+ * of its ProcessPriority and ProcessCPUPriority.
  *
  * Exactly what this does will vary between platforms.  On *nix we might give
  * background processes higher nice values.  On other platforms, we might
  * ignore this call entirely.
  */
-void SetProcessPriority(int aPid, hal::ProcessPriority aPriority);
+void SetProcessPriority(int aPid,
+                        hal::ProcessPriority aPriority,
+                        hal::ProcessCPUPriority aCPUPriority);
 
 /**
  * Register an observer for the FM radio.
@@ -548,7 +557,7 @@ hal::FMRadioSettings GetFMBandSettings(hal::FMRadioCountry aCountry);
  * Start a watchdog to compulsively shutdown the system if it hangs.
  * @param aMode Specify how to shutdown the system.
  * @param aTimeoutSecs Specify the delayed seconds to shutdown the system.
- * 
+ *
  * This API is currently only allowed to be used from the main process.
  */
 void StartForceQuitWatchdog(hal::ShutdownMode aMode, int32_t aTimeoutSecs);
@@ -557,6 +566,30 @@ void StartForceQuitWatchdog(hal::ShutdownMode aMode, int32_t aTimeoutSecs);
  * Perform Factory Reset to wipe out all user data.
  */
 void FactoryReset();
+
+/**
+ * Start monitoring the status of gamepads attached to the system.
+ */
+void StartMonitoringGamepadStatus();
+
+/**
+ * Stop monitoring the status of gamepads attached to the system.
+ */
+void StopMonitoringGamepadStatus();
+
+/**
+ * Start monitoring disk space for low space situations.
+ *
+ * This API is currently only allowed to be used from the main process.
+ */
+void StartDiskSpaceWatcher();
+
+/**
+ * Stop monitoring disk space for low space situations.
+ *
+ * This API is currently only allowed to be used from the main process.
+ */
+void StopDiskSpaceWatcher();
 
 } // namespace MOZ_HAL_NAMESPACE
 } // namespace mozilla

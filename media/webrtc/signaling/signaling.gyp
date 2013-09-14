@@ -13,6 +13,16 @@
     'chromium_code': 1,
   },
 
+  'target_defaults': {
+    'conditions': [
+      ['moz_widget_toolkit_gonk==1', {
+        'defines' : [
+          'WEBRTC_GONK',
+       ],
+      }],
+    ],
+  },
+
   'targets': [
 
     #
@@ -44,12 +54,13 @@
         '../../../xpcom/base',
         '$(DEPTH)/dist/include',
         '../../../dom/base',
+        '../../../content/media',
         '../../../media/mtransport',
-        '../trunk/src',
-        '../trunk/src/video_engine/include',
-        '../trunk/src/voice_engine/include',
-        '../trunk/src/modules/interface',
-        '../trunk/src/peerconnection',
+        '../trunk/webrtc',
+        '../trunk/webrtc/video_engine/include',
+        '../trunk/webrtc/voice_engine/include',
+        '../trunk/webrtc/modules/interface',
+        '../trunk/webrtc/peerconnection',
         '../../../netwerk/srtp/src/include',
         '../../../netwerk/srtp/src/crypto/include',
         '../../../ipc/chromium/src',
@@ -376,6 +387,7 @@
         './src/sipcc/core/includes/dns_utils.h',
         './src/sipcc/core/includes/dtmf.h',
         './src/sipcc/core/includes/embedded.h',
+        './src/sipcc/core/includes/fsmdef_states.h',
         './src/sipcc/core/includes/intelpentiumtypes.h',
         './src/sipcc/core/includes/kpml_common_util.h',
         './src/sipcc/core/includes/kpmlmap.h',
@@ -628,7 +640,6 @@
             './src/sipcc/cpr/android/cpr_android_errno.c',
             './src/sipcc/cpr/android/cpr_android_init.c',
             './src/sipcc/cpr/android/cpr_android_ipc.c',
-            './src/sipcc/cpr/android/cpr_android_locks.c',
             './src/sipcc/cpr/android/cpr_android_socket.c',
             './src/sipcc/cpr/android/cpr_android_stdio.c',
             './src/sipcc/cpr/android/cpr_android_string.c',
@@ -641,7 +652,6 @@
             './src/sipcc/cpr/android/cpr_android_errno.h',
             './src/sipcc/cpr/android/cpr_android_in.h',
             './src/sipcc/cpr/android/cpr_darwin_ipc.h',
-            './src/sipcc/cpr/android/cpr_android_locks.h',
             './src/sipcc/cpr/android/cpr_android_private.h',
             './src/sipcc/cpr/android/cpr_android_rand.h',
             './src/sipcc/cpr/android/cpr_android_socket.h',
@@ -666,7 +676,6 @@
             './src/sipcc/cpr/linux/cpr_linux_errno.c',
             './src/sipcc/cpr/linux/cpr_linux_init.c',
             './src/sipcc/cpr/linux/cpr_linux_ipc.c',
-            './src/sipcc/cpr/linux/cpr_linux_locks.c',
             './src/sipcc/cpr/linux/cpr_linux_socket.c',
             './src/sipcc/cpr/linux/cpr_linux_stdio.c',
             './src/sipcc/cpr/linux/cpr_linux_string.c',
@@ -679,7 +688,6 @@
             './src/sipcc/cpr/linux/cpr_linux_errno.h',
             './src/sipcc/cpr/linux/cpr_linux_in.h',
             './src/sipcc/cpr/linux/cpr_linux_ipc.h',
-            './src/sipcc/cpr/linux/cpr_linux_locks.h',
             './src/sipcc/cpr/linux/cpr_linux_private.h',
             './src/sipcc/cpr/linux/cpr_linux_rand.h',
             './src/sipcc/cpr/linux/cpr_linux_socket.h',
@@ -775,8 +783,6 @@
             './src/sipcc/cpr/darwin/cpr_darwin_init.c',
             './src/sipcc/cpr/darwin/cpr_darwin_ipc.c',
             './src/sipcc/cpr/darwin/cpr_darwin_ipc.h',
-            './src/sipcc/cpr/darwin/cpr_darwin_locks.c',
-            './src/sipcc/cpr/darwin/cpr_darwin_locks.h',
             './src/sipcc/cpr/darwin/cpr_darwin_private.h',
             './src/sipcc/cpr/darwin/cpr_darwin_rand.h',
             './src/sipcc/cpr/darwin/cpr_darwin_socket.c',

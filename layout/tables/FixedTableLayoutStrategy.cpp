@@ -13,6 +13,7 @@
 #include "nsTableFrame.h"
 #include "nsTableColFrame.h"
 #include "nsTableCellFrame.h"
+#include <algorithm>
 
 FixedTableLayoutStrategy::FixedTableLayoutStrategy(nsTableFrame *aTableFrame)
   : nsITableLayoutStrategy(nsITableLayoutStrategy::Fixed)
@@ -65,7 +66,7 @@ FixedTableLayoutStrategy::GetMinWidth(nsRenderingContext* aRenderingContext)
             continue;
         }
         const nsStyleCoord *styleWidth =
-            &colFrame->GetStylePosition()->mWidth;
+            &colFrame->StylePosition()->mWidth;
         if (styleWidth->ConvertsToLength()) {
             result += nsLayoutUtils::ComputeWidthValue(aRenderingContext,
                         colFrame, 0, 0, 0, *styleWidth);
@@ -84,7 +85,7 @@ FixedTableLayoutStrategy::GetMinWidth(nsRenderingContext* aRenderingContext)
             nsTableCellFrame *cellFrame =
                 cellMap->GetCellInfoAt(0, col, &originates, &colSpan);
             if (cellFrame) {
-                styleWidth = &cellFrame->GetStylePosition()->mWidth;
+                styleWidth = &cellFrame->StylePosition()->mWidth;
                 if (styleWidth->ConvertsToLength() ||
                     (styleWidth->GetUnit() == eStyleUnit_Enumerated &&
                      (styleWidth->GetIntValue() == NS_STYLE_WIDTH_MAX_CONTENT ||
@@ -206,7 +207,7 @@ FixedTableLayoutStrategy::ComputeColumnWidths(const nsHTMLReflowState& aReflowSt
         oldColWidths.AppendElement(colFrame->GetFinalWidth());
         colFrame->ResetPrefPercent();
         const nsStyleCoord *styleWidth =
-            &colFrame->GetStylePosition()->mWidth;
+            &colFrame->StylePosition()->mWidth;
         nscoord colWidth;
         if (styleWidth->ConvertsToLength()) {
             colWidth = nsLayoutUtils::ComputeWidthValue(
@@ -231,7 +232,7 @@ FixedTableLayoutStrategy::ComputeColumnWidths(const nsHTMLReflowState& aReflowSt
             nsTableCellFrame *cellFrame =
                 cellMap->GetCellInfoAt(0, col, &originates, &colSpan);
             if (cellFrame) {
-                styleWidth = &cellFrame->GetStylePosition()->mWidth;
+                styleWidth = &cellFrame->StylePosition()->mWidth;
                 if (styleWidth->ConvertsToLength() ||
                     (styleWidth->GetUnit() == eStyleUnit_Enumerated &&
                      (styleWidth->GetIntValue() == NS_STYLE_WIDTH_MAX_CONTENT ||
@@ -294,7 +295,7 @@ FixedTableLayoutStrategy::ComputeColumnWidths(const nsHTMLReflowState& aReflowSt
             // had percentage widths.  The spec doesn't say to do this,
             // but we've always done it in the past, and so does WinIE6.
             nscoord pctUsed = NSToCoordFloor(pctTotal * float(tableWidth));
-            nscoord reduce = NS_MIN(pctUsed, -unassignedSpace);
+            nscoord reduce = std::min(pctUsed, -unassignedSpace);
             float reduceRatio = float(reduce) / pctTotal;
             for (int32_t col = 0; col < colCount; ++col) {
                 nsTableColFrame *colFrame = mTableFrame->GetColFrame(col);

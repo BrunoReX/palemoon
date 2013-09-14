@@ -22,6 +22,7 @@
 #include "mozilla/dom/XPathEvaluatorBinding.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 // txIParseContext implementation
 class nsXPathEvaluatorParseContext : public txIParseContext
@@ -213,14 +214,14 @@ nsXPathEvaluator::CreateExpression(const nsAString & aExpression,
 }
 
 JSObject*
-nsXPathEvaluator::WrapObject(JSContext* aCx, JSObject* aScope)
+nsXPathEvaluator::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 {
     return dom::XPathEvaluatorBinding::Wrap(aCx, aScope, this);
 }
 
 /* static */
 already_AddRefed<nsXPathEvaluator>
-nsXPathEvaluator::Constructor(nsISupports* aGlobal, ErrorResult& rv)
+nsXPathEvaluator::Constructor(const GlobalObject& aGlobal, ErrorResult& rv)
 {
     nsRefPtr<nsXPathEvaluator> newObj = new nsXPathEvaluator(nullptr);
     newObj->Init();

@@ -13,7 +13,6 @@ include $(DEPTH)/config/autoconf.mk
 
 MOCHITEST_CHROME_FILES = \
 		MozEnteredDomFullscreen_chrome.xul \
-		test_fullscreen.xul \
 		fullscreen.xul \
 		test_fullscreen_preventdefault.xul \
 		fullscreen_preventdefault.xul \
@@ -32,7 +31,6 @@ MOCHITEST_CHROME_FILES = \
 		DOMWindowCreated_content.html \
 		test_sandbox_image.xul \
 		test_cyclecollector.xul \
-		test_resize_move_windows.xul \
 		test_popup_blocker_chrome.xul \
 		test_moving_xhr.xul \
 		test_nodesFromRect.html \
@@ -59,6 +57,11 @@ MOCHITEST_CHROME_FILES = \
 		file_DOM_element_instanceof.xul \
 		test_bug830858.xul \
 		file_bug830858.xul \
+		test_indexedSetter.html \
+		test_queryCaretRect.html \
+		queryCaretRectWin.html \
+		queryCaretRectUnix.html \
+		test_xray_event_constructor.xul \
 		$(NULL)
 
 ifeq (WINNT,$(OS_ARCH))
@@ -66,6 +69,16 @@ MOCHITEST_CHROME_FILES += \
 		test_sizemode_attribute.xul \
 		sizemode_attribute.xul \
 		$(NULL)
+endif
+
+ifneq (Linux,$(OS_ARCH))
+MOCHITEST_CHROME_FILES += \
+		test_resize_move_windows.xul \
+		test_fullscreen.xul \
+		$(NULL)
+else
+$(filter disabled-on-linux-for-timeouts--bug-834716, test_resize_move_windows.xul)
+$(filter disabled-on-linux-for-timeouts--bug-867745, test_fullscreen.xul)
 endif
 
 ifneq (cocoa,$(MOZ_WIDGET_TOOLKIT))

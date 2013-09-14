@@ -14,10 +14,6 @@ let gDebugger = null;
 
 function test()
 {
-  let tempScope = {};
-  Cu.import("resource:///modules/source-editor.jsm", tempScope);
-  let SourceEditor = tempScope.SourceEditor;
-
   let contextMenu = null;
   let scriptShown = false;
   let framesAdded = false;
@@ -31,19 +27,22 @@ function test()
     gDebugger = gPane.panelWin;
     resumed = true;
 
-    gDebugger.addEventListener("Debugger:SourceShown", onScriptShown);
+    gDebugger.addEventListener("Debugger:SourceShown", onSourceShown);
 
-    gDebugger.DebuggerController.activeThread.addOneTimeListener("framesadded", function() {
-      framesAdded = true;
-      executeSoon(startTest);
-    });
+    gDebugger.DebuggerController.activeThread.addOneTimeListener("framesadded",
+                                                                 onFramesAdded);
 
     executeSoon(function() {
       gDebuggee.firstCall();
     });
   });
 
-  function onScriptShown(aEvent) {
+  function onFramesAdded(aEvent) {
+    framesAdded = true;
+    executeSoon(startTest);
+  }
+
+  function onSourceShown(aEvent) {
     scriptShown = aEvent.detail.url.indexOf("-02.js") != -1;
     executeSoon(startTest);
   }
@@ -52,24 +51,25 @@ function test()
   {
     if (scriptShown && framesAdded && resumed && !testStarted) {
       testStarted = true;
-      gDebugger.removeEventListener("Debugger:SourceShown", onScriptShown);
-      Services.tm.currentThread.dispatch({ run: performTest }, 0);
+      gDebugger.removeEventListener("Debugger:SourceShown", onSourceShown);
+      executeSoon(performTest);
     }
   }
 
   function performTest()
   {
-    let scripts = gDebugger.DebuggerView.Sources._container;
+    let scripts = gDebugger.DebuggerView.Sources;
+    let editor = gDebugger.editor;
 
     is(gDebugger.DebuggerController.activeThread.state, "paused",
       "Should only be getting stack frames while paused.");
 
-    is(scripts.itemCount, 2, "Found the expected number of scripts.");
-
-    let editor = gDebugger.editor;
+    is(scripts.itemCount, 2,
+      "Found the expected number of scripts.");
 
     isnot(editor.getText().indexOf("debugger"), -1,
-          "The correct script was loaded initially.");
+      "The correct script was loaded initially.");
+
     isnot(editor.getText().indexOf("\u263a"), -1,
       "Unicode characters are converted correctly.");
 
@@ -105,10 +105,10 @@ function test()
                     "cmd_findPrevious": true, "cmd_find": false,
                     "cmd_gotoLine": false, "cmd_copy": false,
                     "se-cmd-selectAll": false};
+
     for (let id in commands) {
-      let element = document.getElementById(id);
-      is(element.hasAttribute("disabled"), commands[id],
-         id + " hasAttribute('disabled') check");
+      is(document.getElementById(id).hasAttribute("disabled"), commands[id],
+        id + " hasAttribute('disabled') check");
     }
 
     executeSoon(function() {

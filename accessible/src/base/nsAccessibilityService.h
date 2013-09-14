@@ -10,6 +10,7 @@
 
 #include "mozilla/a11y/DocManager.h"
 #include "mozilla/a11y/FocusManager.h"
+#include "mozilla/a11y/SelectionManager.h"
 
 #include "nsIObserver.h"
 
@@ -28,6 +29,11 @@ class ApplicationAccessible;
 FocusManager* FocusMgr();
 
 /**
+ * Return selection manager.
+ */
+SelectionManager* SelectionMgr();
+
+/**
  * Returns the application accessible.
  */
 ApplicationAccessible* ApplicationAcc();
@@ -37,6 +43,7 @@ ApplicationAccessible* ApplicationAcc();
 
 class nsAccessibilityService : public mozilla::a11y::DocManager,
                                public mozilla::a11y::FocusManager,
+                               public mozilla::a11y::SelectionManager,
                                public nsIAccessibilityService,
                                public nsIObserver
 {
@@ -93,6 +100,11 @@ public:
                        nsITreeView* aView);
 
   /**
+   * Notify of input@type="element" value change.
+   */
+  void RangeValueChanged(nsIPresShell* aPresShell, nsIContent* aContent);
+
+  /**
    * Update list bullet accessible.
    */
   virtual void UpdateListBullet(nsIPresShell* aPresShell,
@@ -103,6 +115,12 @@ public:
    * Update the image map.
    */
   void UpdateImageMap(nsImageFrame* aImageFrame);
+
+  /**
+   * Update the label accessible tree when rendered @value is changed.
+   */
+  void UpdateLabelValue(nsIPresShell* aPresShell, nsIContent* aLabelElm,
+                        const nsString& aNewValue);
 
   /**
    * Notify accessibility that anchor jump has been accomplished to the given
@@ -205,6 +223,7 @@ private:
 
   friend nsAccessibilityService* GetAccService();
   friend mozilla::a11y::FocusManager* mozilla::a11y::FocusMgr();
+  friend mozilla::a11y::SelectionManager* mozilla::a11y::SelectionMgr();
   friend mozilla::a11y::ApplicationAccessible* mozilla::a11y::ApplicationAcc();
 
   friend nsresult NS_GetAccessibilityService(nsIAccessibilityService** aResult);
@@ -318,22 +337,22 @@ static const char kEventTypeNames[][40] = {
  * nsIAccessibleRetrieval::getStringRelationType() method.
  */
 static const char kRelationTypeNames[][20] = {
-  "unknown",             // RELATION_NUL
+  "labelled by",         // RELATION_LABELLED_BY
+  "label for",           // RELATION_LABEL_FOR
+  "described by",        // RELATION_DESCRIBED_BY
+  "description for",     // RELATION_DESCRIPTION_FOR
+  "node child of",       // RELATION_NODE_CHILD_OF
+  "node parent of",      // RELATION_NODE_PARENT_OF
   "controlled by",       // RELATION_CONTROLLED_BY
   "controller for",      // RELATION_CONTROLLER_FOR
-  "label for",           // RELATION_LABEL_FOR
-  "labelled by",         // RELATION_LABELLED_BY
-  "member of",           // RELATION_MEMBER_OF
-  "node child of",       // RELATION_NODE_CHILD_OF
   "flows to",            // RELATION_FLOWS_TO
   "flows from",          // RELATION_FLOWS_FROM
+  "member of",           // RELATION_MEMBER_OF
   "subwindow of",        // RELATION_SUBWINDOW_OF
   "embeds",              // RELATION_EMBEDS
   "embedded by",         // RELATION_EMBEDDED_BY
   "popup for",           // RELATION_POPUP_FOR
   "parent window of",    // RELATION_PARENT_WINDOW_OF
-  "described by",        // RELATION_DESCRIBED_BY
-  "description for",     // RELATION_DESCRIPTION_FOR
   "default button"       // RELATION_DEFAULT_BUTTON
 };
 

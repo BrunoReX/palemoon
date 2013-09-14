@@ -23,6 +23,8 @@ namespace image {
 
 class SVGDocumentWrapper;
 class SVGRootRenderingObserver;
+class SVGLoadEventListener;
+class SVGParseCompleteListener;
 
 class VectorImage : public ImageResource,
                     public nsIStreamListener
@@ -37,10 +39,9 @@ public:
   virtual ~VectorImage();
 
   // Methods inherited from Image
-  nsresult Init(imgDecoderObserver* aObserver,
-                const char* aMimeType,
+  nsresult Init(const char* aMimeType,
                 uint32_t aFlags);
-  virtual void GetCurrentFrameRect(nsIntRect& aRect) MOZ_OVERRIDE;
+  virtual nsIntRect FrameRect(uint32_t aWhichFrame) MOZ_OVERRIDE;
 
   virtual size_t HeapSizeOfSourceWithComputedFallback(nsMallocSizeOfFun aMallocSizeOf) const;
   virtual size_t HeapSizeOfDecodedWithComputedFallback(nsMallocSizeOfFun aMallocSizeOf) const;
@@ -54,11 +55,19 @@ public:
                                         uint32_t aCount) MOZ_OVERRIDE;
   virtual nsresult OnImageDataComplete(nsIRequest* aRequest,
                                        nsISupports* aContext,
-                                       nsresult status) MOZ_OVERRIDE;
+                                       nsresult aResult,
+                                       bool aLastPart) MOZ_OVERRIDE;
   virtual nsresult OnNewSourceData() MOZ_OVERRIDE;
 
-  // Callback for SVGRootRenderingObserver
+  // Callback for SVGRootRenderingObserver.
   void InvalidateObserver();
+
+  // Callback for SVGParseCompleteListener.
+  void OnSVGDocumentParsed();
+
+  // Callbacks for SVGLoadEventListener.
+  void OnSVGDocumentLoaded();
+  void OnSVGDocumentError();
 
 protected:
   VectorImage(imgStatusTracker* aStatusTracker = nullptr, nsIURI* aURI = nullptr);
@@ -68,22 +77,18 @@ protected:
   virtual bool     ShouldAnimate();
 
 private:
-  WeakPtr<imgDecoderObserver>        mObserver;
+  void CancelAllListeners();
+
   nsRefPtr<SVGDocumentWrapper>       mSVGDocumentWrapper;
   nsRefPtr<SVGRootRenderingObserver> mRenderingObserver;
+  nsRefPtr<SVGLoadEventListener>     mLoadEventListener;
+  nsRefPtr<SVGParseCompleteListener> mParseCompleteListener;
 
-  nsIntRect      mRestrictedRegion;       // If we were created by
-                                          // ExtractFrame, this is the region
-                                          // that we're restricted to using.
-                                          // Otherwise, this is ignored.
-
-  bool           mIsInitialized:1;        // Have we been initalized?
-  bool           mIsFullyLoaded:1;        // Has OnStopRequest been called?
-  bool           mIsDrawing:1;            // Are we currently drawing?
-  bool           mHaveAnimations:1;       // Is our SVG content SMIL-animated?
+  bool           mIsInitialized;          // Have we been initalized?
+  bool           mIsFullyLoaded;          // Has the SVG document finished loading?
+  bool           mIsDrawing;              // Are we currently drawing?
+  bool           mHaveAnimations;         // Is our SVG content SMIL-animated?
                                           // (Only set after mIsFullyLoaded.)
-  bool           mHaveRestrictedRegion:1; // Are we a restricted-region clone
-                                          // created via ExtractFrame?
 
   friend class ImageFactory;
 };

@@ -89,11 +89,7 @@ nsScreenManagerGtk :: EnsureInit()
   if (mCachedScreenArray.Count() > 0)
     return NS_OK;
 
-#if GTK_CHECK_VERSION(2,2,0)
   mRootWindow = gdk_get_default_root_window();
-#else
-  mRootWindow = GDK_ROOT_PARENT();
-#endif // GTK_CHECK_VERSION(2,2,0)
   g_object_ref(mRootWindow);
 
   // GDK_STRUCTURE_MASK ==> StructureNotifyMask, for ConfigureNotify
@@ -283,6 +279,13 @@ nsScreenManagerGtk :: GetNumberOfScreens(uint32_t *aNumberOfScreens)
   return NS_OK;
   
 } // GetNumberOfScreens
+
+NS_IMETHODIMP
+nsScreenManagerGtk::GetSystemDefaultScale(float *aDefaultScale)
+{
+  *aDefaultScale = 1.0f;
+  return NS_OK;
+}
 
 NS_IMETHODIMP
 nsScreenManagerGtk :: ScreenForNativeWidget (void *aWidget, nsIScreen **outScreen)

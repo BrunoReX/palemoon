@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +12,54 @@
 
 using namespace js;
 using namespace js::ion;
+
+void
+MacroAssemblerX86::loadConstantDouble(double d, const FloatRegister &dest)
+{
+    union DoublePun {
+        uint64_t u;
+        double d;
+    } dpun;
+    dpun.d = d;
+    if (maybeInlineDouble(dpun.u, dest))
+        return;
+
+    if (!doubleMap_.initialized()) {
+        enoughMemory_ &= doubleMap_.init();
+        if (!enoughMemory_)
+            return;
+    }
+    size_t doubleIndex;
+    DoubleMap::AddPtr p = doubleMap_.lookupForAdd(d);
+    if (p) {
+        doubleIndex = p->value;
+    } else {
+        doubleIndex = doubles_.length();
+        enoughMemory_ &= doubles_.append(Double(d));
+        enoughMemory_ &= doubleMap_.add(p, d, doubleIndex);
+        if (!enoughMemory_)
+            return;
+    }
+    Double &dbl = doubles_[doubleIndex];
+    masm.movsd_mr(reinterpret_cast<void *>(dbl.uses.prev()), dest.code());
+    dbl.uses.setPrev(masm.size());
+}
+
+void
+MacroAssemblerX86::finish()
+{
+    if (doubles_.empty())
+        return;
+
+    masm.align(sizeof(double));
+    for (size_t i = 0; i < doubles_.length(); i++) {
+        CodeLabel cl(doubles_[i].uses);
+        writeDoubleConstant(doubles_[i].value, cl.src());
+        enoughMemory_ &= addCodeLabel(cl);
+        if (!enoughMemory_)
+            return;
+    }
+}
 
 void
 MacroAssemblerX86::setupABICall(uint32_t args)
@@ -102,8 +149,7 @@ MacroAssemblerX86::callWithABIPre(uint32_t *stackAdjust)
     {
         // Check call alignment.
         Label good;
-        movl(esp, eax);
-        testl(eax, Imm32(StackAlignment - 1));
+        testl(esp, Imm32(StackAlignment - 1));
         j(Equal, &good);
         breakpoint();
         bind(&good);
@@ -147,7 +193,7 @@ MacroAssemblerX86::callWithABI(const Address &fun, Result result)
 }
 
 void
-MacroAssemblerX86::handleException()
+MacroAssemblerX86::handleFailureWithHandler(void *handler)
 {
     // Reserve space for exception information.
     subl(Imm32(sizeof(ResumeFromException)), esp);
@@ -156,11 +202,58 @@ MacroAssemblerX86::handleException()
     // Ask for an exception handler.
     setupUnalignedABICall(1, ecx);
     passABIArg(eax);
-    callWithABI(JS_FUNC_TO_DATA_PTR(void *, ion::HandleException));
-    
-    // Load the error value, load the new stack pointer, and return.
+    callWithABI(handler);
+
+    Label entryFrame;
+    Label catch_;
+    Label finally;
+    Label return_;
+
+    loadPtr(Address(esp, offsetof(ResumeFromException, kind)), eax);
+    branch32(Assembler::Equal, eax, Imm32(ResumeFromException::RESUME_ENTRY_FRAME), &entryFrame);
+    branch32(Assembler::Equal, eax, Imm32(ResumeFromException::RESUME_CATCH), &catch_);
+    branch32(Assembler::Equal, eax, Imm32(ResumeFromException::RESUME_FINALLY), &finally);
+    branch32(Assembler::Equal, eax, Imm32(ResumeFromException::RESUME_FORCED_RETURN), &return_);
+
+    breakpoint(); // Invalid kind.
+
+    // No exception handler. Load the error value, load the new stack pointer
+    // and return from the entry frame.
+    bind(&entryFrame);
     moveValue(MagicValue(JS_ION_ERROR), JSReturnOperand);
     movl(Operand(esp, offsetof(ResumeFromException, stackPointer)), esp);
+    ret();
+
+    // If we found a catch handler, this must be a baseline frame. Restore state
+    // and jump to the catch block.
+    bind(&catch_);
+    movl(Operand(esp, offsetof(ResumeFromException, target)), eax);
+    movl(Operand(esp, offsetof(ResumeFromException, framePointer)), ebp);
+    movl(Operand(esp, offsetof(ResumeFromException, stackPointer)), esp);
+    jmp(Operand(eax));
+
+    // If we found a finally block, this must be a baseline frame. Push
+    // two values expected by JSOP_RETSUB: BooleanValue(true) and the
+    // exception.
+    bind(&finally);
+    ValueOperand exception = ValueOperand(ecx, edx);
+    loadValue(Operand(esp, offsetof(ResumeFromException, exception)), exception);
+
+    movl(Operand(esp, offsetof(ResumeFromException, target)), eax);
+    movl(Operand(esp, offsetof(ResumeFromException, framePointer)), ebp);
+    movl(Operand(esp, offsetof(ResumeFromException, stackPointer)), esp);
+
+    pushValue(BooleanValue(true));
+    pushValue(exception);
+    jmp(Operand(eax));
+
+    // Only used in debug mode. Return BaselineFrame->returnValue() to the caller.
+    bind(&return_);
+    movl(Operand(esp, offsetof(ResumeFromException, framePointer)), ebp);
+    movl(Operand(esp, offsetof(ResumeFromException, stackPointer)), esp);
+    loadValue(Address(ebp, BaselineFrame::reverseOffsetOfReturnValue()), JSReturnOperand);
+    movl(ebp, esp);
+    pop(ebp);
     ret();
 }
 

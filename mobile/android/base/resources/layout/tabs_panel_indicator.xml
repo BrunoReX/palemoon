@@ -4,7 +4,6 @@
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
 <ImageButton xmlns:android="http://schemas.android.com/apk/res/android"
-             style="@style/AddressBar.ImageButton"
              android:layout_width="@dimen/tabs_panel_indicator_width"
              android:layout_height="@dimen/browser_toolbar_height"
              android:minWidth="@dimen/tabs_panel_indicator_width"

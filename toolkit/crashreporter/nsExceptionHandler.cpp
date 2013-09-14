@@ -22,7 +22,7 @@
 #include "client/windows/crash_generation/client_info.h"
 #include "client/windows/crash_generation/crash_generation_server.h"
 #include "client/windows/handler/exception_handler.h"
-#include <DbgHelp.h>
+#include <dbghelp.h>
 #include <string.h>
 #include "nsDirectoryServiceUtils.h"
 
@@ -89,6 +89,9 @@ using mozilla::InjectCrashRunnable;
 
 #if defined(XP_MACOSX)
 CFStringRef reporterClientAppID = CFSTR("org.mozilla.crashreporter");
+#endif
+#if defined(MOZ_WIDGET_ANDROID)
+#include "common/linux/file_id.h"
 #endif
 
 #include "nsIUUIDGenerator.h"
@@ -347,31 +350,12 @@ static posix_spawnattr_t spawnattr;
 // libraries that are mapped into anonymous mappings.
 typedef struct {
   std::string name;
-  std::string debug_id;
   uintptr_t   start_address;
   size_t      length;
   size_t      file_offset;
 } mapping_info;
 static std::vector<mapping_info> library_mappings;
 typedef std::map<uint32_t,google_breakpad::MappingList> MappingMap;
-static MappingMap child_library_mappings;
-
-void FileIDToGUID(const char* file_id, u_int8_t guid[sizeof(MDGUID)])
-{
-  for (int i = 0; i < sizeof(MDGUID); i++) {
-    int c;
-    sscanf(file_id, "%02X", &c);
-    guid[i] = (u_int8_t)(c & 0xFF);
-    file_id += 2;
-  }
-  // GUIDs are stored in network byte order.
-  uint32_t* data1 = reinterpret_cast<uint32_t*>(guid);
-  *data1 = htonl(*data1);
-  uint16_t* data2 = reinterpret_cast<uint16_t*>(guid + 4);
-  *data2 = htons(*data2);
-  uint16_t* data3 = reinterpret_cast<uint16_t*>(guid + 6);
-  *data3 = htons(*data3);
-}
 #endif
 
 #ifdef XP_LINUX
@@ -730,15 +714,44 @@ bool MinidumpCallback(
 }
 
 #ifdef XP_WIN
+static void* gBreakpadReservedVM;
+
+/**
+ * Reserve some VM space. In the event that we crash because VM space is
+ * being leaked without leaking memory, freeing this space before taking
+ * the minidump will allow us to collect a minidump.
+ */
+static const SIZE_T kReserveSize = 0xc00000; // 12 MB
+
+static void
+ReserveBreakpadVM()
+{
+  if (!gBreakpadReservedVM) {
+    gBreakpadReservedVM = VirtualAlloc(NULL, kReserveSize, MEM_RESERVE, 0);
+  }
+}
+
+static void
+FreeBreakpadVM()
+{
+  if (gBreakpadReservedVM) {
+    VirtualFree(gBreakpadReservedVM, kReserveSize, MEM_RELEASE);
+  }
+}
+
 /**
  * Filters out floating point exceptions which are handled by nsSigHandlers.cpp
  * and should not be handled as crashes.
+ *
+ * Also calls FreeBreakpadVM if appropriate.
  */
 static bool FPEFilter(void* context, EXCEPTION_POINTERS* exinfo,
                       MDRawAssertionInfo* assertion)
 {
-  if (!exinfo)
+  if (!exinfo) {
+    FreeBreakpadVM();
     return true;
+  }
 
   PEXCEPTION_RECORD e = (PEXCEPTION_RECORD)exinfo->ExceptionRecord;
   switch (e->ExceptionCode) {
@@ -753,6 +766,7 @@ static bool FPEFilter(void* context, EXCEPTION_POINTERS* exinfo,
     case STATUS_FLOAT_MULTIPLE_TRAPS:
       return false; // Don't write minidump, continue exception search
   }
+  FreeBreakpadVM();
   return true;
 }
 #endif // XP_WIN
@@ -853,7 +867,7 @@ nsresult SetExceptionHandler(nsIFile* aXREDirectory,
 #else
     // On Android, we launch using the application package name
     // instead of a filename, so use ANDROID_PACKAGE_NAME to do that here.
-    nsCString package(ANDROID_PACKAGE_NAME "/.CrashReporter");
+    nsCString package(ANDROID_PACKAGE_NAME "/org.mozilla.gecko.CrashReporter");
     crashReporterPath = ToNewCString(package);
 #endif
   }
@@ -917,6 +931,8 @@ nsresult SetExceptionHandler(nsIFile* aXREDirectory,
 #endif
 
 #ifdef XP_WIN32
+  ReserveBreakpadVM();
+
   MINIDUMP_TYPE minidump_type = MiniDumpNormal;
 
   // Try to determine what version of dbghelp.dll we're using.
@@ -1029,7 +1045,7 @@ nsresult SetExceptionHandler(nsIFile* aXREDirectory,
 #if defined(MOZ_WIDGET_ANDROID)
   for (unsigned int i = 0; i < library_mappings.size(); i++) {
     u_int8_t guid[sizeof(MDGUID)];
-    FileIDToGUID(library_mappings[i].debug_id.c_str(), guid);
+    google_breakpad::FileID::ElfFileIdentifierFromMappedFile((void const *)library_mappings[i].start_address, guid);
     gExceptionHandler->AddMappingInfo(library_mappings[i].name,
                                       guid,
                                       library_mappings[i].start_address,
@@ -2418,9 +2434,9 @@ CheckForLastRunCrash()
 #endif
   nsCOMPtr<nsIFile> lastMinidumpFile;
   CreateFileFromPath(lastMinidump.get(),
-                      getter_AddRefs(lastMinidumpFile));
+                     getter_AddRefs(lastMinidumpFile));
 
-  if (NS_FAILED(lastMinidumpFile->Exists(&exists)) || !exists) {
+  if (!lastMinidumpFile || NS_FAILED(lastMinidumpFile->Exists(&exists)) || !exists) {
     return false;
   }
 
@@ -2825,7 +2841,6 @@ UnsetRemoteExceptionHandler()
 
 #if defined(MOZ_WIDGET_ANDROID)
 void AddLibraryMapping(const char* library_name,
-                       const char* file_id,
                        uintptr_t   start_address,
                        size_t      mapping_length,
                        size_t      file_offset)
@@ -2833,7 +2848,6 @@ void AddLibraryMapping(const char* library_name,
   if (!gExceptionHandler) {
     mapping_info info;
     info.name = library_name;
-    info.debug_id = file_id;
     info.start_address = start_address;
     info.length = mapping_length;
     info.file_offset = file_offset;
@@ -2841,43 +2855,13 @@ void AddLibraryMapping(const char* library_name,
   }
   else {
     u_int8_t guid[sizeof(MDGUID)];
-    FileIDToGUID(file_id, guid);
+    google_breakpad::FileID::ElfFileIdentifierFromMappedFile((void const *)start_address, guid);
     gExceptionHandler->AddMappingInfo(library_name,
                                       guid,
                                       start_address,
                                       mapping_length,
                                       file_offset);
   }
-}
-
-void AddLibraryMappingForChild(uint32_t    childPid,
-                               const char* library_name,
-                               const char* file_id,
-                               uintptr_t   start_address,
-                               size_t      mapping_length,
-                               size_t      file_offset)
-{
-  if (child_library_mappings.find(childPid) == child_library_mappings.end())
-    child_library_mappings[childPid] = google_breakpad::MappingList();
-  google_breakpad::MappingInfo info;
-  info.start_addr = start_address;
-  info.size = mapping_length;
-  info.offset = file_offset;
-  strcpy(info.name, library_name);
-
-  struct google_breakpad::MappingEntry mapping;
-  mapping.first = info;
-  u_int8_t guid[sizeof(MDGUID)];
-  FileIDToGUID(file_id, guid);
-  memcpy(mapping.second, guid, sizeof(MDGUID));
-  child_library_mappings[childPid].push_back(mapping);
-}
-
-void RemoveLibraryMappingsForChild(uint32_t childPid)
-{
-  MappingMap::iterator iter = child_library_mappings.find(childPid);
-  if (iter != child_library_mappings.end())
-    child_library_mappings.erase(iter);
 }
 #endif
 

@@ -25,7 +25,7 @@ public class testNewTab extends BaseTest {
         blockForGeckoReady();
 
         Activity activity = getActivity();
-        tabCount = mDriver.findElement(activity, "tabs_count");
+        tabCount = mDriver.findElement(activity, "tabs_counter");
         tabs = mDriver.findElement(activity, "tabs");
         addTab = mDriver.findElement(activity, "add_tab");
         mAsserter.ok(tabCount != null &&
@@ -66,6 +66,7 @@ public class testNewTab extends BaseTest {
 
         // wait for closeTab to appear (this is usually immediate)
         boolean success = waitForTest(new BooleanTest() {
+            @Override
             public boolean test() {
                 View closeTabView = getActivity().findViewById(closeTabId);
                 if (closeTabView == null) {
@@ -88,6 +89,7 @@ public class testNewTab extends BaseTest {
             }
 
             success = waitForTest(new BooleanTest() {
+                @Override
                 public boolean test() {
                     String newTabCountText = tabCount.getText();
                     int newTabCount = Integer.parseInt(newTabCountText);

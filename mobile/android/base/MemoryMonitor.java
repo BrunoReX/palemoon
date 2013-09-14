@@ -5,8 +5,9 @@
 
 package org.mozilla.gecko;
 
-import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.db.BrowserContract;
+import org.mozilla.gecko.db.BrowserDB;
+import org.mozilla.gecko.util.ThreadUtils;
 
 import android.content.BroadcastReceiver;
 import android.content.ComponentCallbacks2;
@@ -14,7 +15,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Build;
-import android.os.Debug;
 import android.util.Log;
 
 /**
@@ -39,6 +39,7 @@ class MemoryMonitor extends BroadcastReceiver {
     private static final String ACTION_MEMORY_DUMP = "org.mozilla.gecko.MEMORY_DUMP";
     private static final String ACTION_FORCE_PRESSURE = "org.mozilla.gecko.FORCE_MEMORY_PRESSURE";
 
+    // Memory pressue levels, keep in sync with those in AndroidJavaWrappers.h
     private static final int MEMORY_PRESSURE_NONE = 0;
     private static final int MEMORY_PRESSURE_CLEANUP = 1;
     private static final int MEMORY_PRESSURE_LOW = 2;
@@ -72,7 +73,11 @@ class MemoryMonitor extends BroadcastReceiver {
 
     public void onLowMemory() {
         Log.d(LOGTAG, "onLowMemory() notification received");
-        increaseMemoryPressure(MEMORY_PRESSURE_HIGH);
+        if (increaseMemoryPressure(MEMORY_PRESSURE_HIGH)) {
+            // We need to wait on Gecko here, because if we haven't reduced
+            // memory usage enough when we return from this, Android will kill us.
+            GeckoAppShell.sendEventToGeckoSync(GeckoEvent.createNoOpEvent());
+        }
     }
 
     public void onTrimMemory(int level) {
@@ -90,17 +95,10 @@ class MemoryMonitor extends BroadcastReceiver {
             // includes TRIM_MEMORY_BACKGROUND
             increaseMemoryPressure(MEMORY_PRESSURE_CLEANUP);
         } else {
-            if (Build.VERSION.SDK_INT < 16) {
-                // in SDK 14 and 15 we don't have these extra fine-grained levels so
-                // just default to low (we already know it's < TRIM_MEMORY_UI_HIDDEN)
-                increaseMemoryPressure(MEMORY_PRESSURE_LOW);
-            } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
-                increaseMemoryPressure(MEMORY_PRESSURE_HIGH);
-            } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
-                increaseMemoryPressure(MEMORY_PRESSURE_MEDIUM);
-            } else {
-                increaseMemoryPressure(MEMORY_PRESSURE_LOW);
-            }
+            // levels down here mean gecko is the foreground process so we
+            // should be less aggressive with wiping memory as it may impact
+            // user experience.
+            increaseMemoryPressure(MEMORY_PRESSURE_LOW);
         }
     }
 
@@ -109,7 +107,7 @@ class MemoryMonitor extends BroadcastReceiver {
         if (Intent.ACTION_DEVICE_STORAGE_LOW.equals(intent.getAction())) {
             Log.d(LOGTAG, "Device storage is low");
             mStoragePressure = true;
-            GeckoAppShell.getHandler().post(new StorageReducer(context));
+            ThreadUtils.postToBackgroundThread(new StorageReducer(context));
         } else if (Intent.ACTION_DEVICE_STORAGE_OK.equals(intent.getAction())) {
             Log.d(LOGTAG, "Device storage is ok");
             mStoragePressure = false;
@@ -124,12 +122,12 @@ class MemoryMonitor extends BroadcastReceiver {
         }
     }
 
-    private void increaseMemoryPressure(int level) {
+    private boolean increaseMemoryPressure(int level) {
         int oldLevel;
         synchronized (this) {
             // bump up our level if we're not already higher
             if (mMemoryPressure > level) {
-                return;
+                return false;
             }
             oldLevel = mMemoryPressure;
             mMemoryPressure = level;
@@ -146,17 +144,19 @@ class MemoryMonitor extends BroadcastReceiver {
             // if we're not going to a higher level we probably don't
             // need to run another round of the same memory reductions
             // we did on the last memory pressure increase.
-            return;
+            return false;
         }
 
         // TODO hook in memory-reduction stuff for different levels here
         if (level >= MEMORY_PRESSURE_MEDIUM) {
-            if (GeckoApp.checkLaunchState(GeckoApp.LaunchState.GeckoRunning)) {
-                GeckoAppShell.onLowMemory();
+            //Only send medium or higher events because that's all that is used right now
+            if (GeckoThread.checkLaunchState(GeckoThread.LaunchState.GeckoRunning)) {
+                GeckoAppShell.sendEventToGecko(GeckoEvent.createLowMemoryEvent(level));
             }
-            GeckoAppShell.geckoEventSync();
+
             Favicons.getInstance().clearMemCache();
         }
+        return true;
     }
 
     private boolean decreaseMemoryPressure() {
@@ -181,9 +181,9 @@ class MemoryMonitor extends BroadcastReceiver {
         synchronized void start() {
             if (mPosted) {
                 // cancel the old one before scheduling a new one
-                GeckoAppShell.getHandler().removeCallbacks(this);
+                ThreadUtils.getBackgroundHandler().removeCallbacks(this);
             }
-            GeckoAppShell.getHandler().postDelayed(this, DECREMENT_DELAY);
+            ThreadUtils.getBackgroundHandler().postDelayed(this, DECREMENT_DELAY);
             mPosted = true;
         }
 
@@ -196,7 +196,7 @@ class MemoryMonitor extends BroadcastReceiver {
             }
 
             // need to keep decrementing
-            GeckoAppShell.getHandler().postDelayed(this, DECREMENT_DELAY);
+            ThreadUtils.getBackgroundHandler().postDelayed(this, DECREMENT_DELAY);
         }
     }
 
@@ -209,8 +209,8 @@ class MemoryMonitor extends BroadcastReceiver {
         @Override
         public void run() {
             // this might get run right on startup, if so wait 10 seconds and try again
-            if (!GeckoApp.checkLaunchState(GeckoApp.LaunchState.GeckoRunning)) {
-                GeckoAppShell.getHandler().postDelayed(this, 10000);
+            if (!GeckoThread.checkLaunchState(GeckoThread.LaunchState.GeckoRunning)) {
+                ThreadUtils.getBackgroundHandler().postDelayed(this, 10000);
                 return;
             }
 

@@ -103,9 +103,6 @@ this.NetUtil = {
      * @param aSource
      *        The nsIURI, nsIFile, string spec, nsIChannel, or nsIInputStream
      *        to open.
-     *        Note: If passing an nsIChannel whose notificationCallbacks is
-     *              already set, callers are responsible for implementations
-     *              of nsIBadCertListener/nsISSLErrorListener.
      * @param aCallback
      *        The callback function that will be notified upon completion.  It
      *        will get two arguments:
@@ -155,14 +152,19 @@ this.NetUtil = {
             channel = this.newChannel(aSource);
         }
 
-        // Add a BadCertHandler to suppress SSL/cert error dialogs, but only if
-        // the channel doesn't already have a notificationCallbacks.
-        if (!channel.notificationCallbacks) {
-          // Pass true to avoid optional redirect-cert-checking behavior.
-          channel.notificationCallbacks = new BadCertHandler(true);
+        try {
+            channel.asyncOpen(listener, null);
         }
-
-        channel.asyncOpen(listener, null);
+        catch (e) {
+            let exception = new Components.Exception(
+                "Failed to open input source '" + channel.originalURI.spec + "'",
+                e.result,
+                Components.stack.caller,
+                aSource,
+                e
+            );
+            throw exception;
+        }
     },
 
     /**
@@ -339,9 +341,3 @@ Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 // Define our lazy getters.
 XPCOMUtils.defineLazyServiceGetter(this, "ioUtil", "@mozilla.org/io-util;1",
                                    "nsIIOUtil");
-
-XPCOMUtils.defineLazyGetter(this, "BadCertHandler", function () {
-  var obj = {};
-  Cu.import("resource://gre/modules/CertUtils.jsm", obj);
-  return obj.BadCertHandler;
-});

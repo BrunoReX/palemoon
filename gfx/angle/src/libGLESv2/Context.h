@@ -80,8 +80,8 @@ enum
     MAX_FRAGMENT_UNIFORM_VECTORS_SM3 = 224 - 3,
     MAX_DRAW_BUFFERS = 1,
 
-    IMPLEMENTATION_COLOR_READ_FORMAT = GL_BGRA_EXT,
-    IMPLEMENTATION_COLOR_READ_TYPE = GL_UNSIGNED_BYTE
+    GL_BGRA4_ANGLEX = 0x6ABC,
+    GL_BGR5_A1_ANGLEX = 0x6ABD
 };
 
 enum QueryType
@@ -509,6 +509,9 @@ class Context
     bool supportsNonPower2Texture() const;
     bool supportsInstancing() const;
     bool supportsTextureFilterAnisotropy() const;
+    bool supportsDerivativeInstructions() const;
+
+    bool getCurrentReadFormatType(GLenum *format, GLenum *type);
 
     float getTextureMaxAnisotropy() const;
 
@@ -538,7 +541,7 @@ class Context
 
     Texture *getIncompleteTexture(TextureType type);
 
-    bool cullSkipsDraw(GLenum drawMode);
+    bool skipDraw(GLenum drawMode);
     bool isTriangleMode(GLenum drawMode);
 
     void initExtensionString();
@@ -573,8 +576,8 @@ class Context
     QueryMap mQueryMap;
     HandleAllocator mQueryHandleAllocator;
 
-    std::string mExtensionString;
-    std::string mRendererString;
+    const char *mExtensionString;
+    const char *mRendererString;
 
     VertexDataManager *mVertexDataManager;
     IndexDataManager *mIndexDataManager;
@@ -643,6 +646,7 @@ class Context
     bool mSupportsDepthTextures;
     bool mSupports32bitIndices;
     bool mSupportsTextureFilterAnisotropy;
+    bool mSupportsDerivativeInstructions;
     int mNumCompressedTextureFormats;
 
     // state caching flags

@@ -18,7 +18,7 @@
 #include "nsIClassInfoImpl.h"
 #include "nsIScriptSecurityManager.h"
 
-NS_IMPL_CLASSINFO(nsSystemPrincipal, NULL,
+NS_IMPL_CLASSINFO(nsSystemPrincipal, nullptr,
                   nsIClassInfo::SINGLETON | nsIClassInfo::MAIN_THREAD_ONLY,
                   NS_SYSTEMPRINCIPAL_CID)
 NS_IMPL_QUERY_INTERFACE2_CI(nsSystemPrincipal,
@@ -202,6 +202,13 @@ NS_IMETHODIMP
 nsSystemPrincipal::GetIsNullPrincipal(bool* aIsNullPrincipal)
 {
   *aIsNullPrincipal = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSystemPrincipal::GetBaseDomain(nsACString& aBaseDomain)
+{
+  // No base domain for chrome.
   return NS_OK;
 }
 

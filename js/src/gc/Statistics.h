@@ -1,21 +1,19 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=78:
- *
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsgc_statistics_h___
-#define jsgc_statistics_h___
-
-#include <string.h>
+#ifndef gc_Statistics_h
+#define gc_Statistics_h
 
 #include "mozilla/DebugOnly.h"
-#include "mozilla/GuardObjects.h"
+#include "mozilla/PodOperations.h"
 
 #include "jsfriendapi.h"
 #include "jspubtd.h"
-#include "jsutil.h"
+
+#include "js/GCAPI.h"
 
 struct JSCompartment;
 
@@ -84,7 +82,7 @@ struct Statistics {
     void beginPhase(Phase phase);
     void endPhase(Phase phase);
 
-    void beginSlice(int collectedCount, int compartmentCount, gcreason::Reason reason);
+    void beginSlice(int collectedCount, int zoneCount, int compartmentCount, JS::gcreason::Reason reason);
     void endSlice();
 
     void reset(const char *reason) { slices.back().resetReason = reason; }
@@ -116,17 +114,18 @@ struct Statistics {
     int gcDepth;
 
     int collectedCount;
+    int zoneCount;
     int compartmentCount;
     const char *nonincrementalReason;
 
     struct SliceData {
-        SliceData(gcreason::Reason reason, int64_t start, size_t startFaults)
+        SliceData(JS::gcreason::Reason reason, int64_t start, size_t startFaults)
           : reason(reason), resetReason(NULL), start(start), startFaults(startFaults)
         {
-            PodArrayZero(phaseTimes);
+            mozilla::PodArrayZero(phaseTimes);
         }
 
-        gcreason::Reason reason;
+        JS::gcreason::Reason reason;
         const char *resetReason;
         int64_t start, end;
         size_t startFaults, endFaults;
@@ -175,12 +174,13 @@ struct Statistics {
 
 struct AutoGCSlice
 {
-    AutoGCSlice(Statistics &stats, int collectedCount, int compartmentCount, gcreason::Reason reason
+    AutoGCSlice(Statistics &stats, int collectedCount, int zoneCount, int compartmentCount,
+                JS::gcreason::Reason reason
                 MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
       : stats(stats)
     {
         MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-        stats.beginSlice(collectedCount, compartmentCount, reason);
+        stats.beginSlice(collectedCount, zoneCount, compartmentCount, reason);
     }
     ~AutoGCSlice() { stats.endSlice(); }
 
@@ -228,4 +228,4 @@ struct AutoSCC
 } /* namespace gcstats */
 } /* namespace js */
 
-#endif /* jsgc_statistics_h___ */
+#endif /* gc_Statistics_h */

@@ -38,7 +38,8 @@ namespace google_breakpad {
 MinidumpDescriptor::MinidumpDescriptor(const MinidumpDescriptor& descriptor)
     : fd_(descriptor.fd_),
       directory_(descriptor.directory_),
-      c_path_(NULL) {
+      c_path_(NULL),
+      size_limit_(descriptor.size_limit_) {
   // The copy constructor is not allowed to be called on a MinidumpDescriptor
   // with a valid path_, as getting its c_path_ would require the heap which
   // can cause problems in compromised environments.
@@ -57,6 +58,7 @@ MinidumpDescriptor& MinidumpDescriptor::operator=(
     c_path_ = NULL;
     UpdatePath();
   }
+  size_limit_ = descriptor.size_limit_;
   return *this;
 }
 
@@ -65,8 +67,9 @@ void MinidumpDescriptor::UpdatePath() {
 
   GUID guid;
   char guid_str[kGUIDStringLength + 1];
-  bool r = CreateGUID(&guid) && GUIDToString(&guid, guid_str, sizeof(guid_str));
-  assert(r);
+  if (!CreateGUID(&guid) || !GUIDToString(&guid, guid_str, sizeof(guid_str))) {
+    assert(false);
+  }
 
   path_.clear();
   path_ = directory_ + "/" + guid_str + ".dmp";  

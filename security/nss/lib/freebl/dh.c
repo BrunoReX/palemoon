@@ -5,8 +5,6 @@
 /*
  * Diffie-Hellman parameter generation, key generation, and secret derivation.
  * KEA secret generation and verification.
- *
- * $Id: dh.c,v 1.12 2012/06/14 18:55:10 wtc%google.com Exp $
  */
 #ifdef FREEBL_NO_DEPEND
 #include "stubs.h"
@@ -46,7 +44,7 @@ dh_GetSecretKeyLen(unsigned int primeLen)
 SECStatus 
 DH_GenParam(int primeLen, DHParams **params)
 {
-    PRArenaPool *arena;
+    PLArenaPool *arena;
     DHParams *dhparams;
     unsigned char *pb = NULL;
     unsigned char *ab = NULL;
@@ -137,7 +135,7 @@ cleanup:
 SECStatus 
 DH_NewKey(DHParams *params, DHPrivateKey **privKey)
 {
-    PRArenaPool *arena;
+    PLArenaPool *arena;
     DHPrivateKey *key;
     mp_int g, xa, p, Ya;
     mp_err   err = MP_OKAY;

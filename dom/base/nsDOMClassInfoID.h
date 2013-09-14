@@ -54,13 +54,17 @@ DOMCI_CASTABLE_NODECL_INTERFACE(mozilla::dom::Element,  mozilla::dom::Element,\
 /* If this is ever removed, the IID for EventTarget can go away */            \
 DOMCI_CASTABLE_NODECL_INTERFACE(mozilla::dom::EventTarget,                    \
                                 mozilla::dom::EventTarget, 2, _extra)         \
+DOMCI_CASTABLE_INTERFACE(nsDOMEvent, nsIDOMEvent, 3, _extra)                  \
 DOMCI_CASTABLE_INTERFACE(nsIDocument, nsIDocument, 4, _extra)                 \
 DOMCI_CASTABLE_INTERFACE(nsDocument, nsIDocument, 5, _extra)                  \
 DOMCI_CASTABLE_INTERFACE(nsGenericHTMLElement, nsGenericHTMLElement, 6,       \
                          _extra)                                              \
 DOMCI_CASTABLE_INTERFACE(nsHTMLDocument, nsIDocument, 7, _extra)              \
 DOMCI_CASTABLE_INTERFACE(nsStyledElement, nsStyledElement, 8, _extra)         \
-DOMCI_CASTABLE_INTERFACE(nsSVGElement, nsIContent, 9, _extra)
+DOMCI_CASTABLE_INTERFACE(nsSVGElement, nsIContent, 9, _extra)                 \
+/* NOTE: When removing the casts below, remove the nsDOMEventBase class */    \
+DOMCI_CASTABLE_INTERFACE(nsDOMMouseEvent, nsDOMEventBase, 10, _extra)         \
+DOMCI_CASTABLE_INTERFACE(nsDOMUIEvent, nsDOMEventBase, 11, _extra)
 
 // Make sure all classes mentioned in DOMCI_CASTABLE_INTERFACES
 // have been declared.

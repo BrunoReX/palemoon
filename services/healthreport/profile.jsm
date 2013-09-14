@@ -4,6 +4,8 @@
 
 "use strict";
 
+#ifndef MERGED_COMPARTMENT
+
 this.EXPORTED_SYMBOLS = [
   "ProfileCreationTimeAccessor",
   "ProfileMetadataProvider",
@@ -11,12 +13,16 @@ this.EXPORTED_SYMBOLS = [
 
 const {utils: Cu, classes: Cc, interfaces: Ci} = Components;
 
-const DEFAULT_PROFILE_MEASUREMENT_NAME = "age";
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+
+Cu.import("resource://gre/modules/Metrics.jsm");
+
+#endif
+
+const DEFAULT_PROFILE_MEASUREMENT_NAME = "age";
 const REQUIRED_UINT32_TYPE = {type: "TYPE_UINT32"};
 
-Cu.import("resource://gre/modules/commonjs/promise/core.js");
-Cu.import("resource://gre/modules/Metrics.jsm");
+Cu.import("resource://gre/modules/Promise.jsm");
 Cu.import("resource://gre/modules/osfile.jsm")
 Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://services-common/log4moz.js");
@@ -147,8 +153,14 @@ ProfileCreationTimeAccessor.prototype = {
           }
         }
       }
+
+      function onStatFailure(e) {
+        // Never mind.
+        self._log.debug("Stat failure: " + CommonUtils.exceptionStr(e));
+      }
+
       return OS.File.stat(entry.path)
-                    .then(onStatSuccess);
+                    .then(onStatSuccess, onStatFailure);
     }
 
     let promise = iterator.forEach(onEntry);
@@ -179,9 +191,9 @@ ProfileMetadataMeasurement.prototype = {
   name: DEFAULT_PROFILE_MEASUREMENT_NAME,
   version: 1,
 
-  configureStorage: function () {
+  fields: {
     // Profile creation date. Number of days since Unix epoch.
-    return this.registerStorageField("profileCreation", this.storage.FIELD_LAST_NUMERIC);
+    profileCreation: {type: Metrics.Storage.FIELD_LAST_NUMERIC},
   },
 };
 
@@ -207,6 +219,8 @@ ProfileMetadataProvider.prototype = {
   name: "org.mozilla.profile",
 
   measurementTypes: [ProfileMetadataMeasurement],
+
+  pullOnly: true,
 
   getProfileCreationDays: function () {
     let accessor = new ProfileCreationTimeAccessor(null, this._log);

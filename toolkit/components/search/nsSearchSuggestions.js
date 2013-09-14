@@ -464,7 +464,7 @@ SuggestAutoComplete.prototype = {
     this._suggestURI = submission.uri;
     var method = (submission.postData ? "POST" : "GET");
     this._request.open(method, this._suggestURI.spec, true);
-    this._request.channel.notificationCallbacks = new SearchSuggestLoadListener();
+    this._request.channel.notificationCallbacks = new AuthPromptOverride();
     if (this._request.channel instanceof Ci.nsIPrivateBrowsingChannel) {
       this._request.channel.setPrivate(privacyMode);
     }
@@ -524,17 +524,20 @@ SuggestAutoComplete.prototype = {
                                          Ci.nsIAutoCompleteObserver])
 };
 
-function SearchSuggestLoadListener() {
+function AuthPromptOverride() {
 }
-SearchSuggestLoadListener.prototype = {
-  // nsIBadCertListener2
-  notifyCertProblem: function SSLL_certProblem(socketInfo, status, targetSite) {
-    return true;
-  },
-
-  // nsISSLErrorListener
-  notifySSLError: function SSLL_SSLError(socketInfo, error, targetSite) {
-    return true;
+AuthPromptOverride.prototype = {
+  // nsIAuthPromptProvider
+  getAuthPrompt: function (reason, iid) {
+    // Return a no-op nsIAuthPrompt2 implementation.
+    return {
+      promptAuth: function () {
+        throw Cr.NS_ERROR_NOT_IMPLEMENTED;
+      },
+      asyncPromptAuth: function () {
+        throw Cr.NS_ERROR_NOT_IMPLEMENTED;
+      }
+    };
   },
 
   // nsIInterfaceRequestor
@@ -543,11 +546,9 @@ SearchSuggestLoadListener.prototype = {
   },
 
   // nsISupports
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIBadCertListener2,
-                                         Ci.nsISSLErrorListener,
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIAuthPromptProvider,
                                          Ci.nsIInterfaceRequestor])
 };
-
 /**
  * SearchSuggestAutoComplete is a service implementation that handles suggest
  * results specific to web searches.

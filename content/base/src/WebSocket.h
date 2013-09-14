@@ -7,6 +7,7 @@
 #ifndef WebSocket_h__
 #define WebSocket_h__
 
+#include "mozilla/Attributes.h"
 #include "mozilla/Util.h"
 
 #include "nsWrapperCache.h"
@@ -71,24 +72,17 @@ public:
   NS_DECL_NSIOBSERVER
   NS_DECL_NSIREQUEST
 
-  // nsIDOMEventTarget
-  NS_IMETHOD AddEventListener(const nsAString& aType,
-                              nsIDOMEventListener *aListener,
-                              bool aUseCapture,
-                              bool aWantsUntrusted,
-                              uint8_t optional_argc);
-  NS_IMETHOD RemoveEventListener(const nsAString& aType,
-                                 nsIDOMEventListener* aListener,
-                                 bool aUseCapture);
+  // EventTarget
+  virtual void EventListenerAdded(nsIAtom* aType) MOZ_OVERRIDE;
+  virtual void EventListenerRemoved(nsIAtom* aType) MOZ_OVERRIDE;
 
-  virtual void DisconnectFromOwner();
+  virtual void DisconnectFromOwner() MOZ_OVERRIDE;
 
   // nsWrapperCache
   nsPIDOMWindow* GetParentObject() { return GetOwner(); }
 
-  JSObject* WrapObject(JSContext *cx,
-                       JSObject *scope,
-                       bool *triedToWrap);
+  virtual JSObject* WrapObject(JSContext *cx,
+                               JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
 public: // static helpers:
 
@@ -98,19 +92,19 @@ public: // static helpers:
 public: // WebIDL interface:
 
   // Constructor:
-  static already_AddRefed<WebSocket> Constructor(JSContext *aCx,
-                                                 nsISupports* aGlobal,
+  static already_AddRefed<WebSocket> Constructor(const GlobalObject& aGlobal,
+                                                 JSContext *aCx,
                                                  const nsAString& aUrl,
                                                  ErrorResult& rv);
 
-  static already_AddRefed<WebSocket> Constructor(JSContext *aCx,
-                                                 nsISupports* aGlobal,
+  static already_AddRefed<WebSocket> Constructor(const GlobalObject& aGlobal,
+                                                 JSContext *aCx,
                                                  const nsAString& aUrl,
                                                  const nsAString& aProtocol,
                                                  ErrorResult& rv);
 
-  static already_AddRefed<WebSocket> Constructor(JSContext *aCx,
-                                                 nsISupports* aGlobal,
+  static already_AddRefed<WebSocket> Constructor(const GlobalObject& aGlobal,
+                                                 JSContext *aCx,
                                                  const nsAString& aUrl,
                                                  const Sequence<nsString>& aProtocols,
                                                  ErrorResult& rv);

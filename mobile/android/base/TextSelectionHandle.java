@@ -12,7 +12,6 @@ import org.json.JSONObject;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.PointF;
-import android.graphics.Rect;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -44,12 +43,9 @@ class TextSelectionHandle extends ImageView implements View.OnTouchListener {
     private static final int IMAGE_LEVEL_LTR = 0;
     private static final int IMAGE_LEVEL_RTL = 1;
 
-    private GeckoApp mActivity;
-
-    TextSelectionHandle(Context context, AttributeSet attrs) {
+    public TextSelectionHandle(Context context, AttributeSet attrs) {
         super(context, attrs);
         setOnTouchListener(this);
-        mActivity = (GeckoApp) context;
 
         TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.TextSelectionHandle);
         int handleType = a.getInt(R.styleable.TextSelectionHandle_handleType, 0x01);
@@ -69,6 +65,7 @@ class TextSelectionHandle extends ImageView implements View.OnTouchListener {
         mShadow = getResources().getDimensionPixelSize(R.dimen.text_selection_handle_shadow);
     }
 
+    @Override
     public boolean onTouch(View v, MotionEvent event) {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN: {
@@ -76,7 +73,7 @@ class TextSelectionHandle extends ImageView implements View.OnTouchListener {
                 mTouchStartY = event.getY();
 
                 int[] rect = new int[2];
-                mActivity.getLayerView().getLocationOnScreen(rect);
+                GeckoAppShell.getLayerView().getLocationOnScreen(rect);
                 mLayerViewX = rect[0];
                 mLayerViewY = rect[1];
                 break;
@@ -111,7 +108,7 @@ class TextSelectionHandle extends ImageView implements View.OnTouchListener {
         mLeft = newX - mLayerViewX - mTouchStartX;
         mTop = newY - mLayerViewY - mTouchStartY;
 
-        LayerView layerView = mActivity.getLayerView();
+        LayerView layerView = GeckoAppShell.getLayerView();
         if (layerView == null) {
             Log.e(LOGTAG, "Can't move selection because layerView is null");
             return;
@@ -142,7 +139,7 @@ class TextSelectionHandle extends ImageView implements View.OnTouchListener {
     }
 
     void positionFromGecko(int left, int top, boolean rtl) {
-        LayerView layerView = mActivity.getLayerView();
+        LayerView layerView = GeckoAppShell.getLayerView();
         if (layerView == null) {
             Log.e(LOGTAG, "Can't position handle because layerView is null");
             return;
@@ -155,7 +152,8 @@ class TextSelectionHandle extends ImageView implements View.OnTouchListener {
         }
 
         ImmutableViewportMetrics metrics = layerView.getViewportMetrics();
-        repositionWithViewport(metrics.viewportRectLeft, metrics.viewportRectTop, metrics.zoomFactor);
+        PointF offset = metrics.getMarginOffset();
+        repositionWithViewport(metrics.viewportRectLeft - offset.x, metrics.viewportRectTop - offset.y, metrics.zoomFactor);
     }
 
     void repositionWithViewport(float x, float y, float zoom) {
@@ -172,7 +170,7 @@ class TextSelectionHandle extends ImageView implements View.OnTouchListener {
         if (mHandleType.equals(HandleType.START))
             return mIsRTL ? mShadow : mWidth - mShadow;
         else if (mHandleType.equals(HandleType.MIDDLE))
-            return (mWidth - mShadow) / 2;
+            return mWidth / 2;
         else
             return mIsRTL ? mWidth - mShadow : mShadow;
     }

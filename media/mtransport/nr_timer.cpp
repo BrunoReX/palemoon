@@ -49,11 +49,15 @@
    ekr@rtfm.com  Sun Feb 22 19:35:24 2004
  */
 
+#include <string>
+
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
+#include "nsServiceManagerUtils.h"
 #include "nsIEventTarget.h"
 #include "nsITimer.h"
 #include "nsNetCID.h"
+#include "runnable_utils.h"
 
 extern "C" {
 #include "nr_api.h"
@@ -69,7 +73,10 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSITIMERCALLBACK
 
-  nrappkitTimerCallback(NR_async_cb cb, void *cb_arg) : cb_(cb), cb_arg_(cb_arg) {}
+  nrappkitTimerCallback(NR_async_cb cb, void *cb_arg,
+                        const char *function, int line)
+    : cb_(cb), cb_arg_(cb_arg), function_(function), line_(line) {
+  }
 
 private:
   virtual ~nrappkitTimerCallback() {}
@@ -78,13 +85,17 @@ protected:
   /* additional members */
   NR_async_cb cb_;
   void *cb_arg_;
+  std::string function_;
+  int line_;
 };
 
 // We're going to release ourself in the callback, so we need to be threadsafe
 NS_IMPL_THREADSAFE_ISUPPORTS1(nrappkitTimerCallback, nsITimerCallback)
 
 NS_IMETHODIMP nrappkitTimerCallback::Notify(nsITimer *timer) {
-  r_log(LOG_GENERIC, LOG_DEBUG, "Timer callback fired");
+  r_log(LOG_GENERIC, LOG_DEBUG, "Timer callback fired (set in %s:%d)",
+        function_.c_str(), line_);
+
   cb_(0, 0, cb_arg_);
 
   // Allow the timer to go away.
@@ -96,18 +107,31 @@ NS_IMETHODIMP nrappkitTimerCallback::Notify(nsITimer *timer) {
 
 using namespace mozilla;
 
+// These timers must only be used from the STS thread.
+// This function is a helper that enforces that.
+static void CheckSTSThread() {
+  nsresult rv;
+
+  nsCOMPtr<nsIEventTarget> sts_thread;
+
+  sts_thread = do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &rv);
+
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  ASSERT_ON_THREAD(sts_thread);
+}
+
 int NR_async_timer_set(int timeout, NR_async_cb cb, void *arg, char *func,
                        int l, void **handle) {
   nsresult rv;
+  CheckSTSThread();
 
   nsCOMPtr<nsITimer> timer = do_CreateInstance(NS_TIMER_CONTRACTID, &rv);
-
   if (NS_FAILED(rv)) {
     return(R_FAILED);
   }
 
-  rv = timer->InitWithCallback(new nrappkitTimerCallback(cb, arg),
-                                        timeout, nsITimer::TYPE_ONE_SHOT);
+  rv = timer->InitWithCallback(new nrappkitTimerCallback(cb, arg, func, l),
+                               timeout, nsITimer::TYPE_ONE_SHOT);
   if (NS_FAILED(rv)) {
     return R_FAILED;
   }
@@ -125,12 +149,19 @@ int NR_async_timer_set(int timeout, NR_async_cb cb, void *arg, char *func,
 }
 
 int NR_async_schedule(NR_async_cb cb, void *arg, char *func, int l) {
+  // No need to check the thread because we check it next in the
+  // timer set.
   return NR_async_timer_set(0, cb, arg, func, l, nullptr);
 }
 
 int NR_async_timer_cancel(void *handle) {
+  // Check for the handle being nonzero because sometimes we get
+  // no-op cancels that aren't on the STS thread. This can be
+  // non-racy as long as the upper-level code is careful.
   if (!handle)
     return 0;
+
+  CheckSTSThread();
 
   nsITimer *timer = static_cast<nsITimer *>(handle);
 

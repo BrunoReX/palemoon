@@ -3,7 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource:///modules/MigrationUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "Task",
+                                  "resource://gre/modules/Task.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "BookmarkJSONUtils",
+                                  "resource://gre/modules/BookmarkJSONUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PlacesBackups",
+                                  "resource://gre/modules/PlacesBackups.jsm");
 
 var PlacesOrganizer = {
   _places: null,
@@ -26,7 +33,7 @@ var PlacesOrganizer = {
     var itemId = PlacesUIUtils.leftPaneQueries[aQueryName];
     this._places.selectItems([itemId]);
     // Forcefully expand all-bookmarks
-    if (aQueryName == "AllBookmarks")
+    if (aQueryName == "AllBookmarks" || aQueryName == "History")
       PlacesUtils.asContainer(this._places.selectedNode).containerOpen = true;
   },
 
@@ -41,6 +48,11 @@ var PlacesOrganizer = {
       leftPaneSelection = window.arguments[0];
 
     this.selectLeftPaneQuery(leftPaneSelection);
+    if (leftPaneSelection == "History") {
+      let historyNode = this._places.selectedNode;
+      if (historyNode.childCount > 0)
+        this._places.selectNode(historyNode.getChild(0));
+    }
     // clear the back-stack
     this._backHistory.splice(0, this._backHistory.length);
     document.getElementById("OrganizerCommand:Back").setAttribute("disabled", true);
@@ -75,10 +87,6 @@ var PlacesOrganizer = {
     document.getElementById("placesContext")
             .removeChild(document.getElementById("placesContext_show:info"));
 
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-    gPrivateBrowsingListener.init();
-#endif
-
     ContentArea.focus();
   },
 
@@ -111,9 +119,6 @@ var PlacesOrganizer = {
   },
 
   destroy: function PO_destroy() {
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-    gPrivateBrowsingListener.uninit();
-#endif
   },
 
   _location: null,
@@ -362,13 +367,13 @@ var PlacesOrganizer = {
     while (restorePopup.childNodes.length > 1)
       restorePopup.removeChild(restorePopup.firstChild);
 
-    let backupFiles = PlacesUtils.backups.entries;
+    let backupFiles = PlacesBackups.entries;
     if (backupFiles.length == 0)
       return;
 
     // Populate menu with backups.
     for (let i = 0; i < backupFiles.length; i++) {
-      let backupDate = PlacesUtils.backups.getDateForFile(backupFiles[i]);
+      let backupDate = PlacesBackups.getDateForFile(backupFiles[i]);
       let m = restorePopup.insertBefore(document.createElement("menuitem"),
                                         document.getElementById("restoreFromFile"));
       m.setAttribute("label",
@@ -392,7 +397,7 @@ var PlacesOrganizer = {
    */
   onRestoreMenuItemClick: function PO_onRestoreMenuItemClick(aMenuItem) {
     let backupName = aMenuItem.getAttribute("value");
-    let backupFiles = PlacesUtils.backups.entries;
+    let backupFiles = PlacesBackups.entries;
     for (let i = 0; i < backupFiles.length; i++) {
       if (backupFiles[i].leafName == backupName) {
         this.restoreBookmarksFromFile(backupFiles[i]);
@@ -443,12 +448,13 @@ var PlacesOrganizer = {
                          PlacesUIUtils.getString("bookmarksRestoreAlert")))
       return;
 
-    try {
-      PlacesUtils.restoreBookmarksFromJSONFile(aFile);
-    }
-    catch(ex) {
-      this._showErrorAlert(PlacesUIUtils.getString("bookmarksRestoreParseError"));
-    }
+    Task.spawn(function() {
+      try {
+        yield BookmarkJSONUtils.importFromFile(aFile, true);
+      } catch(ex) {
+        PlacesOrganizer._showErrorAlert(PlacesUIUtils.getString("bookmarksRestoreParseError"));
+      }
+    });
   },
 
   _showErrorAlert: function PO__showErrorAlert(aMsg) {
@@ -472,7 +478,7 @@ var PlacesOrganizer = {
     let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
     let fpCallback = function fpCallback_done(aResult) {
       if (aResult != Ci.nsIFilePicker.returnCancel) {
-        PlacesUtils.backups.saveBookmarksToJSONFile(fp.file);
+        BookmarkJSONUtils.exportToFile(fp.file);
       }
     };
 
@@ -480,7 +486,7 @@ var PlacesOrganizer = {
             Ci.nsIFilePicker.modeSave);
     fp.appendFilter(PlacesUIUtils.getString("bookmarksRestoreFilterName"),
                     PlacesUIUtils.getString("bookmarksRestoreFilterExtension"));
-    fp.defaultString = PlacesUtils.backups.getFilenameForDate();
+    fp.defaultString = PlacesBackups.getFilenameForDate();
     fp.displayDirectory = backupsDir;
     fp.open(fpCallback);
   },
@@ -775,7 +781,7 @@ var PlacesSearchBox = {
           query.searchTerms = filterString;
           var options = currentOptions.clone();
           // Make sure we're getting uri results.
-          options.resultType = currentOptions.RESULT_TYPE_URI;
+          options.resultType = currentOptions.RESULTS_AS_URI;
           options.queryType = Ci.nsINavHistoryQueryOptions.QUERY_TYPE_HISTORY;
           options.includeHidden = true;
           currentView.load([query], options);
@@ -791,7 +797,7 @@ var PlacesSearchBox = {
           query.setTransitions([Ci.nsINavHistoryService.TRANSITION_DOWNLOAD], 1);
           let options = currentOptions.clone();
           // Make sure we're getting uri results.
-          options.resultType = currentOptions.RESULT_TYPE_URI;
+          options.resultType = currentOptions.RESULTS_AS_URI;
           options.queryType = Ci.nsINavHistoryQueryOptions.QUERY_TYPE_HISTORY;
           options.includeHidden = true;
           currentView.load([query], options);
@@ -1197,45 +1203,6 @@ var ViewMenu = {
     result.sortingMode = Ci.nsINavHistoryQueryOptions[sortConst];
   }
 }
-
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-/**
- * Disables the "Import and Backup->Import From Another Browser" menu item
- * in private browsing mode.
- */
-let gPrivateBrowsingListener = {
-  _cmd_import: null,
-
-  init: function PO_PB_init() {
-    this._cmd_import = document.getElementById("OrganizerCommand_browserImport");
-
-    let pbs = Cc["@mozilla.org/privatebrowsing;1"].
-              getService(Ci.nsIPrivateBrowsingService);
-    if (pbs.privateBrowsingEnabled)
-      this.updateUI(true);
-
-    Services.obs.addObserver(this, "private-browsing", false);
-  },
-
-  uninit: function PO_PB_uninit() {
-    Services.obs.removeObserver(this, "private-browsing");
-  },
-
-  observe: function PO_PB_observe(aSubject, aTopic, aData) {
-    if (aData == "enter")
-      this.updateUI(true);
-    else if (aData == "exit")
-      this.updateUI(false);
-  },
-
-  updateUI: function PO_PB_updateUI(PBmode) {
-    if (PBmode)
-      this._cmd_import.setAttribute("disabled", "true");
-    else
-      this._cmd_import.removeAttribute("disabled");
-  }
-};
-#endif
 
 let ContentArea = {
   _specialViews: new Map(),

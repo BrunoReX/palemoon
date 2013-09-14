@@ -197,6 +197,14 @@ private:
 
     void DoCallback()
     {
+        if (mStatus == NS_ERROR_NOT_AVAILABLE && !mProxyInfo) {
+            // If the PAC service is not avail (e.g. failed pac load
+            // or shutdown) then we will be going direct. Make that
+            // mapping now so that any filters are still applied.
+            mPACString = NS_LITERAL_CSTRING("DIRECT;");
+            mStatus = NS_OK;
+        }
+
         // Generate proxy info from the PAC string if appropriate
         if (NS_SUCCEEDED(mStatus) && !mProxyInfo && !mPACString.IsEmpty()) {
             mPPS->ProcessPACString(mPACString, mResolveFlags,
@@ -1550,7 +1558,12 @@ nsProtocolProxyService::Resolve_Internal(nsIURI *uri,
         return NS_OK;
     }
 
-    // proxy info values
+    // If we aren't in manual proxy configuration mode then we don't
+    // want to honor any manual specific prefs that might be still set
+    if (mProxyConfig != PROXYCONFIG_MANUAL)
+        return NS_OK;
+
+    // proxy info values for manual configuration mode
     const char *type = nullptr;
     const nsACString *host = nullptr;
     int32_t port = -1;

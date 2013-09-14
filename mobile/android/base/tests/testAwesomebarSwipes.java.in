@@ -3,18 +3,14 @@ package @ANDROID_PACKAGE_NAME@.tests;
 
 import com.jayway.android.robotium.solo.Solo;
 
-import android.app.Activity;
-import android.view.View;
 import android.widget.ListView;
 import android.widget.TabWidget;
 import android.support.v4.view.ViewPager;
 
-import java.util.ArrayList;
-
 import @ANDROID_PACKAGE_NAME@.*;
 
-/* Tests opening the all pages tab, that items look correct, clicking on an item
-   and long tapping on an item
+/* Tests swiping between tabs on the awesome bar and other basic
+   awesome bar tab selections.
 */
 
 public class testAwesomebarSwipes extends BaseTest {
@@ -24,7 +20,7 @@ public class testAwesomebarSwipes extends BaseTest {
     }
 
     public void testAwesomebarSwipes() {
-        mActions.expectGeckoEvent("Gecko:Ready").blockForEvent();
+        blockForGeckoReady();
 
         ListView list = getAllPagesList("about:firefox");
 
@@ -55,17 +51,5 @@ public class testAwesomebarSwipes extends BaseTest {
         mAsserter.is(pager.getCurrentItem(), 0, "Dragging right is not allowed when searching");
 
         mActions.sendSpecialKey(Actions.SpecialKey.BACK);
-    }
-
-    private ListView getAllPagesList(String url) {
-        Activity awesomeBarActivity = clickOnAwesomeBar();
-        mSolo.waitForText(url);
-
-        ArrayList<ListView> views = mSolo.getCurrentListViews();
-        for (ListView view : views) {
-            if (view.getTag() == "allPages")
-                return view;
-        }
-        return null;
     }
 }

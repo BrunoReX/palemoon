@@ -4,7 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsISupports.idl"
+#include "domstubs.idl"
+#include "nsIDocShellTreeItem.idl"
 #include "nsIAtom.idl"
 
 %{ C++
@@ -26,6 +27,7 @@ interface nsIContentViewer;
 interface nsIURIContentListener;
 interface nsIDOMEventTarget;
 interface nsIDocShellLoadInfo;
+interface nsIEditor;
 interface nsIWebNavigation;
 interface nsISimpleEnumerator;
 interface nsIInputStream;
@@ -38,9 +40,10 @@ interface nsIPrincipal;
 interface nsIWebBrowserPrint;
 interface nsIVariant;
 interface nsIPrivacyTransitionObserver;
+interface nsIReflowObserver;
 
-[scriptable, builtinclass, uuid(fc7e18cd-c671-4d78-a022-7de87555e15f)]
-interface nsIDocShell : nsISupports
+[scriptable, builtinclass, uuid(f453d2ee-bac7-46f9-a553-df918f0cc0d0)]
+interface nsIDocShell : nsIDocShellTreeItem
 {
   /**
    * Loads a given URI.  This will give priority to loading the requested URI
@@ -232,6 +235,11 @@ interface nsIDocShell : nsISupports
   attribute boolean allowImages;
 
   /**
+   * Attribute stating whether or not media (audio/video) should be loaded.
+   */
+  [infallible] attribute boolean allowMedia;
+
+  /**
    * Attribute that determines whether DNS prefetch is allowed for this subtree
    * of the docshell tree.  Defaults to true.  Setting this will make it take
    * effect starting with the next document loaded in the docshell.
@@ -406,6 +414,8 @@ interface nsIDocShell : nsISupports
   void historyPurged(in long numEntries);
 
   /*
+   * @deprecated, use nsIDocShell.QueryInterface(nsIDOMStorageManager) instead.
+   *
    * Retrieves the WebApps session storage object for the supplied principal.
    *
    * @param principal returns a storage for this principal
@@ -419,25 +429,14 @@ interface nsIDocShell : nsISupports
                                               in boolean create);
 
   /*
+   * @deprecated, use nsIDocShell.QueryInterface(nsIDOMStorageManager) instead.
+   *
    * Add a WebApps session storage object to the docshell.
    *
    * @param principal the principal the storage object is associated with
    * @param storage the storage object to add
    */
   void addSessionStorage(in nsIPrincipal principal, in nsIDOMStorage storage);
-
-  /**
-   * Clones all session storage objects and attaches them to the given docshell.
-   * Useful when duplicating tabs and their states.
-   *
-   * @param docShell the docshell to clone the sessionstorage objects to
-   */
-  void cloneSessionStoragesTo(in nsIDocShell docShell);
-
-  /**
-   * Removes all WebApps session storage objects attached to the docshell.
-   */
-  void clearSessionStorages();
 
   /**
    * Gets the channel for the currently loaded document, if any. 
@@ -467,14 +466,41 @@ interface nsIDocShell : nsISupports
   /**
    * This attribute determines whether Mixed Active Content is loaded on the
    * document. When it is true, mixed active content was not blocked and has
-   * loaded on the page. When it is false, mixed active content has not loaded on
-   * the page, either because there was no mixed active content requests on the page
-   * or such requests were blocked by nsMixedContentBlocker.
+   * loaded (or is about to load) on the page. When it is false, mixed active content
+   * has not loaded on the page, either because there was no mixed active content
+   * requests on the page or such requests were blocked by nsMixedContentBlocker.
    * This boolean is set to true in nsMixedContentBlocker if Mixed Active Content
    * is allowed (either explicitly on the page by the user or when the about:config
    * setting security.mixed_content.block_active_content is set to false).
    */
-  readonly attribute boolean hasMixedActiveContentLoaded;
+  [infallible] readonly attribute boolean hasMixedActiveContentLoaded;
+
+   /**
+   * This attribute determines whether a document has Mixed Active Content
+   * that has been blocked from loading. When it is true, there is definitely
+   * mixed active content on a page that has been blocked by
+   * nsMixedContentBlocker.  When it is false, there may or may not be mixed
+   * active content on a page, but if there is, it will load. Note that if the
+   * about:config setting security.mixed_content.block_active_content is set
+   * false, this boolean will be false, since blocking active content has been
+   * disabled.
+   */
+  [infallible] readonly attribute boolean hasMixedActiveContentBlocked;
+
+  /**
+   * This attribute determines whether Mixed Display Content is loaded on the
+   * document. When it is true, mixed display content was not blocked and has
+   * loaded (or is about to load) on the page. Similar behavior to
+   * hasMixedActiveContentLoaded.
+   */
+  [infallible] readonly attribute boolean hasMixedDisplayContentLoaded;
+
+   /**
+   * This attribute determines whether a document has Mixed Display Content
+   * that has been blocked from loading. Similar behavior to
+   * hasMixedActiveContentBlocked.
+   */
+  [infallible] readonly attribute boolean hasMixedDisplayContentBlocked;
 
   /**
    * Disconnects this docshell's editor from its window, and stores the
@@ -500,10 +526,7 @@ interface nsIDocShell : nsISupports
   /**
    * Whether this docshell can execute scripts based on its hierarchy.
    * The rule of thumb here is that we disable js if this docshell or any
-   * of its parents disallow scripting, unless the only reason for js being
-   * disabled in this docshell is a parent docshell having a document that
-   * is in design mode.  In that case, we explicitly allow scripting on the
-   * current docshell.
+   * of its parents disallow scripting.
    */
   readonly attribute boolean canExecuteScripts;
 
@@ -569,21 +592,28 @@ interface nsIDocShell : nsISupports
   attribute string charset;
 
   /**
+   * Called when the user chose an encoding override from the character
+   * encoding menu. Separate from the setter for the charset property to avoid
+   * extensions adding noise to the data.
+   */
+  void gatherCharsetMenuTelemetry();
+
+  /**
    * The charset forced by the user. When the charset attribute is set this
    * attribute is set to the same value.
    *
    * XXX Could this be replaced by a boolean?
    */
-  attribute nsIAtom forcedCharset;
+  attribute ACString forcedCharset;
 
   /**
    * In a child docshell, this is the charset of the parent docshell
    */
-  attribute nsIAtom parentCharset;
+  attribute ACString parentCharset;
 
   /*
    * In a child docshell, this is the source of parentCharset
-   * @see nsIParser
+   * @see nsCharsetSource.h
    */
   attribute int32_t parentCharsetSource;
 
@@ -592,6 +622,30 @@ interface nsIDocShell : nsISupports
    * private browsing status is changed. |obs| must support weak references.
    */
   void addWeakPrivacyTransitionObserver(in nsIPrivacyTransitionObserver obs);
+
+  /**
+   * Add an observer to the list of parties to be notified when reflows are
+   * occurring. |obs| must support weak references.
+   */
+  void addWeakReflowObserver(in nsIReflowObserver obs);
+
+  /**
+   * Remove an observer from the list of parties to be notified about reflows.
+   */
+  void removeWeakReflowObserver(in nsIReflowObserver obs);
+
+  /**
+   * Notify all attached observers that a reflow has just occurred.
+   *
+   * @param interruptible if true, the reflow was interruptible.
+   * @param start         timestamp when reflow started, in milliseconds since
+   *                      navigationStart (accurate to 1/1000 of a ms)
+   * @param end           timestamp when reflow ended, in milliseconds since
+   *                      navigationStart (accurate to 1/1000 of a ms)
+   */
+  [noscript] void notifyReflowObservers(in bool interruptible,
+                                        in DOMHighResTimeStamp start,
+                                        in DOMHighResTimeStamp end);
 
   /**
    * Returns true if this docshell corresponds to an <iframe mozbrowser>.
@@ -704,6 +758,35 @@ interface nsIDocShell : nsISupports
   attribute unsigned long sandboxFlags;
 
   /**
+   * This member variable determines whether a document has Mixed Active Content that
+   * was initially blocked from loading, but the user has choosen to override the
+   * block and allow the content to load. mMixedContentChannel is set to the document's
+   * channel when the user allows mixed content. The nsMixedContentBlocker content policy
+   * checks if the document's root channel matches the mMixedContentChannel.  If it matches,
+   * then Mixed Content is loaded.  If it does match, mixed content is blocked.
+   *
+   * A match implies that there is definitely mixed active content on a page that was
+   * initially blocked by nsMixedContentBlocker and then allowed and loaded by the user.
+   * A miss imples that IF there is mixed active content on the page AND it was
+   * blocked by nsMixedContentBlocker.cpp, the user has not choosen to override
+   * the block. Note that if the about:config setting
+   * security.mixed_content.block_active_content is set to false, this boolean
+   * will be false, mMixedContentChannel will remain null since blocking active content has
+   * been disabled and hence mMixedContentChannel will never be set.
+   */
+  attribute nsIChannel mixedContentChannel;
+
+  /**
+   * Checks whether the channel associated with the root docShell is equal to
+   * mMixedContentChannel. If they are the same, allowMixedContent is set to true.
+   * Checks if the root document has a secure connection. If it is, sets 
+   * rootHasSecureConnection to true. If the docShell is the root doc shell, 
+   * isRootDocShell is set to true. 
+   */
+  void GetAllowMixedContentAndConnectionData(out boolean rootHasSecureConnection, out boolean allowMixedContent, out boolean isRootDocShell);
+
+
+  /**
    * Are plugins allowed in the current document loaded in this docshell ?
    * (if there is one). This depends on whether plugins are allowed by this
    * docshell itself or if the document is sandboxed and hence plugins should
@@ -727,4 +810,60 @@ interface nsIDocShell : nsISupports
   void setFullscreenAllowed(in boolean allowed);
 
   [noscript, infallible] attribute boolean affectPrivateSessionLifetime;
+
+  /**
+   * Indicates whether the UI may enable the character encoding menu. The UI
+   * must disable the menu when this property is false.
+   */
+  [infallible] readonly attribute boolean mayEnableCharacterEncodingMenu;
+
+           attribute  nsIEditor editor;
+  readonly attribute  boolean   editable;             /* this docShell is editable */
+  readonly attribute  boolean   hasEditingSession;    /* this docShell has an editing session */
+    
+  /**
+   * Make this docShell editable, setting a flag that causes
+   * an editor to get created, either immediately, or after
+   * a url has been loaded.
+   *      @param  inWaitForUriLoad    true to wait for a URI before
+   *                                  creating the editor.
+   */     
+  void makeEditable(in boolean inWaitForUriLoad);
+
+  /**
+   * Get the SHEntry associated with a child docshell
+   */
+  nsISHEntry getChildSHEntry(in long aChildOffset);
+
+  /**
+   * Add a Child SHEntry for a frameset page, given the child's loadtype.
+   * If aCloneChildren is true, then aCloneReference's children will be
+   * cloned onto aHistoryEntry.
+   */
+  void addChildSHEntry(in nsISHEntry aCloneReference,
+                       in nsISHEntry aHistoryEntry,
+                       in long aChildOffset,
+                       in unsigned long aLoadType,
+                       in boolean aCloneChilden);
+
+  /**
+   * Whether this docshell should save entries in global history.
+   */
+  attribute boolean useGlobalHistory;
+
+  /**
+   * Removes nsISHEntry objects related to this docshell from session history.
+   * Use this only with subdocuments, like iframes.
+   */
+  void removeFromSessionHistory();
+
+  /**
+   * Set when an iframe/frame is added dynamically.
+   */
+  attribute boolean createdDynamically;
+
+  /**
+   * Returns false for mLSHE, true for mOSHE
+   */
+  boolean getCurrentSHEntry(out nsISHEntry aEntry);
 };

@@ -6,10 +6,6 @@
 let doc;
 let salutation;
 
-let tempScope = {};
-Cu.import("resource:///modules/devtools/Target.jsm", tempScope);
-let TargetFactory = tempScope.TargetFactory;
-
 function createDocument()
 {
   doc.body.innerHTML = '<div id="first" style="{ margin: 10em; ' +
@@ -20,7 +16,7 @@ function createDocument()
     'solely to provide some things to test the inspector initialization.</p>\n' +
     'If you are reading this, you should go do something else instead. Maybe ' +
     'read a book. Or better yet, write some test-cases for another bit of code. ' +
-    '<span style="{font-style: italic}">Maybe more inspector test-cases!</span></p>\n' +
+    '<span style="{font-style: italic}">Inspector\'s!</span></p>\n' +
     '<p id="closing">end transmission</p>\n' +
     '</div>';
   doc.title = "Inspector Initialization Test";
@@ -92,7 +88,7 @@ function testBreadcrumbs(node)
 function _clickOnInspectMenuItem(node) {
   document.popupNode = node;
   var contentAreaContextMenu = document.getElementById("contentAreaContextMenu");
-  var contextMenu = new nsContextMenu(contentAreaContextMenu, gBrowser);
+  var contextMenu = new nsContextMenu(contentAreaContextMenu);
   return contextMenu.inspectNode();
 }
 
@@ -142,4 +138,3 @@ function test()
 
   content.location = "data:text/html,basic tests for inspector";
 }
-

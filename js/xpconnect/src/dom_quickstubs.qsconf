@@ -46,178 +46,19 @@ members = [
     'nsIDOMWindow.onmouseleave',
     'nsIDOMWindowPerformance.performance',
     'nsIDOMJSWindow.dump',
-    'nsIDOMScreen.top',
-    'nsIDOMScreen.height',
-    'nsIDOMScreen.width',
-    'nsIDOMScreen.left',
-    'nsIDOMClientRect.*',
-    'nsIDOMPaintRequest.*',
     # nsLocationSH has ~ALLOW_PROP_MODS_TO_PROTOTYPE, so don't try.
     #'nsIDOMLocation.hostname',
     #'nsIDOMLocation.href',
 
-    # dom/interfaces/canvas
-    #
-    # canvas friends
-    'nsIDOMTextMetrics.*',
-    'nsIDOMCanvasGradient.*',
-    'nsIDOMCanvasPattern.*',
-
     # dom/interfaces/core
-    'nsIDOMCharacterData.data',
-    'nsIDOMCharacterData.length',
-    'nsIDOMDocument.onreadystatechange',
-    'nsIDOMDocument.onmouseenter',
-    'nsIDOMDocument.onmouseleave',
-    'nsIDOMElement.onmouseenter',
-    'nsIDOMElement.onmouseleave',
-    'nsIDOMNamedNodeMap.item',
-    'nsIDOMNamedNodeMap.length',
-    'nsIDOMText.splitText',
     'nsIDOMDOMStringList.*',
-    'nsIDOMXULDocument.getBoxObjectFor',
 
-    # dom/interfaces/css
-    'nsIDOMElementCSSInlineStyle.*',
-    'nsIDOMRect.*',
-
-    # dom/interfaces/events
-    'nsIDOMEventTarget.addEventListener',
-    'nsIDOMEventTarget.removeEventListener',
-    'nsIDOMEventTarget.dispatchEvent',
-
-    'nsIDOMEvent.type',
-    'nsIDOMEvent.target',
-    'nsIDOMEvent.currentTarget',
-    'nsIDOMEvent.eventPhase',
-    'nsIDOMEvent.bubbles',
-    'nsIDOMEvent.cancelable',
-    'nsIDOMEvent.timeStamp',
-    'nsIDOMEvent.stopPropagation',
-    'nsIDOMEvent.preventDefault',
-    'nsIDOMEvent.initEvent',
-    'nsIDOMEvent.defaultPrevented',
-    'nsIDOMEvent.stopImmediatePropagation',
-    'nsIDOMMouseEvent.*',
-    'nsIDOMKeyEvent.*',
-    'nsIDOMMutationEvent.*',
-    'nsIDOMDragEvent.*',
-    'nsIDOMScrollAreaEvent.*',
-    'nsIDOMNotifyPaintEvent.*',
-    'nsIDOMMessageEvent.*',
-    'nsIDOMMouseScrollEvent.*',
     'nsIDOMProgressEvent.lengthComputable',
     'nsIDOMProgressEvent.loaded',
     'nsIDOMProgressEvent.total',
     #XXX Can't quickstub initProgressEvent because it has long long parameters.
-    'nsIDOMUIEvent.which',
-    'nsIDOMUIEvent.rangeParent',
-    'nsIDOMUIEvent.rangeOffset',
-    'nsIDOMUIEvent.pageX',
-    'nsIDOMUIEvent.pageY',
-    'nsIDOMUIEvent.isChar',
 
-    'nsIDOMTouch.*',
     'nsIDOMTouchList.*',
-    'nsIDOMTouchEvent.*',
-
-    # dom/interfaces/geolocation - None.
-
-    # dom/interfaces/html
-    'nsIDOMHTMLBaseElement.href',
-    'nsIDOMHTMLBaseElement.target',
-    'nsIDOMHTMLButtonElement.name',
-    'nsIDOMHTMLButtonElement.form',
-    'nsIDOMHTMLButtonElement.value',
-    'nsIDOMHTMLButtonElement.disabled',
-    'nsIDOMHTMLCommandElement.*',
-    'nsIDOMHTMLFormElement.elements',
-    'nsIDOMHTMLFormElement.name',
-    'nsIDOMHTMLFormElement.submit',
-    'nsIDOMHTMLFormElement.length',
-    'nsIDOMHTMLFormElement.target',
-    'nsIDOMHTMLFormElement.action',
-    'nsIDOMHTMLFrameElement.src',
-    'nsIDOMHTMLFrameElement.contentDocument',
-    'nsIDOMHTMLFrameElement.contentWindow',
-    'nsIDOMHTMLFrameElement.name',
-    'nsIDOMHTMLIFrameElement.src',
-    'nsIDOMHTMLIFrameElement.contentDocument',
-    'nsIDOMHTMLIFrameElement.contentWindow',
-    'nsIDOMHTMLInputElement.defaultChecked',
-    'nsIDOMHTMLInputElement.disabled',
-    'nsIDOMHTMLInputElement.select',
-    'nsIDOMHTMLInputElement.checked',
-    'nsIDOMHTMLInputElement.type',
-    'nsIDOMHTMLInputElement.form',
-    'nsIDOMHTMLInputElement.src',
-    'nsIDOMHTMLInputElement.name',
-    'nsIDOMHTMLInputElement.value',
-    'nsIDOMHTMLInputElement.files',
-    'nsIDOMHTMLInputElement.textLength',
-    'nsIDOMHTMLInputElement.selectionStart',
-    'nsIDOMHTMLInputElement.selectionEnd',
-    'nsIDOMHTMLInputElement.selectionDirection',
-    'nsIDOMHTMLInputElement.setSelectionRange',
-    'nsIDOMHTMLLinkElement.disabled',
-    'nsIDOMHTMLMeterElement.*',
-    'nsIDOMHTMLMenuElement.*',
-    'nsIDOMHTMLMenuItemElement.*',
-    'nsIDOMHTMLOptionElement.index',
-    'nsIDOMHTMLOptionElement.selected',
-    'nsIDOMHTMLOptionElement.form',
-    'nsIDOMHTMLOptionElement.text',
-    'nsIDOMHTMLOptionElement.defaultSelected',
-    'nsIDOMHTMLOptionElement.value',
-    'nsIDOMHTMLOptionElement.label',
-    'nsIDOMHTMLOptionElement.disabled',
-    'nsIDOMHTMLProgressElement.*',
-    'nsIDOMHTMLSelectElement.name',
-    'nsIDOMHTMLSelectElement.form',
-    'nsIDOMHTMLSelectElement.add',
-    'nsIDOMHTMLSelectElement.value',
-    'nsIDOMHTMLSelectElement.disabled',
-    'nsIDOMHTMLSelectElement.length',
-    'nsIDOMHTMLSelectElement.remove',
-    'nsIDOMHTMLSelectElement.selectedIndex',
-    'nsIDOMHTMLSelectElement.item',
-    'nsIDOMHTMLSelectElement.type',
-    'nsIDOMHTMLSelectElement.options',
-    'nsIDOMHTMLSelectElement.size',
-    'nsIDOMHTMLStyleElement.disabled',
-    'nsIDOMHTMLTextAreaElement.rows',
-    'nsIDOMHTMLTextAreaElement.name',
-    'nsIDOMHTMLTextAreaElement.form',
-    'nsIDOMHTMLTextAreaElement.defaultValue',
-    'nsIDOMHTMLTextAreaElement.cols',
-    'nsIDOMHTMLTextAreaElement.value',
-    'nsIDOMHTMLTextAreaElement.type',
-    'nsIDOMHTMLTextAreaElement.select',
-    'nsIDOMHTMLTextAreaElement.setSelectionRange',
-    'nsIDOMHTMLTextAreaElement.selectionStart',
-    'nsIDOMHTMLTextAreaElement.selectionEnd',
-    'nsIDOMHTMLTextAreaElement.selectionDirection',
-    'nsIDOMHTMLTextAreaElement.textLength',
-    'nsIDOMHTMLTextAreaElement.wrap',
-    'nsIDOMHTMLTitleElement.text',
-    'nsIDOMHTMLCanvasElement.width',
-    'nsIDOMHTMLCanvasElement.height',
-    'nsIDOMHTMLCanvasElement.getContext',
-    'nsIDOMHTMLCanvasElement.toDataURL',
-
-    # dom/interfaces/json - None.
-    # All methods of nsIJSON call GetCurrentNativeCallContext.
-
-    # dom/interfaces/load-save - None.
-
-    # dom/interfaces/offline - None.
-
-    # dom/interfaces/range
-    'nsIDOMRange.*',
-
-    # dom/interfaces/sidebar - None.
-
-    # dom/interfaces/smil - None.
 
     # dom/interfaces/storage
     'nsIDOMToString.toString',
@@ -227,16 +68,6 @@ members = [
     'nsIDOMStorage.key',
     'nsIDOMStorage.removeItem',
     'nsIDOMStorage.clear',
-    'nsIDOMStorageItem.value',
-
-    # dom/interfaces/stylesheets - None.
-
-    # dom/interfaces/svg - None.
-
-    # dom/interfaces/traversal
-    'nsIDOMNodeIterator.nextNode',
-
-    # dom/interfaces/xbl - None.
 
     # dom/interfaces/xpath
     'nsIDOMXPathExpression.evaluate',
@@ -251,9 +82,6 @@ members = [
     'nsIDOMXPathResult.singleNodeValue',
     'nsIDOMNSXPathExpression.evaluateWithContext',
 
-    # dom/interfaces/xul
-    'nsIDOMXULElement.*',
-
     # layout/xul/base/public
     'nsIBoxObject.x',
     'nsIBoxObject.y',
@@ -262,19 +90,10 @@ members = [
     'nsIBoxObject.width',
     'nsIBoxObject.height',
 
-    # FileReader
-    'nsIDOMFileReader.*',
-    
-    # Audio
-    'nsIDOMNotifyAudioAvailableEvent.frameBuffer',
-    'nsIDOMNotifyAudioAvailableEvent.time',
-    'nsIDOMHTMLAudioElement.mozWriteAudio',
-
     # dom/indexedDB
     'nsIIDBCursor.*',
     'nsIIDBCursorWithValue.*',
     'nsIIDBDatabase.*',
-    'nsIIDBFactory.*',
     'nsIIDBFileHandle.*',
     'nsIIDBIndex.*',
     'nsIIDBKeyRange.*',
@@ -282,18 +101,15 @@ members = [
     'nsIIDBRequest.*',
     'nsIIDBTransaction.*',
     'nsIIDBOpenDBRequest.*',
-    'nsIIDBVersionChangeEvent.*',
-    'nsIIndexedDatabaseUsageCallback.*',
     'nsIIndexedDatabaseManager.*',
 
-    'nsIDOMDOMError.*',
-
     # dom/file
-    'nsIDOMFileHandle.*',
-    '-nsIDOMFileHandle.getFileId',
-    '-nsIDOMFileHandle.getFileInfo',
-    'nsIDOMFileRequest.*',
     'nsIDOMLockedFile.*',
+
+    # dom/quota
+    'nsIQuotaManager.*',
+    'nsIQuotaRequest.*',
+    'nsIUsageCallback.*',
     ]
 
 # Most interfaces can be found by searching the includePath; to find
@@ -304,10 +120,6 @@ members = [
 #
 irregularFilenames = {
     # stowaways
-    'nsIDOMTextMetrics': 'nsIDOMCanvasRenderingContext2D',
-    'nsIDOMCanvasGradient': 'nsIDOMCanvasRenderingContext2D',
-    'nsIDOMCanvasPattern': 'nsIDOMCanvasRenderingContext2D',
-
     'nsIDOMBlob': 'nsIDOMFile',
 
     'nsIIndexedDatabaseUsageCallback': 'nsIIndexedDatabaseManager',
@@ -321,32 +133,10 @@ irregularFilenames = {
     }
 
 customIncludes = [
-    'nsINode.h',
-    'nsIContent.h',
-    'nsIDocument.h',
-    'nsCSSPropertiesQS.h',
-    'nsDOMTokenList.h',
-    'nsGenericDOMDataNode.h',
-    'mozilla/dom/Element.h',
-    'nsGenericHTMLElement.h',
-    'nsSVGElement.h',
     'nsDOMQS.h',
-    'nsDOMStringMap.h',
-    'HTMLPropertiesCollection.h',
-    'nsHTMLMenuElement.h',
-    'nsICSSDeclaration.h',
-    'mozilla/dom/NodeBinding.h',
-    'mozilla/dom/ElementBinding.h',
-    'mozilla/dom/HTMLElementBinding.h',
-    'mozilla/dom/DocumentBinding.h',
-    'mozilla/dom/SVGElementBinding.h',
     'nsPerformance.h',
-    'mozilla/dom/HTMLDocumentBinding.h',
-    ]
-
-customReturnInterfaces = [
-    'nsIDOMCanvasPattern',
-    'nsIDOMCanvasGradient',
+    'mozilla/dom/EventTargetBinding.h',
+    'mozilla/dom/EventBinding.h',
     ]
 
 nsIDOMStorage_Clear_customMethodCallCode = """
@@ -358,15 +148,6 @@ nsIDOMStorage_Clear_customMethodCallCode = """
 customMethodCalls = {
     'nsIDOMStorage_Clear': {
         'code': nsIDOMStorage_Clear_customMethodCallCode
-        },
-    'nsIDOMElementCSSInlineStyle_GetStyle': {
-        'thisType': 'nsStyledElement',
-        'code': '    /* XXXbz MathML elements inherit from nsStyledElement but\n'
-                '       don\'t actually implement GetStyle. */\n'
-                '    if (self->GetNameSpaceID() == kNameSpaceID_MathML)\n'
-                '      return xpc_qsThrow(cx, NS_ERROR_XPC_BAD_CONVERT_JS);\n'
-                '    nsIDOMCSSStyleDeclaration* result = '
-                'self->GetStyle(&rv);'
         },
     'nsIDOMWindow_GetOnmouseenter' : {
         'thisType' : 'nsIDOMWindow',
@@ -389,53 +170,11 @@ customMethodCalls = {
         'code' : '    nsPerformance* result = self->GetPerformance();\n',
         'canFail': False,
         },
-    'nsIDOMDocument_GetOnreadystatechange' : {
-        'thisType' : 'nsDocument',
-        'unwrapThisFailureFatal' : False
-        },
-    'nsIDOMDocument_SetOnreadystatechange' : {
-        'thisType' : 'nsDocument',
-        'unwrapThisFailureFatal' : False
-        },
-    'nsIDOMDocument_GetOnmouseenter' : {
-        'thisType' : 'nsDocument',
-        'unwrapThisFailureFatal' : False
-        },
-    'nsIDOMDocument_SetOnmouseenter' : {
-        'thisType' : 'nsDocument',
-        'unwrapThisFailureFatal' : False
-        },
-    'nsIDOMDocument_GetOnmouseleave' : {
-        'thisType' : 'nsDocument',
-        'unwrapThisFailureFatal' : False
-        },
-    'nsIDOMDocument_SetOnmouseleave' : {
-        'thisType' : 'nsDocument',
-        'unwrapThisFailureFatal' : False
-        },
-    'nsIDOMElement_GetOnmouseenter' : {
-        'thisType' : 'mozilla::dom::Element',
-        'unwrapThisFailureFatal' : False
-        },
-    'nsIDOMElement_SetOnmouseenter' : {
-        'thisType' : 'mozilla::dom::Element',
-        'unwrapThisFailureFatal' : False
-        },
-    'nsIDOMElement_GetOnmouseleave' : {
-        'thisType' : 'mozilla::dom::Element',
-        'unwrapThisFailureFatal' : False
-        },
-    'nsIDOMElement_SetOnmouseleave' : {
-        'thisType' : 'mozilla::dom::Element',
-        'unwrapThisFailureFatal' : False
-        },
     }
 
 newBindingProperties = {
-    'nsIDOMNode': 'mozilla::dom::NodeBinding::sNativePropertyHooks.mNativeProperties.regular',
-    'nsIDOMElement': 'mozilla::dom::ElementBinding::sNativePropertyHooks.mNativeProperties.regular',
-    'nsIDOMHTMLElement': 'mozilla::dom::HTMLElementBinding::sNativePropertyHooks.mNativeProperties.regular',
-    'nsIDOMDocument': 'mozilla::dom::DocumentBinding::sNativePropertyHooks.mNativeProperties.regular',
-    'nsIDOMSVGElement': 'mozilla::dom::SVGElementBinding::sNativePropertyHooks.mNativeProperties.regular',
-    'nsIDOMHTMLDocument': 'mozilla::dom::HTMLDocumentBinding::sNativePropertyHooks.mNativeProperties.regular',
+    # Once the last entry here goes away, we can make the sNativePropertyHooks
+    # of bindings static.
+    'nsIDOMEventTarget': 'mozilla::dom::EventTargetBinding::sNativePropertyHooks.mNativeProperties.regular',
+    'nsIDOMEvent': 'mozilla::dom::EventBinding::sNativePropertyHooks.mNativeProperties.regular',
     }

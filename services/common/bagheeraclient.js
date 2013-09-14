@@ -11,6 +11,8 @@
 
 "use strict";
 
+#ifndef MERGED_COMPARTMENT
+
 this.EXPORTED_SYMBOLS = [
   "BagheeraClient",
   "BagheeraClientRequestResult",
@@ -18,7 +20,10 @@ this.EXPORTED_SYMBOLS = [
 
 const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
-Cu.import("resource://gre/modules/commonjs/promise/core.js");
+#endif
+
+Cu.import("resource://gre/modules/Promise.jsm");
+Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://services-common/log4moz.js");
 Cu.import("resource://services-common/rest.js");
 Cu.import("resource://services-common/utils.js");
@@ -31,9 +36,25 @@ this.BagheeraClientRequestResult = function BagheeraClientRequestResult() {
   this.transportSuccess = false;
   this.serverSuccess = false;
   this.request = null;
-}
+};
 
 Object.freeze(BagheeraClientRequestResult.prototype);
+
+
+/**
+ * Wrapper around RESTRequest so logging is sane.
+ */
+function BagheeraRequest(uri) {
+  RESTRequest.call(this, uri);
+
+  this._log = Log4Moz.repository.getLogger("Services.BagheeraClient");
+  this._log.level = Log4Moz.Level.Debug;
+}
+
+BagheeraRequest.prototype = Object.freeze({
+  __proto__: RESTRequest.prototype,
+});
+
 
 /**
  * Create a new Bagheera client instance.
@@ -49,16 +70,16 @@ this.BagheeraClient = function BagheeraClient(baseURI) {
   }
 
   this._log = Log4Moz.repository.getLogger("Services.BagheeraClient");
-  this._log.level = Log4Moz.Level["Debug"];
+  this._log.level = Log4Moz.Level.Debug;
 
   this.baseURI = baseURI;
 
   if (!baseURI.endsWith("/")) {
     this.baseURI += "/";
   }
-}
+};
 
-BagheeraClient.prototype = {
+BagheeraClient.prototype = Object.freeze({
   /**
    * Channel load flags for all requests.
    *
@@ -90,14 +111,21 @@ BagheeraClient.prototype = {
    *        (string|object) Data to upload. Can be specified as a string (which
    *        is assumed to be JSON) or an object. If an object, it will be fed into
    *        JSON.stringify() for serialization.
-   * @param deleteOldID
-   *        (string) Old document ID to delete as part of upload. If not
-   *        specified, no old documents will be deleted as part of upload. The
-   *        string value is typically a UUID in hex form.
+   * @param options
+   *        (object) Extra options to control behavior. Recognized properties:
+   *
+   *          deleteIDs -- (array) Old document IDs to delete as part of
+   *            upload. If not specified, no old documents will be deleted as
+   *            part of upload. The array values are typically UUIDs in hex
+   *            form.
+   *
+   *          telemetryCompressed -- (string) Telemetry histogram to record
+   *            compressed size of payload under. If not defined, no telemetry
+   *            data for the compressed size will be recorded.
    *
    * @return Promise<BagheeraClientRequestResult>
    */
-  uploadJSON: function uploadJSON(namespace, id, payload, deleteOldID=null) {
+  uploadJSON: function uploadJSON(namespace, id, payload, options={}) {
     if (!namespace) {
       throw new Error("namespace argument must be defined.");
     }
@@ -108,6 +136,11 @@ BagheeraClient.prototype = {
 
     if (!payload) {
       throw new Error("payload argument must be defined.");
+    }
+
+    if (options && typeof(options) != "object") {
+      throw new Error("Unexpected type for options argument. Expected object. " +
+                      "Got: " + typeof(options));
     }
 
     let uri = this._submitURI(namespace, id);
@@ -124,17 +157,35 @@ BagheeraClient.prototype = {
 
     this._log.info("Uploading data to " + uri);
 
-    let request = new RESTRequest(uri);
+    let request = new BagheeraRequest(uri);
     request.loadFlags = this._loadFlags;
     request.timeout = this.DEFAULT_TIMEOUT_MSEC;
 
-    if (deleteOldID) {
-      request.setHeader("X-Obsolete-Document", deleteOldID);
+    // Since API changed, throw on old API usage.
+    if ("deleteID" in options) {
+      throw new Error("API has changed, use (array) deleteIDs instead");
+    }
+
+    let deleteIDs;
+    if (options.deleteIDs && options.deleteIDs.length > 0) {
+      deleteIDs = options.deleteIDs;
+      this._log.debug("Will delete " + deleteIDs.join(", "));
+      request.setHeader("X-Obsolete-Document", deleteIDs.join(","));
     }
 
     let deferred = Promise.defer();
 
     data = CommonUtils.convertString(data, "uncompressed", "deflate");
+    if (options.telemetryCompressed) {
+      try {
+        let h = Services.telemetry.getHistogramById(options.telemetryCompressed);
+        h.add(data.length);
+      } catch (ex) {
+        this._log.warn("Unable to record telemetry for compressed payload size: " +
+                       CommonUtils.exceptionStr(ex));
+      }
+    }
+
     // TODO proper header per bug 807134.
     request.setHeader("Content-Type", "application/json+zlib; charset=utf-8");
 
@@ -143,6 +194,7 @@ BagheeraClient.prototype = {
     let result = new BagheeraClientRequestResult();
     result.namespace = namespace;
     result.id = id;
+    result.deleteIDs = deleteIDs ? deleteIDs.slice(0) : null;
 
     request.onComplete = this._onComplete.bind(this, request, deferred, result);
     request.post(data);
@@ -163,7 +215,7 @@ BagheeraClient.prototype = {
   deleteDocument: function deleteDocument(namespace, id) {
     let uri = this._submitURI(namespace, id);
 
-    let request = new RESTRequest(uri);
+    let request = new BagheeraRequest(uri);
     request.loadFlags = this._loadFlags;
     request.timeout = this.DEFAULT_TIMEOUT_MSEC;
 
@@ -221,6 +273,5 @@ BagheeraClient.prototype = {
 
     deferred.resolve(result);
   },
-};
+});
 
-Object.freeze(BagheeraClient.prototype);

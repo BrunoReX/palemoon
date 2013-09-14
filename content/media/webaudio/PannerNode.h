@@ -9,162 +9,264 @@
 
 #include "AudioNode.h"
 #include "AudioParam.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/TypedEnum.h"
+#include "mozilla/dom/PannerNodeBinding.h"
 #include "ThreeDPoint.h"
+#include "mozilla/WeakPtr.h"
+#include "mozilla/Preferences.h"
+#include "WebAudioUtils.h"
+#include <set>
 
 namespace mozilla {
 namespace dom {
 
 class AudioContext;
+class AudioBufferSourceNode;
 
-MOZ_BEGIN_ENUM_CLASS(PanningModelEnum, uint16_t)
-  EQUALPOWER = 0,
-  HRTF = 1,
-  SOUNDFIELD = 2,
-  Max = 2
-MOZ_END_ENUM_CLASS(PanningModelEnum)
-MOZ_BEGIN_ENUM_CLASS(DistanceModelEnum, uint16_t)
-  LINEAR_DISTANCE = 0,
-  INVERSE_DISTANCE = 1,
-  EXPONENTIAL_DISTANCE = 2,
-  Max = 2
-MOZ_END_ENUM_CLASS(DistanceModelEnum)
-
-class PannerNode : public AudioNode
+class PannerNode : public AudioNode,
+                   public SupportsWeakPtr<PannerNode>
 {
 public:
   explicit PannerNode(AudioContext* aContext);
+  virtual ~PannerNode();
 
-  virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope,
-                               bool* aTriedToWrap);
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
-  virtual uint32_t MaxNumberOfInputs() const MOZ_FINAL MOZ_OVERRIDE
-  {
-    return 1;
-  }
-  virtual uint32_t MaxNumberOfOutputs() const MOZ_FINAL MOZ_OVERRIDE
-  {
-    return 1;
-  }
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(PannerNode, AudioNode)
 
-  uint16_t PanningModel() const
+  PanningModelType PanningModel() const
   {
-    return static_cast<uint16_t> (mPanningModel);
+    return mPanningModel;
   }
-  void SetPanningModel(uint16_t aPanningModel, ErrorResult& aRv)
+  void SetPanningModel(PanningModelType aPanningModel)
   {
-    PanningModelEnum panningModel =
-      static_cast<PanningModelEnum> (aPanningModel);
-    if (panningModel > PanningModelEnum::Max) {
-      aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
-    } else {
-      mPanningModel = panningModel;
+    if (!Preferences::GetBool("media.webaudio.legacy.PannerNode")) {
+      // Do not accept the alternate enum values unless the legacy pref
+      // has been turned on.
+      switch (aPanningModel) {
+      case PanningModelType::_0:
+      case PanningModelType::_1:
+        // Do nothing in order to emulate setting an invalid enum value.
+        return;
+      default:
+        // Shut up the compiler warning
+        break;
+      }
     }
-  }
 
-  uint16_t DistanceModel() const
-  {
-    return static_cast<uint16_t> (mDistanceModel);
-  }
-  void SetDistanceModel(uint16_t aDistanceModel, ErrorResult& aRv)
-  {
-    DistanceModelEnum distanceModel =
-      static_cast<DistanceModelEnum> (aDistanceModel);
-    if (distanceModel > DistanceModelEnum::Max) {
-      aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
-    } else {
-      mDistanceModel = distanceModel;
+    // Handle the alternate enum values
+    switch (aPanningModel) {
+    case PanningModelType::_0: aPanningModel = PanningModelType::Equalpower; break;
+    case PanningModelType::_1: aPanningModel = PanningModelType::HRTF; break;
+    default:
+      // Shut up the compiler warning
+      break;
     }
+
+    mPanningModel = aPanningModel;
+    SendInt32ParameterToStream(PANNING_MODEL, int32_t(mPanningModel));
   }
 
-  void SetPosition(float aX, float aY, float aZ)
+  DistanceModelType DistanceModel() const
   {
+    return mDistanceModel;
+  }
+  void SetDistanceModel(DistanceModelType aDistanceModel)
+  {
+    if (!Preferences::GetBool("media.webaudio.legacy.PannerNode")) {
+      // Do not accept the alternate enum values unless the legacy pref
+      // has been turned on.
+      switch (aDistanceModel) {
+      case DistanceModelType::_0:
+      case DistanceModelType::_1:
+      case DistanceModelType::_2:
+        // Do nothing in order to emulate setting an invalid enum value.
+        return;
+      default:
+        // Shut up the compiler warning
+        break;
+      }
+    }
+
+    // Handle the alternate enum values
+    switch (aDistanceModel) {
+    case DistanceModelType::_0: aDistanceModel = DistanceModelType::Linear; break;
+    case DistanceModelType::_1: aDistanceModel = DistanceModelType::Inverse; break;
+    case DistanceModelType::_2: aDistanceModel = DistanceModelType::Exponential; break;
+    default:
+      // Shut up the compiler warning
+      break;
+    }
+
+    mDistanceModel = aDistanceModel;
+    SendInt32ParameterToStream(DISTANCE_MODEL, int32_t(mDistanceModel));
+  }
+
+  void SetPosition(double aX, double aY, double aZ)
+  {
+    if (WebAudioUtils::FuzzyEqual(mPosition.x, aX) &&
+        WebAudioUtils::FuzzyEqual(mPosition.y, aY) &&
+        WebAudioUtils::FuzzyEqual(mPosition.z, aZ)) {
+      return;
+    }
     mPosition.x = aX;
     mPosition.y = aY;
     mPosition.z = aZ;
+    SendThreeDPointParameterToStream(POSITION, mPosition);
   }
 
-  void SetOrientation(float aX, float aY, float aZ)
+  void SetOrientation(double aX, double aY, double aZ)
   {
+    if (WebAudioUtils::FuzzyEqual(mOrientation.x, aX) &&
+        WebAudioUtils::FuzzyEqual(mOrientation.y, aY) &&
+        WebAudioUtils::FuzzyEqual(mOrientation.z, aZ)) {
+      return;
+    }
     mOrientation.x = aX;
     mOrientation.y = aY;
     mOrientation.z = aZ;
+    SendThreeDPointParameterToStream(ORIENTATION, mOrientation);
   }
 
-  void SetVelocity(float aX, float aY, float aZ)
+  void SetVelocity(double aX, double aY, double aZ)
   {
+    if (WebAudioUtils::FuzzyEqual(mVelocity.x, aX) &&
+        WebAudioUtils::FuzzyEqual(mVelocity.y, aY) &&
+        WebAudioUtils::FuzzyEqual(mVelocity.z, aZ)) {
+      return;
+    }
     mVelocity.x = aX;
     mVelocity.y = aY;
     mVelocity.z = aZ;
+    SendThreeDPointParameterToStream(VELOCITY, mVelocity);
+    SendDopplerToSourcesIfNeeded();
   }
 
-  float RefDistance() const
+  double RefDistance() const
   {
     return mRefDistance;
   }
-  void SetRefDistance(float aRefDistance)
+  void SetRefDistance(double aRefDistance)
   {
+    if (WebAudioUtils::FuzzyEqual(mRefDistance, aRefDistance)) {
+      return;
+    }
     mRefDistance = aRefDistance;
+    SendDoubleParameterToStream(REF_DISTANCE, mRefDistance);
   }
 
-  float MaxDistance() const
+  double MaxDistance() const
   {
     return mMaxDistance;
   }
-  void SetMaxDistance(float aMaxDistance)
+  void SetMaxDistance(double aMaxDistance)
   {
+    if (WebAudioUtils::FuzzyEqual(mMaxDistance, aMaxDistance)) {
+      return;
+    }
     mMaxDistance = aMaxDistance;
+    SendDoubleParameterToStream(MAX_DISTANCE, mMaxDistance);
   }
 
-  float RolloffFactor() const
+  double RolloffFactor() const
   {
     return mRolloffFactor;
   }
-  void SetRolloffFactor(float aRolloffFactor)
+  void SetRolloffFactor(double aRolloffFactor)
   {
+    if (WebAudioUtils::FuzzyEqual(mRolloffFactor, aRolloffFactor)) {
+      return;
+    }
     mRolloffFactor = aRolloffFactor;
+    SendDoubleParameterToStream(ROLLOFF_FACTOR, mRolloffFactor);
   }
 
-  float ConeInnerAngle() const
+  double ConeInnerAngle() const
   {
     return mConeInnerAngle;
   }
-  void SetConeInnerAngle(float aConeInnerAngle)
+  void SetConeInnerAngle(double aConeInnerAngle)
   {
+    if (WebAudioUtils::FuzzyEqual(mConeInnerAngle, aConeInnerAngle)) {
+      return;
+    }
     mConeInnerAngle = aConeInnerAngle;
+    SendDoubleParameterToStream(CONE_INNER_ANGLE, mConeInnerAngle);
   }
 
-  float ConeOuterAngle() const
+  double ConeOuterAngle() const
   {
     return mConeOuterAngle;
   }
-  void SetConeOuterAngle(float aConeOuterAngle)
+  void SetConeOuterAngle(double aConeOuterAngle)
   {
+    if (WebAudioUtils::FuzzyEqual(mConeOuterAngle, aConeOuterAngle)) {
+      return;
+    }
     mConeOuterAngle = aConeOuterAngle;
+    SendDoubleParameterToStream(CONE_OUTER_ANGLE, mConeOuterAngle);
   }
 
-  float ConeOuterGain() const
+  double ConeOuterGain() const
   {
     return mConeOuterGain;
   }
-  void SetConeOuterGain(float aConeOuterGain)
+  void SetConeOuterGain(double aConeOuterGain)
   {
+    if (WebAudioUtils::FuzzyEqual(mConeOuterGain, aConeOuterGain)) {
+      return;
+    }
     mConeOuterGain = aConeOuterGain;
+    SendDoubleParameterToStream(CONE_OUTER_GAIN, mConeOuterGain);
   }
 
+  float ComputeDopplerShift();
+  void SendDopplerToSourcesIfNeeded();
+  void FindConnectedSources();
+  void FindConnectedSources(AudioNode* aNode, nsTArray<AudioBufferSourceNode*>& aSources, std::set<AudioNode*>& aSeenNodes);
+
 private:
-  PanningModelEnum mPanningModel;
-  DistanceModelEnum mDistanceModel;
+  friend class AudioListener;
+  friend class PannerNodeEngine;
+  enum EngineParameters {
+    LISTENER_POSITION,
+    LISTENER_ORIENTATION,
+    LISTENER_UPVECTOR,
+    LISTENER_VELOCITY,
+    LISTENER_DOPPLER_FACTOR,
+    LISTENER_SPEED_OF_SOUND,
+    PANNING_MODEL,
+    DISTANCE_MODEL,
+    POSITION,
+    ORIENTATION,
+    VELOCITY,
+    REF_DISTANCE,
+    MAX_DISTANCE,
+    ROLLOFF_FACTOR,
+    CONE_INNER_ANGLE,
+    CONE_OUTER_ANGLE,
+    CONE_OUTER_GAIN
+  };
+
+private:
+  PanningModelType mPanningModel;
+  DistanceModelType mDistanceModel;
   ThreeDPoint mPosition;
   ThreeDPoint mOrientation;
   ThreeDPoint mVelocity;
-  float mRefDistance;
-  float mMaxDistance;
-  float mRolloffFactor;
-  float mConeInnerAngle;
-  float mConeOuterAngle;
-  float mConeOuterGain;
+  double mRefDistance;
+  double mMaxDistance;
+  double mRolloffFactor;
+  double mConeInnerAngle;
+  double mConeOuterAngle;
+  double mConeOuterGain;
+
+  // An array of all the AudioBufferSourceNode connected directly or indirectly
+  // to this AudioPannerNode.
+  nsTArray<AudioBufferSourceNode*> mSources;
 };
 
 }

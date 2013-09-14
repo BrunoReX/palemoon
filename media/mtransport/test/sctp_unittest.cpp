@@ -12,6 +12,7 @@
 
 #include "sigslot.h"
 
+#include "logging.h"
 #include "nsNetCID.h"
 #include "nsITimer.h"
 #include "nsComponentManagerUtils.h"
@@ -22,7 +23,6 @@
 #include "transportlayer.h"
 #include "transportlayerloopback.h"
 
-#include "logging.h"
 #include "mtransport_test_utils.h"
 #include "runnable_utils.h"
 #include "usrsctp.h"
@@ -67,8 +67,6 @@ class TransportTestPeer : public sigslot::has_slots<> {
         sent_(0), received_(0),
         flow_(new TransportFlow()),
         loopback_(new TransportLayerLoopback()),
-        peer_(nullptr),
-        gathering_complete_(false),
         sctp_(usrsctp_socket(AF_CONN, SOCK_STREAM, IPPROTO_SCTP, receive_cb, nullptr, 0, nullptr)),
         timer_(do_CreateInstance(NS_TIMER_CONTRACTID)),
         periodic_(nullptr) {
@@ -77,6 +75,7 @@ class TransportTestPeer : public sigslot::has_slots<> {
         " local=" << local_port <<
         " remote=" << remote_port << std::endl;
 
+    usrsctp_register_address(static_cast<void *>(this));
     int r = usrsctp_set_non_blocking(sctp_, 1);
     EXPECT_GE(r, 0);
 
@@ -102,7 +101,7 @@ class TransportTestPeer : public sigslot::has_slots<> {
     local_addr_.sconn_len = sizeof(struct sockaddr_conn);
 #endif
     local_addr_.sconn_port = htons(local_port);
-    local_addr_.sconn_addr = nullptr;
+    local_addr_.sconn_addr = static_cast<void *>(this);
 
 
     memset(&remote_addr_, 0, sizeof(remote_addr_));
@@ -122,15 +121,22 @@ class TransportTestPeer : public sigslot::has_slots<> {
     std::cerr << "Destroying sctp connection flow=" <<
         static_cast<void *>(flow_.get()) << std::endl;
     usrsctp_close(sctp_);
+    usrsctp_deregister_address(static_cast<void *>(this));
 
     test_utils->sts_target()->Dispatch(WrapRunnable(this,
-                                                   &TransportTestPeer::DisconnectInt),
+                                                   &TransportTestPeer::Disconnect_s),
                                       NS_DISPATCH_SYNC);
 
     std::cerr << "~TransportTestPeer() completed" << std::endl;
   }
 
   void ConnectSocket(TransportTestPeer *peer) {
+    test_utils->sts_target()->Dispatch(WrapRunnable(
+        this, &TransportTestPeer::ConnectSocket_s, peer),
+                                       NS_DISPATCH_SYNC);
+  }
+
+  void ConnectSocket_s(TransportTestPeer *peer) {
     loopback_->Connect(peer->loopback_);
 
     ASSERT_EQ((nsresult)NS_OK, flow_->PushLayer(loopback_));
@@ -150,7 +156,7 @@ class TransportTestPeer : public sigslot::has_slots<> {
     ASSERT_GE(0, r);
   }
 
-  void DisconnectInt() {
+  void Disconnect_s() {
     if (flow_) {
       flow_ = nullptr;
     }
@@ -181,7 +187,8 @@ class TransportTestPeer : public sigslot::has_slots<> {
     int r = usrsctp_sendv(sctp_, buf, sizeof(buf), nullptr, 0,
                           static_cast<void *>(&info),
                           sizeof(info), SCTP_SENDV_SNDINFO, 0);
-    ASSERT_EQ(sizeof(buf), r);
+    ASSERT_TRUE(r >= 0);
+    ASSERT_EQ(sizeof(buf), (size_t)r);
 
     ++sent_;
   }
@@ -190,8 +197,28 @@ class TransportTestPeer : public sigslot::has_slots<> {
   int received() const { return received_; }
   bool connected() const { return connected_; }
 
+  static TransportResult SendPacket_s(const unsigned char* data, size_t len,
+                                      const mozilla::RefPtr<TransportFlow>& flow) {
+    TransportResult res = flow->SendPacket(data, len);
+    delete data; // we always allocate
+    return res;
+  }
+
   TransportResult SendPacket(const unsigned char* data, size_t len) {
-    return flow_->SendPacket(data, len);
+    unsigned char *buffer = new unsigned char[len];
+    memcpy(buffer, data, len);
+
+    // Uses DISPATCH_NORMAL to avoid possible deadlocks when we're called
+    // from MainThread especially during shutdown (same as DataChannels).
+    // RUN_ON_THREAD short-circuits if already on the STS thread, which is
+    // normal for most transfers outside of connect() and close().  Passes
+    // a refptr to flow_ to avoid any async deletion issues (since we can't
+    // make 'this' into a refptr as it isn't refcounted)
+    RUN_ON_THREAD(test_utils->sts_target(), WrapRunnableNM(
+        &TransportTestPeer::SendPacket_s, buffer, len, flow_),
+                  NS_DISPATCH_NORMAL);
+
+    return 0;
   }
 
   void PacketReceived(TransportFlow * flow, const unsigned char* data,
@@ -262,13 +289,10 @@ class TransportTestPeer : public sigslot::has_slots<> {
   size_t received_;
   mozilla::RefPtr<TransportFlow> flow_;
   TransportLayerLoopback *loopback_;
-  TransportTestPeer *peer_;
 
   struct sockaddr_conn local_addr_;
   struct sockaddr_conn remote_addr_;
-  bool gathering_complete_;
   struct socket *sctp_;
-  size_t to_send_;
   nsCOMPtr<nsITimer> timer_;
   nsRefPtr<SendPeriodic> periodic_;
 };
@@ -298,10 +322,21 @@ class TransportTest : public ::testing::Test {
     delete p2_;
   }
 
+  static void debug_printf(const char *format, ...) {
+    va_list ap;
+
+    va_start(ap, format);
+    vprintf(format, ap);
+    va_end(ap);
+  }
+
+
   static void SetUpTestCase() {
-    usrsctp_init(0, &TransportTestPeer::conn_output);
     if (sctp_logging) {
+      usrsctp_init(0, &TransportTestPeer::conn_output, debug_printf);
       usrsctp_sysctl_set_sctp_debug_on(0xffffffff);
+    } else {
+      usrsctp_init(0, &TransportTestPeer::conn_output, nullptr);
     }
   }
 
@@ -340,7 +375,7 @@ TEST_F(TransportTest, TestConnect) {
   ConnectSocket();
 }
 
-TEST_F(TransportTest, DISABLED_TestConnectSymmetricalPorts) {
+TEST_F(TransportTest, TestConnectSymmetricalPorts) {
   ConnectSocket(5002,5002);
 }
 

@@ -38,7 +38,6 @@
 #include "mozilla/dom/Element.h"
 
 #include "nsITreeBoxObject.h"
-#include "nsIDocShellTreeItem.h"
 #include "nsITreeColumns.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -161,6 +160,7 @@ nsCoreUtils::DispatchMouseEvent(uint32_t aEventType, int32_t aX, int32_t aY,
   event.clickCount = 1;
   event.button = nsMouseEvent::eLeftButton;
   event.time = PR_IntervalNow();
+  event.inputSource = nsIDOMMouseEvent::MOZ_SOURCE_UNKNOWN;
 
   nsEventStatus status = nsEventStatus_eIgnore;
   aPresShell->HandleEventWithTarget(&event, aFrame, aContent, &status);
@@ -380,7 +380,7 @@ nsIntPoint
 nsCoreUtils::GetScreenCoordsForWindow(nsINode *aNode)
 {
   nsIntPoint coords(0, 0);
-  nsCOMPtr<nsIDocShellTreeItem> treeItem(GetDocShellTreeItemFor(aNode));
+  nsCOMPtr<nsIDocShellTreeItem> treeItem(GetDocShellFor(aNode));
   if (!treeItem)
     return coords;
 
@@ -396,18 +396,15 @@ nsCoreUtils::GetScreenCoordsForWindow(nsINode *aNode)
   return coords;
 }
 
-already_AddRefed<nsIDocShellTreeItem>
-nsCoreUtils::GetDocShellTreeItemFor(nsINode *aNode)
+already_AddRefed<nsIDocShell>
+nsCoreUtils::GetDocShellFor(nsINode *aNode)
 {
   if (!aNode)
     return nullptr;
 
   nsCOMPtr<nsISupports> container = aNode->OwnerDoc()->GetContainer();
-  nsIDocShellTreeItem *docShellTreeItem = nullptr;
-  if (container)
-    CallQueryInterface(container, &docShellTreeItem);
-
-  return docShellTreeItem;
+  nsCOMPtr<nsIDocShell> docShell = do_QueryInterface(container);
+  return docShell.forget();
 }
 
 bool
@@ -520,9 +517,9 @@ nsCoreUtils::GetTreeBodyBoxObject(nsITreeBoxObject *aTreeBoxObj)
   if (!tcXULElm)
     return nullptr;
 
-  nsIBoxObject *boxObj = nullptr;
-  tcXULElm->GetBoxObject(&boxObj);
-  return boxObj;
+  nsCOMPtr<nsIBoxObject> boxObj;
+  tcXULElm->GetBoxObject(getter_AddRefs(boxObj));
+  return boxObj.forget();
 }
 
 already_AddRefed<nsITreeBoxObject>

@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TestCommon.h"
+#include <algorithm>
 #ifdef WIN32 
 #include <windows.h>
 #endif
@@ -73,7 +74,7 @@ InputTestConsumer::OnDataAvailable(nsIRequest *request,
   nsresult rv;
 
   while (aLength) {
-    size = NS_MIN<uint32_t>(aLength, sizeof(buf));
+    size = std::min<uint32_t>(aLength, sizeof(buf));
     rv = aIStream->Read(buf, size, &amt);
     if (NS_FAILED(rv)) {
       NS_ASSERTION((NS_BASE_STREAM_WOULD_BLOCK != rv), 
@@ -119,15 +120,15 @@ main(int argc, char* argv[])
         nsCOMPtr<nsIServiceManager> servMan;
         NS_InitXPCOM2(getter_AddRefs(servMan), nullptr, nullptr);
 
-        nsCOMPtr<nsIIOService> ioService(do_GetService(kIOServiceCID, &rv));
         // first thing to do is create ourselves a stream that
         // is to be uploaded.
         nsCOMPtr<nsIInputStream> uploadStream;
         rv = NS_NewPostDataStream(getter_AddRefs(uploadStream),
                                   true,
-                                  nsDependentCString(fileName), // XXX UTF-8
-                                  0, ioService);
+                                  nsDependentCString(fileName)); // XXX UTF-8
         if (NS_FAILED(rv)) return -1;
+
+        nsCOMPtr<nsIIOService> ioService(do_GetService(kIOServiceCID, &rv));
 
         // create our url.
         nsCOMPtr<nsIURI> uri;

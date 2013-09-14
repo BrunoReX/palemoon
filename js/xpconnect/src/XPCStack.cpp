@@ -116,13 +116,13 @@ XPCJSStackFrame::CreateStack(JSContext* cx, XPCJSStackFrame** stack)
 
         JSFunction* fun = desc->frames[i].fun;
         if (fun) {
-            JSString *funid = JS_GetFunctionDisplayId(fun);
+            JS::RootedString funid(cx, JS_GetFunctionDisplayId(fun));
             if (funid) {
                 size_t length = JS_GetStringEncodingLength(cx, funid);
                 if (length != size_t(-1)) {
                     self->mFunname = static_cast<char *>(nsMemory::Alloc(length + 1));
                     if (self->mFunname) {
-                        JS_EncodeStringToBuffer(funid, self->mFunname, length);
+                        JS_EncodeStringToBuffer(cx, funid, self->mFunname, length);
                         self->mFunname[length] = '\0';
                     }
                 }

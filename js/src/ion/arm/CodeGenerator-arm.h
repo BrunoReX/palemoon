@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_codegen_arm_h__
-#define jsion_codegen_arm_h__
+#ifndef ion_arm_CodeGenerator_arm_h
+#define ion_arm_CodeGenerator_arm_h
 
 #include "Assembler-arm.h"
 #include "ion/shared/CodeGenerator-shared.h"
@@ -15,6 +14,7 @@ namespace js {
 namespace ion {
 
 class OutOfLineBailout;
+class OutOfLineTableSwitch;
 
 class CodeGeneratorARM : public CodeGeneratorShared
 {
@@ -54,11 +54,7 @@ class CodeGeneratorARM : public CodeGeneratorShared
     bool generateEpilogue();
     bool generateOutOfLineCode();
 
-    void emitDoubleToInt32(const FloatRegister &src, const Register &dest, Label *fail, bool negativeZeroCheck = true);
     void emitRoundDouble(const FloatRegister &src, const Register &dest, Label *fail);
-
-    // Emits a conditional set.
-    void emitSet(Assembler::Condition cond, const Register &dest);
 
     // Emits a branch that directs control flow to the true block if |cond| is
     // true, and the false block if |cond| is false.
@@ -79,6 +75,7 @@ class CodeGeneratorARM : public CodeGeneratorShared
     virtual bool visitMulI(LMulI *ins);
 
     virtual bool visitDivI(LDivI *ins);
+    virtual bool visitDivPowTwoI(LDivPowTwoI *ins);
     virtual bool visitModI(LModI *ins);
     virtual bool visitModPowTwoI(LModPowTwoI *ins);
     virtual bool visitModMaskI(LModMaskI *ins);
@@ -97,6 +94,7 @@ class CodeGeneratorARM : public CodeGeneratorShared
     virtual bool visitCompareBAndBranch(LCompareBAndBranch *lir);
     virtual bool visitCompareV(LCompareV *lir);
     virtual bool visitCompareVAndBranch(LCompareVAndBranch *lir);
+    virtual bool visitUInt32ToDouble(LUInt32ToDouble *lir);
     virtual bool visitNotI(LNotI *ins);
     virtual bool visitNotD(LNotD *ins);
 
@@ -107,6 +105,7 @@ class CodeGeneratorARM : public CodeGeneratorShared
 
     // Out of line visitors.
     bool visitOutOfLineBailout(OutOfLineBailout *ool);
+    bool visitOutOfLineTableSwitch(OutOfLineTableSwitch *ool);
 
   protected:
     ValueOperand ToValue(LInstruction *ins, size_t pos);
@@ -119,11 +118,8 @@ class CodeGeneratorARM : public CodeGeneratorShared
     void storeElementTyped(const LAllocation *value, MIRType valueType, MIRType elementType,
                            const Register &elements, const LAllocation *index);
 
-  protected:
-    void linkAbsoluteLabels();
-
   public:
-    CodeGeneratorARM(MIRGenerator *gen, LIRGraph *graph);
+    CodeGeneratorARM(MIRGenerator *gen, LIRGraph *graph, MacroAssembler *masm);
 
   public:
     bool visitBox(LBox *box);
@@ -140,13 +136,39 @@ class CodeGeneratorARM : public CodeGeneratorShared
     bool visitLoadElementT(LLoadElementT *load);
 
     bool visitGuardShape(LGuardShape *guard);
+    bool visitGuardObjectType(LGuardObjectType *guard);
     bool visitGuardClass(LGuardClass *guard);
     bool visitImplicitThis(LImplicitThis *lir);
 
-    bool visitRecompileCheck(LRecompileCheck *lir);
     bool visitInterruptCheck(LInterruptCheck *lir);
 
+    bool visitNegI(LNegI *lir);
+    bool visitNegD(LNegD *lir);
+    bool visitLoadTypedArrayElementStatic(LLoadTypedArrayElementStatic *ins);
+    bool visitStoreTypedArrayElementStatic(LStoreTypedArrayElementStatic *ins);
+    bool visitAsmJSLoadHeap(LAsmJSLoadHeap *ins);
+    bool visitAsmJSStoreHeap(LAsmJSStoreHeap *ins);
+    bool visitAsmJSLoadGlobalVar(LAsmJSLoadGlobalVar *ins);
+    bool visitAsmJSStoreGlobalVar(LAsmJSStoreGlobalVar *ins);
+    bool visitAsmJSLoadFuncPtr(LAsmJSLoadFuncPtr *ins);
+    bool visitAsmJSLoadFFIFunc(LAsmJSLoadFFIFunc *ins);
+
+    bool visitAsmJSPassStackArg(LAsmJSPassStackArg *ins);
+
     bool generateInvalidateEpilogue();
+  protected:
+    bool generateAsmJSPrologue(const MIRTypeVector &argTypes, MIRType returnType,
+                             Label *internalEntry);
+    void postAsmJSCall(LAsmJSCall *lir) {
+#if  !defined(JS_CPU_ARM_HARDFP)
+        if (lir->mir()->type() == MIRType_Double) {
+            masm.ma_vxfer(r0, r1, d0);
+        }
+#endif
+}
+ 
+    bool visitEffectiveAddress(LEffectiveAddress *ins);
+    bool visitAsmJSDivOrMod(LAsmJSDivOrMod *ins);
 };
 
 typedef CodeGeneratorARM CodeGeneratorSpecific;
@@ -173,5 +195,4 @@ class OutOfLineBailout : public OutOfLineCodeBase<CodeGeneratorARM>
 } // namespace ion
 } // namespace js
 
-#endif // jsion_codegen_arm_h__
-
+#endif /* ion_arm_CodeGenerator_arm_h */

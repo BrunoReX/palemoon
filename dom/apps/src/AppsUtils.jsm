@@ -11,6 +11,7 @@ const Cr = Components.results;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/FileUtils.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "NetUtil", function() {
   return Cc["@mozilla.org/network/util;1"]
@@ -19,10 +20,44 @@ XPCOMUtils.defineLazyGetter(this, "NetUtil", function() {
 
 // Shared code for AppsServiceChild.jsm, Webapps.jsm and Webapps.js
 
-this.EXPORTED_SYMBOLS = ["AppsUtils", "ManifestHelper"];
+this.EXPORTED_SYMBOLS = ["AppsUtils", "ManifestHelper", "isAbsoluteURI"];
 
 function debug(s) {
   //dump("-*- AppsUtils.jsm: " + s + "\n");
+}
+
+this.isAbsoluteURI = function(aURI) {
+  let foo = Services.io.newURI("http://foo", null, null);
+  let bar = Services.io.newURI("http://bar", null, null);
+  return Services.io.newURI(aURI, null, foo).prePath != foo.prePath ||
+         Services.io.newURI(aURI, null, bar).prePath != bar.prePath;
+}
+
+function mozIApplication() {
+}
+
+mozIApplication.prototype = {
+  hasPermission: function(aPermission) {
+    let uri = Services.io.newURI(this.origin, null, null);
+    let secMan = Cc["@mozilla.org/scriptsecuritymanager;1"]
+                   .getService(Ci.nsIScriptSecurityManager);
+    // This helper checks an URI inside |aApp|'s origin and part of |aApp| has a
+    // specific permission. It is not checking if browsers inside |aApp| have such
+    // permission.
+    let principal = secMan.getAppCodebasePrincipal(uri, this.localId,
+                                                   /*mozbrowser*/false);
+    let perm = Services.perms.testExactPermissionFromPrincipal(principal,
+                                                               aPermission);
+    return (perm === Ci.nsIPermissionManager.ALLOW_ACTION);
+  },
+
+  QueryInterface: function(aIID) {
+    if (aIID.equals(Ci.mozIDOMApplication) ||
+        aIID.equals(Ci.mozIApplication) ||
+        aIID.equals(Ci.nsISupports))
+      return this;
+    throw Cr.NS_ERROR_NO_INTERFACE;
+  }
 }
 
 this.AppsUtils = {
@@ -51,28 +86,20 @@ this.AppsUtils = {
       updateTime: aApp.updateTime,
       etag: aApp.etag,
       packageEtag: aApp.packageEtag,
+      manifestHash: aApp.manifestHash,
+      packageHash: aApp.packageHash,
+      staged: aApp.staged,
       installerAppId: aApp.installerAppId || Ci.nsIScriptSecurityManager.NO_APP_ID,
-      installerIsBrowser: !!aApp.installerIsBrowser
+      installerIsBrowser: !!aApp.installerIsBrowser,
+      storeId: aApp.storeId || "",
+      storeVersion: aApp.storeVersion || 0,
+      redirects: aApp.redirects
     };
   },
 
   cloneAsMozIApplication: function cloneAsMozIApplication(aApp) {
     let res = this.cloneAppObject(aApp);
-    res.hasPermission = function(aPermission) {
-      let uri = Services.io.newURI(this.origin, null, null);
-      let secMan = Cc["@mozilla.org/scriptsecuritymanager;1"]
-                     .getService(Ci.nsIScriptSecurityManager);
-      // This helper checks an URI inside |aApp|'s origin and part of |aApp| has a
-      // specific permission. It is not checking if browsers inside |aApp| have such
-      // permission.
-      let principal = secMan.getAppCodebasePrincipal(uri, aApp.localId,
-                                                     /*mozbrowser*/false);
-      let perm = Services.perms.testExactPermissionFromPrincipal(principal,
-                                                                 aPermission);
-      return (perm === Ci.nsIPermissionManager.ALLOW_ACTION);
-    };
-    res.QueryInterface = XPCOMUtils.generateQI([Ci.mozIDOMApplication,
-                                                Ci.mozIApplication]);
+    res.__proto__ = mozIApplication.prototype;
     return res;
   },
 
@@ -95,6 +122,17 @@ this.AppsUtils = {
     debug("getAppLocalIdByManifestURL " + aManifestURL);
     for (let id in aApps) {
       if (aApps[id].manifestURL == aManifestURL) {
+        return aApps[id].localId;
+      }
+    }
+
+    return Ci.nsIScriptSecurityManager.NO_APP_ID;
+  },
+
+  getAppLocalIdByStoreId: function(aApps, aStoreId) {
+    debug("getAppLocalIdByStoreId:" + aStoreId);
+    for (let id in aApps) {
+      if (aApps[id].storeId == aStoreId) {
         return aApps[id].localId;
       }
     }
@@ -153,29 +191,98 @@ this.AppsUtils = {
     return null;
   },
 
+  getCoreAppsBasePath: function getCoreAppsBasePath() {
+    debug("getCoreAppsBasePath()");
+    try {
+      return FileUtils.getDir("coreAppsDir", ["webapps"], false).path;
+    } catch(e) {
+      return null;
+    }
+  },
+
+  getAppInfo: function getAppInfo(aApps, aAppId) {
+    if (!aApps[aAppId]) {
+      debug("No webapp for " + aAppId);
+      return null;
+    }
+
+    // We can have 3rd party apps that are non-removable,
+    // so we can't use the 'removable' property for isCoreApp
+    // Instead, we check if the app is installed under /system/b2g
+    let isCoreApp = false;
+    let app = aApps[aAppId];
+#ifdef MOZ_WIDGET_GONK
+    isCoreApp = app.basePath == this.getCoreAppsBasePath();
+#endif
+    debug(app.name + " isCoreApp: " + isCoreApp);
+    return { "basePath":  app.basePath + "/",
+             "isCoreApp": isCoreApp };
+  },
+
   /**
-   * from https://developer.mozilla.org/en/OpenWebApps/The_Manifest
-   * only the name property is mandatory
+    * Remove potential HTML tags from displayable fields in the manifest.
+    * We check name, description, developer name, and permission description
+    */
+  sanitizeManifest: function(aManifest) {
+    let sanitizer = Cc["@mozilla.org/parserutils;1"]
+                      .getService(Ci.nsIParserUtils);
+    if (!sanitizer) {
+      return;
+    }
+
+    function sanitize(aStr) {
+      return sanitizer.convertToPlainText(aStr,
+               Ci.nsIDocumentEncoder.OutputRaw, 0);
+    }
+
+    function sanitizeEntryPoint(aRoot) {
+      aRoot.name = sanitize(aRoot.name);
+
+      if (aRoot.description) {
+        aRoot.description = sanitize(aRoot.description);
+      }
+
+      if (aRoot.developer && aRoot.developer.name) {
+        aRoot.developer.name = sanitize(aRoot.developer.name);
+      }
+
+      if (aRoot.permissions) {
+        for (let permission in aRoot.permissions) {
+          if (aRoot.permissions[permission].description) {
+            aRoot.permissions[permission].description =
+             sanitize(aRoot.permissions[permission].description);
+          }
+        }
+      }
+    }
+
+    // First process the main section, then the entry points.
+    sanitizeEntryPoint(aManifest);
+
+    if (aManifest.entry_points) {
+      for (let entry in aManifest.entry_points) {
+        sanitizeEntryPoint(aManifest.entry_points[entry]);
+      }
+    }
+  },
+
+  /**
+   * From https://developer.mozilla.org/en/OpenWebApps/The_Manifest
+   * Only the name property is mandatory.
    */
-  checkManifest: function(aManifest) {
+  checkManifest: function(aManifest, app) {
     if (aManifest.name == undefined)
       return false;
 
-    function isAbsolute(uri) {
-      // See bug 810551
-      let foo = Services.io.newURI("http://foo", null, null);
-      let bar = Services.io.newURI("http://bar", null, null);
-      return Services.io.newURI(uri, null, foo).prePath != foo.prePath ||
-             Services.io.newURI(uri, null, bar).prePath != bar.prePath;
-    }
+    this.sanitizeManifest(aManifest);
 
-    // launch_path and entry_points launch paths can't be absolute
-    if (aManifest.launch_path && isAbsolute(aManifest.launch_path))
+    // launch_path, entry_points launch paths, message hrefs, and activity hrefs can't be absolute
+    if (aManifest.launch_path && isAbsoluteURI(aManifest.launch_path))
       return false;
 
     function checkAbsoluteEntryPoints(entryPoints) {
       for (let name in entryPoints) {
-        if (entryPoints[name].launch_path && isAbsolute(entryPoints[name].launch_path)) {
+        if (entryPoints[name].launch_path && isAbsoluteURI(entryPoints[name].launch_path)) {
           return true;
         }
       }
@@ -187,6 +294,43 @@ this.AppsUtils = {
 
     for (let localeName in aManifest.locales) {
       if (checkAbsoluteEntryPoints(aManifest.locales[localeName].entry_points)) {
+        return false;
+      }
+    }
+
+    if (aManifest.activities) {
+      for (let activityName in aManifest.activities) {
+        let activity = aManifest.activities[activityName];
+        if (activity.href && isAbsoluteURI(activity.href)) {
+          return false;
+        }
+      }
+    }
+
+    // |messages| is an array of items, where each item is either a string or
+    // a {name: href} object.
+    let messages = aManifest.messages;
+    if (messages) {
+      if (!Array.isArray(messages)) {
+        return false;
+      }
+      for (let item of aManifest.messages) {
+        if (typeof item == "object") {
+          let keys = Object.keys(item);
+          if (keys.length != 1) {
+            return false;
+          }
+          if (isAbsoluteURI(item[keys[0]])) {
+            return false;
+          }
+        }
+      }
+    }
+
+    // The 'size' field must be a positive integer.
+    if (aManifest.size) {
+      aManifest.size = parseInt(aManifest.size);
+      if (Number.isNaN(aManifest.size) || aManifest.size < 0) {
         return false;
       }
     }
@@ -204,6 +348,34 @@ this.AppsUtils = {
       return false;
     }
     return true;
+  },
+
+  /**
+   * Method to apply modifications to webapp manifests file saved internally.
+   * For now, only ensure app can't rename itself.
+   */
+  ensureSameAppName: function ensureSameAppName(aOldManifest, aNewManifest, aApp) {
+    // Ensure that app name can't be updated
+    aNewManifest.name = aApp.name;
+
+    // Nor through localized names
+    if ('locales' in aNewManifest) {
+      let defaultName = new ManifestHelper(aOldManifest, aApp.origin).name;
+      for (let locale in aNewManifest.locales) {
+        let entry = aNewManifest.locales[locale];
+        if (!entry.name) {
+          continue;
+        }
+        // In case previous manifest didn't had a name,
+        // we use the default app name
+        let localizedName = defaultName;
+        if (aOldManifest && 'locales' in aOldManifest &&
+            locale in aOldManifest.locales) {
+          localizedName = aOldManifest.locales[locale].name;
+        }
+        entry.name = localizedName;
+      }
+    }
   },
 
   /**
@@ -307,7 +479,8 @@ this.AppsUtils = {
         return false;
       }
 
-      return (dev1.name === dev2.name && dev1.url === dev2.url);
+      return (!dev1 && !dev2) ||
+             (dev1.name === dev2.name && dev1.url === dev2.url);
     }
 
     // 2. For each locale, check if the name and dev info are the same.
@@ -373,7 +546,9 @@ ManifestHelper.prototype = {
   },
 
   get developer() {
-    return this._localeProp("developer");
+    // Default to {} in order to avoid exception in code
+    // that doesn't check for null `developer`
+    return this._localeProp("developer") || {};
   },
 
   get icons() {
@@ -440,6 +615,10 @@ ManifestHelper.prototype = {
   },
 
   resolveFromOrigin: function(aURI) {
+    // This should be enforced higher up, but check it here just in case.
+    if (isAbsoluteURI(aURI)) {
+      throw new Error("Webapps.jsm: non-relative URI passed to resolveFromOrigin");
+    }
     return this._origin.resolve(aURI);
   },
 

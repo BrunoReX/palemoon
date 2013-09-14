@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_lir_opcodes_common_h__
-#define jsion_lir_opcodes_common_h__
+#ifndef ion_LOpcodes_h
+#define ion_LOpcodes_h
 
 #define LIR_COMMON_OPCODE_LIST(_)   \
     _(Label)                        \
@@ -22,26 +21,38 @@
     _(TableSwitch)                  \
     _(TableSwitchV)                 \
     _(Goto)                         \
+    _(NewParallelArray)             \
     _(NewArray)                     \
     _(NewObject)                    \
     _(NewSlots)                     \
     _(NewDeclEnvObject)             \
     _(NewCallObject)                \
     _(NewStringObject)              \
+    _(ParNew)                       \
+    _(ParNewDenseArray)             \
+    _(ParNewCallObject)             \
+    _(ParBailout)                   \
+    _(InitElem)                     \
     _(InitProp)                     \
     _(CheckOverRecursed)            \
-    _(RecompileCheck)               \
+    _(ParCheckOverRecursed)         \
     _(DefVar)                       \
     _(DefFun)                       \
     _(CallKnown)                    \
     _(CallGeneric)                  \
     _(CallNative)                   \
     _(ApplyArgsGeneric)             \
+    _(GetDynamicName)               \
+    _(FilterArguments)              \
+    _(CallDirectEval)               \
     _(StackArgT)                    \
     _(StackArgV)                    \
     _(CreateThis)                   \
     _(CreateThisWithProto)          \
     _(CreateThisWithTemplate)       \
+    _(CreateArgumentsObject)        \
+    _(GetArgumentsObjectArg)        \
+    _(SetArgumentsObjectArg)        \
     _(ReturnFromCtor)               \
     _(BitNotI)                      \
     _(BitNotV)                      \
@@ -56,12 +67,15 @@
     _(TestDAndBranch)               \
     _(TestVAndBranch)               \
     _(TestOAndBranch)               \
+    _(FunctionDispatch)             \
+    _(TypeObjectDispatch)           \
     _(PolyInlineDispatch)           \
     _(Compare)                      \
     _(CompareAndBranch)             \
     _(CompareD)                     \
     _(CompareDAndBranch)            \
     _(CompareS)                     \
+    _(CompareStrictS)               \
     _(CompareB)                     \
     _(CompareBAndBranch)            \
     _(CompareV)                     \
@@ -73,10 +87,12 @@
     _(EmulatesUndefinedAndBranch)   \
     _(MinMaxI)                      \
     _(MinMaxD)                      \
+    _(NegI)                         \
     _(NegD)                         \
     _(AbsI)                         \
     _(AbsD)                         \
     _(SqrtD)                        \
+    _(Atan2D)                       \
     _(PowI)                         \
     _(PowD)                         \
     _(Random)                       \
@@ -108,17 +124,24 @@
     _(RegExpTest)                   \
     _(Lambda)                       \
     _(LambdaForSingleton)           \
+    _(ParLambda)                    \
     _(ImplicitThis)                 \
     _(Slots)                        \
     _(Elements)                     \
+    _(ConvertElementsToDoubles)     \
     _(LoadSlotV)                    \
     _(LoadSlotT)                    \
     _(StoreSlotV)                   \
     _(StoreSlotT)                   \
     _(GuardShape)                   \
+    _(GuardObjectType)              \
     _(GuardClass)                   \
+    _(ParWriteGuard)                \
+    _(ParDump)                      \
     _(TypeBarrier)                  \
     _(MonitorTypes)                 \
+    _(PostWriteBarrierO)            \
+    _(PostWriteBarrierV)            \
     _(InitializedLength)            \
     _(SetInitializedLength)         \
     _(BoundsCheck)                  \
@@ -138,7 +161,11 @@
     _(StoreElementHoleT)            \
     _(LoadTypedArrayElement)        \
     _(LoadTypedArrayElementHole)    \
+    _(LoadTypedArrayElementStatic)  \
     _(StoreTypedArrayElement)       \
+    _(StoreTypedArrayElementHole)   \
+    _(StoreTypedArrayElementStatic) \
+    _(EffectiveAddress)             \
     _(ClampIToUint8)                \
     _(ClampDToUint8)                \
     _(ClampVToUint8)                \
@@ -147,19 +174,29 @@
     _(StoreFixedSlotV)              \
     _(StoreFixedSlotT)              \
     _(FunctionEnvironment)          \
+    _(ParSlice)                     \
     _(GetPropertyCacheV)            \
     _(GetPropertyCacheT)            \
+    _(GetPropertyPolymorphicV)      \
+    _(GetPropertyPolymorphicT)      \
     _(GetElementCacheV)             \
+    _(GetElementCacheT)             \
     _(BindNameCache)                \
     _(CallGetProperty)              \
     _(GetNameCache)                 \
     _(CallGetIntrinsicValue)        \
+    _(CallsiteCloneCache)           \
     _(CallGetElement)               \
     _(CallSetElement)               \
+    _(CallInitElementArray)         \
     _(CallSetProperty)              \
     _(CallDeleteProperty)           \
     _(SetPropertyCacheV)            \
     _(SetPropertyCacheT)            \
+    _(SetElementCacheV)             \
+    _(SetElementCacheT)             \
+    _(SetPropertyPolymorphicV)      \
+    _(SetPropertyPolymorphicT)      \
     _(CallIteratorStart)            \
     _(IteratorStart)                \
     _(IteratorNext)                 \
@@ -171,6 +208,9 @@
     _(StringLength)                 \
     _(ArgumentsLength)              \
     _(GetArgument)                  \
+    _(RunOncePrologue)              \
+    _(Rest)                         \
+    _(ParRest)                      \
     _(TypeOfV)                      \
     _(ToIdV)                        \
     _(Floor)                        \
@@ -184,7 +224,21 @@
     _(FunctionBoundary)             \
     _(GetDOMProperty)               \
     _(SetDOMProperty)               \
-    _(CallDOMNative)
+    _(CallDOMNative)                \
+    _(IsCallable)                   \
+    _(HaveSameClass)                \
+    _(AsmJSLoadHeap)                \
+    _(AsmJSStoreHeap)               \
+    _(AsmJSLoadGlobalVar)           \
+    _(AsmJSStoreGlobalVar)          \
+    _(AsmJSLoadFFIFunc)             \
+    _(AsmJSParameter)               \
+    _(AsmJSReturn)                  \
+    _(AsmJSVoidReturn)              \
+    _(AsmJSPassStackArg)            \
+    _(AsmJSCall)                    \
+    _(AsmJSCheckOverRecursed)       \
+    _(ParCheckInterrupt)
 
 #if defined(JS_CPU_X86)
 # include "x86/LOpcodes-x86.h"
@@ -198,5 +252,4 @@
     LIR_COMMON_OPCODE_LIST(_)       \
     LIR_CPU_OPCODE_LIST(_)
 
-#endif // jsion_lir_opcodes_common_h__
-
+#endif /* ion_LOpcodes_h */

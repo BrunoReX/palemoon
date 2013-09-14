@@ -4,6 +4,8 @@
 
 "use strict";
 
+#ifndef MERGED_COMPARTMENT
+
 this.EXPORTED_SYMBOLS = [
   "DailyValues",
   "MetricsStorageBackend",
@@ -13,14 +15,16 @@ this.EXPORTED_SYMBOLS = [
 
 const {utils: Cu} = Components;
 
-Cu.import("resource://gre/modules/commonjs/promise/core.js");
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+
+#endif
+
+Cu.import("resource://gre/modules/Promise.jsm");
 Cu.import("resource://gre/modules/Sqlite.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://services-common/log4moz.js");
 Cu.import("resource://services-common/utils.js");
 
-
-const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // These do not account for leap seconds. Meh.
 function dateToDays(date) {
@@ -487,7 +491,7 @@ const SQL = {
           "field_id = :field_id AND day = :days " +
         "), " +
         "0" +
-      ") + 1)",
+      ") + :by)",
 
   deleteLastNumericFromFieldID:
     "DELETE FROM last_numeric WHERE field_id = :field_id",
@@ -697,6 +701,7 @@ function MetricsStorageSqliteBackend(connection) {
   this._log = Log4Moz.repository.getLogger("Services.Metrics.MetricsStorage");
 
   this._connection = connection;
+  this._enabledWALCheckpointPages = null;
 
   // Integer IDs to string name.
   this._typesByID = new Map();
@@ -727,6 +732,15 @@ function MetricsStorageSqliteBackend(connection) {
 }
 
 MetricsStorageSqliteBackend.prototype = Object.freeze({
+  // Max size (in kibibytes) the WAL log is allowed to grow to before it is
+  // checkpointed.
+  //
+  // This was first deployed in bug 848136. We want a value large enough
+  // that we aren't checkpointing all the time. However, we want it
+  // small enough so we don't have to read so much when we open the
+  // database.
+  MAX_WAL_SIZE_KB: 512,
+
   FIELD_DAILY_COUNTER: "daily-counter",
   FIELD_DAILY_DISCRETE_NUMERIC: "daily-discrete-numeric",
   FIELD_DAILY_DISCRETE_TEXT: "daily-discrete-text",
@@ -976,7 +990,8 @@ MetricsStorageSqliteBackend.prototype = Object.freeze({
    */
   registerMeasurement: function (provider, name, version) {
     if (this.hasMeasurement(provider, name, version)) {
-      return Promise.resolve(this.measurementID(provider, name, version));
+      return CommonUtils.laterTickResolvingPromise(
+        this.measurementID(provider, name, version));
     }
 
     // Registrations might not be safe to perform in parallel with provider
@@ -1063,30 +1078,29 @@ MetricsStorageSqliteBackend.prototype = Object.freeze({
         throw new Error("Field already defined with different type: " + existingType);
       }
 
-      return Promise.resolve(this.fieldIDFromMeasurement(measurementID, field));
+      return CommonUtils.laterTickResolvingPromise(
+        this.fieldIDFromMeasurement(measurementID, field));
     }
 
     let self = this;
-    return this.enqueueOperation(function addFieldOperation() {
-      return Task.spawn(function createField() {
-        let params = {
-          measurement_id: measurementID,
-          field: field,
-          value_type: typeID,
-        };
+    return Task.spawn(function createField() {
+      let params = {
+        measurement_id: measurementID,
+        field: field,
+        value_type: typeID,
+      };
 
-        yield self._connection.executeCached(SQL.addField, params);
+      yield self._connection.executeCached(SQL.addField, params);
 
-        let rows = yield self._connection.executeCached(SQL.getFieldID, params);
+      let rows = yield self._connection.executeCached(SQL.getFieldID, params);
 
-        let fieldID = rows[0].getResultByIndex(0);
+      let fieldID = rows[0].getResultByIndex(0);
 
-        self._fieldsByID.set(fieldID, [measurementID, field, valueType]);
-        self._fieldsByInfo.set([measurementID, field].join(":"), fieldID);
-        self._fieldsByMeasurement.get(measurementID).add(fieldID);
+      self._fieldsByID.set(fieldID, [measurementID, field, valueType]);
+      self._fieldsByInfo.set([measurementID, field].join(":"), fieldID);
+      self._fieldsByMeasurement.get(measurementID).add(fieldID);
 
-        throw new Task.Result(fieldID);
-      });
+      throw new Task.Result(fieldID);
     });
   },
 
@@ -1101,6 +1115,52 @@ MetricsStorageSqliteBackend.prototype = Object.freeze({
   _init: function() {
     let self = this;
     return Task.spawn(function initTask() {
+      // 0. Database file and connection configuration.
+
+      // This should never fail. But, we assume the default of 1024 in case it
+      // does.
+      let rows = yield self._connection.execute("PRAGMA page_size");
+      let pageSize = 1024;
+      if (rows.length) {
+        pageSize = rows[0].getResultByIndex(0);
+      }
+
+      self._log.debug("Page size is " + pageSize);
+
+      // Ensure temp tables are stored in memory, not on disk.
+      yield self._connection.execute("PRAGMA temp_store=MEMORY");
+
+      let journalMode;
+      rows = yield self._connection.execute("PRAGMA journal_mode=WAL");
+      if (rows.length) {
+        journalMode = rows[0].getResultByIndex(0);
+      }
+
+      self._log.info("Journal mode is " + journalMode);
+
+      if (journalMode == "wal") {
+        self._enabledWALCheckpointPages =
+          Math.ceil(self.MAX_WAL_SIZE_KB * 1024 / pageSize);
+
+        self._log.info("WAL auto checkpoint pages: " +
+                       self._enabledWALCheckpointPages);
+
+        // We disable auto checkpoint during initialization to make it
+        // quicker.
+        yield self.setAutoCheckpoint(0);
+      } else {
+        if (journalMode != "truncate") {
+         // Fall back to truncate (which is faster than delete).
+          yield self._connection.execute("PRAGMA journal_mode=TRUNCATE");
+        }
+
+        // And always use full synchronous mode to reduce possibility for data
+        // loss.
+        yield self._connection.execute("PRAGMA synchronous=FULL");
+      }
+
+      let doCheckpoint = false;
+
       // 1. Create the schema.
       yield self._connection.executeTransaction(function ensureSchema(conn) {
         let schema = conn.schemaVersion;
@@ -1113,6 +1173,7 @@ MetricsStorageSqliteBackend.prototype = Object.freeze({
           }
 
           self._connection.schemaVersion = 1;
+          doCheckpoint = true;
         } else if (schema != 1) {
           throw new Error("Unknown database schema: " + schema);
         } else {
@@ -1130,19 +1191,31 @@ MetricsStorageSqliteBackend.prototype = Object.freeze({
       });
 
       // 3. Populate built-in types with database.
+      let missingTypes = [];
       for (let type of self._BUILTIN_TYPES) {
         type = self[type];
         if (self._typesByName.has(type)) {
           continue;
         }
 
-        let params = {name: type};
-        yield self._connection.executeCached(SQL.addType, params);
-        let rows = yield self._connection.executeCached(SQL.getTypeID, params);
-        let id = rows[0].getResultByIndex(0);
+        missingTypes.push(type);
+      }
 
-        self._typesByID.set(id, type);
-        self._typesByName.set(type, id);
+      // Don't perform DB transaction unless there is work to do.
+      if (missingTypes.length) {
+        yield self._connection.executeTransaction(function populateBuiltinTypes() {
+          for (let type of missingTypes) {
+            let params = {name: type};
+            yield self._connection.executeCached(SQL.addType, params);
+            let rows = yield self._connection.executeCached(SQL.getTypeID, params);
+            let id = rows[0].getResultByIndex(0);
+
+            self._typesByID.set(id, type);
+            self._typesByName.set(type, id);
+          }
+        });
+
+        doCheckpoint = true;
       }
 
       // 4. Obtain measurement info.
@@ -1173,6 +1246,14 @@ MetricsStorageSqliteBackend.prototype = Object.freeze({
         self._fieldsByInfo.set([measurementID, fieldName].join(":"), fieldID);
         self._fieldsByMeasurement.get(measurementID).add(fieldID);
       });
+
+      // Perform a checkpoint after initialization (if needed) and
+      // enable auto checkpoint during regular operation.
+      if (doCheckpoint) {
+        yield self.checkpoint();
+      }
+
+      yield self.setAutoCheckpoint(1);
     });
   },
 
@@ -1202,6 +1283,54 @@ MetricsStorageSqliteBackend.prototype = Object.freeze({
         }
       });
     });
+  },
+
+  /**
+   * Reduce memory usage as much as possible.
+   *
+   * This returns a promise that will be resolved on completion.
+   *
+   * @return Promise<>
+   */
+  compact: function () {
+    let self = this;
+    return this.enqueueOperation(function doCompact() {
+      self._connection.discardCachedStatements();
+      return self._connection.shrinkMemory();
+    });
+  },
+
+  /**
+   * Checkpoint writes requiring flush to disk.
+   *
+   * This is called to persist queued and non-flushed writes to disk.
+   * It will force an fsync, so it is expensive and should be used
+   * sparingly.
+   */
+  checkpoint: function () {
+    if (!this._enabledWALCheckpointPages) {
+      return CommonUtils.laterTickResolvingPromise();
+    }
+
+    return this.enqueueOperation(function checkpoint() {
+      this._log.info("Performing manual WAL checkpoint.");
+      return this._connection.execute("PRAGMA wal_checkpoint");
+    }.bind(this));
+  },
+
+  setAutoCheckpoint: function (on) {
+    // If we aren't in WAL mode, wal_autocheckpoint won't do anything so
+    // we no-op.
+    if (!this._enabledWALCheckpointPages) {
+      return CommonUtils.laterTickResolvingPromise();
+    }
+
+    let val = on ? this._enabledWALCheckpointPages : 0;
+
+    return this.enqueueOperation(function setWALCheckpoint() {
+      this._log.info("Setting WAL auto checkpoint to " + val);
+      return this._connection.execute("PRAGMA wal_autocheckpoint=" + val);
+    }.bind(this));
   },
 
   /**
@@ -1485,13 +1614,16 @@ MetricsStorageSqliteBackend.prototype = Object.freeze({
    * @param date
    *        (Date) When the increment occurred. This is typically "now" but can
    *        be explicitly defined for events that occurred in the past.
+   * @param by
+   *        (integer) How much to increment the value by. Defaults to 1.
    */
-  incrementDailyCounterFromFieldID: function (id, date=new Date()) {
+  incrementDailyCounterFromFieldID: function (id, date=new Date(), by=1) {
     this._ensureFieldType(id, this.FIELD_DAILY_COUNTER);
 
     let params = {
       field_id: id,
       days: dateToDays(date),
+      by: by,
     };
 
     return this._connection.executeCached(SQL.incrementDailyCounterFromFieldID,
@@ -2039,4 +2171,9 @@ MetricsStorageSqliteBackend.prototype = Object.freeze({
     return deferred.promise;
   },
 });
+
+// Alias built-in field types to public API.
+for (let property of MetricsStorageSqliteBackend.prototype._BUILTIN_TYPES) {
+  this.MetricsStorageBackend[property] = MetricsStorageSqliteBackend.prototype[property];
+}
 

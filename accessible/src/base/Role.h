@@ -587,9 +587,8 @@ enum Role {
   TOGGLE_BUTTON = 93,
 
   /**
-   * Representas a control that is capable of expanding and collapsing rows as
+   * Represent a control that is capable of expanding and collapsing rows as
    * well as showing multiple columns of data.
-   * XXX: it looks like this role is dupe of OUTLINE.
    */
   TREE_TABLE = 94,
 
@@ -779,7 +778,12 @@ enum Role {
   /**
    * Represent a definition in a definition list (dd in HTML)
    */
-  DEFINITION = 128
+  DEFINITION = 128,
+
+  /**
+   * Represent a keyboard or keypad key (ARIA role "key").
+   */
+  KEY = 129
 };
 
 } // namespace role

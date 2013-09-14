@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_asconf.c 240250 2012-09-08 20:54:54Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_asconf.c 246595 2013-02-09 17:26:14Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -85,7 +85,7 @@ sctp_asconf_success_response(uint32_t id)
 	struct sctp_asconf_paramhdr *aph;
 
 	m_reply = sctp_get_mbuf_for_msg(sizeof(struct sctp_asconf_paramhdr),
-					0, M_DONTWAIT, 1, MT_DATA);
+					0, M_NOWAIT, 1, MT_DATA);
 	if (m_reply == NULL) {
 		SCTPDBG(SCTP_DEBUG_ASCONF1,
 			"asconf_success_response: couldn't get mbuf!\n");
@@ -113,7 +113,7 @@ sctp_asconf_error_response(uint32_t id, uint16_t cause, uint8_t *error_tlv,
 	m_reply = sctp_get_mbuf_for_msg((sizeof(struct sctp_asconf_paramhdr) +
 					 tlv_length +
 					 sizeof(struct sctp_error_cause)),
-					0, M_DONTWAIT, 1, MT_DATA);
+					0, M_NOWAIT, 1, MT_DATA);
 	if (m_reply == NULL) {
 		SCTPDBG(SCTP_DEBUG_ASCONF1,
 			"asconf_error_response: couldn't get mbuf!\n");
@@ -646,7 +646,7 @@ sctp_handle_asconf(struct mbuf *m, unsigned int offset,
 	}
 
 	m_ack = sctp_get_mbuf_for_msg(sizeof(struct sctp_asconf_ack_chunk), 0,
-				      M_DONTWAIT, 1, MT_DATA);
+				      M_NOWAIT, 1, MT_DATA);
 	if (m_ack == NULL) {
 		SCTPDBG(SCTP_DEBUG_ASCONF1,
 			"handle_asconf: couldn't get mbuf!\n");
@@ -1933,7 +1933,7 @@ sctp_addr_mgmt_assoc(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 			return;
 		}
 		if (IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr)) {
-			if (stcb->asoc.local_scope == 0) {
+			if (stcb->asoc.scope.local_scope == 0) {
 				return;
 			}
 			/* is it the right link local scope? */
@@ -1941,7 +1941,7 @@ sctp_addr_mgmt_assoc(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 				return;
 			}
 		}
-		if (stcb->asoc.site_scope == 0 &&
+		if (stcb->asoc.scope.site_scope == 0 &&
 		    IN6_IS_ADDR_SITELOCAL(&sin6->sin6_addr)) {
 			return;
 		}
@@ -1965,7 +1965,7 @@ sctp_addr_mgmt_assoc(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 			/* we skip unspecifed addresses */
 			return;
 		}
-		if (stcb->asoc.ipv4_local_scope == 0 &&
+		if (stcb->asoc.scope.ipv4_local_scope == 0 &&
 		    IN4_ISPRIVATE_ADDRESS(&sin->sin_addr)) {
 			return;
 		}
@@ -2124,7 +2124,7 @@ sctp_asconf_iterator_stcb(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 				continue;
 			}
 			if (IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr)) {
-				if (stcb->asoc.local_scope == 0) {
+				if (stcb->asoc.scope.local_scope == 0) {
 					continue;
 				}
 				/* is it the right link local scope? */
@@ -2153,7 +2153,7 @@ sctp_asconf_iterator_stcb(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 				/* we skip unspecifed addresses */
 				continue;
 			}
-			if (stcb->asoc.ipv4_local_scope == 0 &&
+			if (stcb->asoc.scope.ipv4_local_scope == 0 &&
 			    IN4_ISPRIVATE_ADDRESS(&sin->sin_addr)) {
 				continue;
 			}
@@ -2215,13 +2215,7 @@ sctp_asconf_iterator_stcb(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 				}
 			} else {
 				/* Need to check scopes for this guy */
-				if (sctp_is_address_in_scope(ifa,
-					stcb->asoc.ipv4_addr_legal,
-					stcb->asoc.ipv6_addr_legal,
-					stcb->asoc.loopback_scope,
-					stcb->asoc.ipv4_local_scope,
-					stcb->asoc.local_scope,
-					stcb->asoc.site_scope,0) == 0) {
+				if (sctp_is_address_in_scope(ifa, &stcb->asoc.scope, 0) == 0) {
 					continue;
 				}
 			}
@@ -2455,7 +2449,7 @@ sctp_find_valid_localaddr(struct sctp_tcb *stcb, int addr_locked)
 		return (NULL);
 	}
 	LIST_FOREACH(sctp_ifn, &vrf->ifnlist, next_ifn) {
-		if (stcb->asoc.loopback_scope == 0 &&
+		if (stcb->asoc.scope.loopback_scope == 0 &&
 		    SCTP_IFN_IS_IFT_LOOP(sctp_ifn)) {
 			/* Skip if loopback_scope not set */
 			continue;
@@ -2464,7 +2458,7 @@ sctp_find_valid_localaddr(struct sctp_tcb *stcb, int addr_locked)
 			switch (sctp_ifa->address.sa.sa_family) {
 #ifdef INET
 			case AF_INET:
-				if (stcb->asoc.ipv4_addr_legal) {
+				if (stcb->asoc.scope.ipv4_addr_legal) {
 					struct sockaddr_in *sin;
 
 					sin = (struct sockaddr_in *)&sctp_ifa->address.sa;
@@ -2472,7 +2466,7 @@ sctp_find_valid_localaddr(struct sctp_tcb *stcb, int addr_locked)
 						/* skip unspecifed addresses */
 						continue;
 					}
-					if (stcb->asoc.ipv4_local_scope == 0 &&
+					if (stcb->asoc.scope.ipv4_local_scope == 0 &&
 					    IN4_ISPRIVATE_ADDRESS(&sin->sin_addr))
 						continue;
 
@@ -2488,7 +2482,7 @@ sctp_find_valid_localaddr(struct sctp_tcb *stcb, int addr_locked)
 #endif
 #ifdef INET6
 			case AF_INET6:
-				if (stcb->asoc.ipv6_addr_legal) {
+				if (stcb->asoc.scope.ipv6_addr_legal) {
 					struct sockaddr_in6 *sin6;
 
 					if (sctp_ifa->localifa_flags & SCTP_ADDR_IFA_UNUSEABLE) {
@@ -2500,10 +2494,10 @@ sctp_find_valid_localaddr(struct sctp_tcb *stcb, int addr_locked)
 						/* we skip unspecifed addresses */
 						continue;
 					}
-					if (stcb->asoc.local_scope == 0 &&
+					if (stcb->asoc.scope.local_scope == 0 &&
 					    IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr))
 						continue;
-					if (stcb->asoc.site_scope == 0 &&
+					if (stcb->asoc.scope.site_scope == 0 &&
 					    IN6_IS_ADDR_SITELOCAL(&sin6->sin6_addr))
 						continue;
 
@@ -2579,14 +2573,14 @@ sctp_compose_asconf(struct sctp_tcb *stcb, int *retlen, int addr_locked)
 	 * it's simpler to fill in the asconf chunk header lookup address on
 	 * the fly
 	 */
-	m_asconf_chk = sctp_get_mbuf_for_msg(sizeof(struct sctp_asconf_chunk), 0, M_DONTWAIT, 1, MT_DATA);
+	m_asconf_chk = sctp_get_mbuf_for_msg(sizeof(struct sctp_asconf_chunk), 0, M_NOWAIT, 1, MT_DATA);
 	if (m_asconf_chk == NULL) {
 		/* no mbuf's */
 		SCTPDBG(SCTP_DEBUG_ASCONF1,
 			"compose_asconf: couldn't get chunk mbuf!\n");
 		return (NULL);
 	}
-	m_asconf = sctp_get_mbuf_for_msg(MCLBYTES, 0, M_DONTWAIT, 1, MT_DATA);
+	m_asconf = sctp_get_mbuf_for_msg(MCLBYTES, 0, M_NOWAIT, 1, MT_DATA);
 	if (m_asconf == NULL) {
 		/* no mbuf's */
 		SCTPDBG(SCTP_DEBUG_ASCONF1,

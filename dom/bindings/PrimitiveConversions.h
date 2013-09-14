@@ -91,7 +91,8 @@ struct DisallowedConversion {
   typedef int intermediateType;
 
 private:
-  static inline bool converter(JSContext* cx, JS::Value v, jstype* retval) {
+  static inline bool converter(JSContext* cx, JS::Handle<JS::Value> v,
+                               jstype* retval) {
     MOZ_NOT_REACHED("This should never be instantiated!");
     return false;
   }
@@ -128,7 +129,8 @@ struct PrimitiveConversionTraits_smallInt {
   // corresponding unsigned type.
   typedef int32_t jstype;
   typedef int32_t intermediateType;
-  static inline bool converter(JSContext* cx, JS::Value v, jstype* retval) {
+  static inline bool converter(JSContext* cx, JS::Handle<JS::Value> v,
+                               jstype* retval) {
     return JS::ToInt32(cx, v, retval);
   }
 };
@@ -157,7 +159,8 @@ template<>
 struct PrimitiveConversionTraits<int64_t, eDefault> {
   typedef int64_t jstype;
   typedef int64_t intermediateType;
-  static inline bool converter(JSContext* cx, JS::Value v, jstype* retval) {
+  static inline bool converter(JSContext* cx, JS::Handle<JS::Value> v,
+                               jstype* retval) {
     return JS::ToInt64(cx, v, retval);
   }
 };
@@ -166,7 +169,8 @@ template<>
 struct PrimitiveConversionTraits<uint64_t, eDefault> {
   typedef uint64_t jstype;
   typedef uint64_t intermediateType;
-  static inline bool converter(JSContext* cx, JS::Value v, jstype* retval) {
+  static inline bool converter(JSContext* cx, JS::Handle<JS::Value> v,
+                               jstype* retval) {
     return JS::ToUint64(cx, v, retval);
   }
 };
@@ -206,7 +210,8 @@ struct PrimitiveConversionTraits_ToCheckedIntHelper {
   typedef T jstype;
   typedef T intermediateType;
 
-  static inline bool converter(JSContext* cx, JS::Value v, jstype* retval) {
+  static inline bool converter(JSContext* cx, JS::Handle<JS::Value> v,
+                               jstype* retval) {
     double intermediate;
     if (!JS::ToNumber(cx, v, &intermediate)) {
       return false;
@@ -223,7 +228,7 @@ PrimitiveConversionTraits_EnforceRange(JSContext* cx, const double& d, T* retval
   MOZ_STATIC_ASSERT(std::numeric_limits<T>::is_integer,
                     "This can only be applied to integers!");
 
-  if (!MOZ_DOUBLE_IS_FINITE(d)) {
+  if (!mozilla::IsFinite(d)) {
     return ThrowErrorMessage(cx, MSG_ENFORCE_RANGE_NON_FINITE, TypeName<T>::value());
   }
 
@@ -251,7 +256,7 @@ PrimitiveConversionTraits_Clamp(JSContext* cx, const double& d, T* retval)
   MOZ_STATIC_ASSERT(std::numeric_limits<T>::is_integer,
                     "This can only be applied to integers!");
 
-  if (MOZ_DOUBLE_IS_NaN(d)) {
+  if (mozilla::IsNaN(d)) {
     *retval = 0;
     return true;
   }
@@ -264,7 +269,7 @@ PrimitiveConversionTraits_Clamp(JSContext* cx, const double& d, T* retval)
     return true;
   }
 
-  MOZ_ASSERT(MOZ_DOUBLE_IS_FINITE(d));
+  MOZ_ASSERT(mozilla::IsFinite(d));
 
   // Banker's rounding (round ties towards even).
   // We move away from 0 by 0.5f and then truncate.  That gets us the right
@@ -273,7 +278,7 @@ PrimitiveConversionTraits_Clamp(JSContext* cx, const double& d, T* retval)
   // the correct result.  If N is even, plus or minus N is the correct result.
   double toTruncate = (d < 0) ? d - 0.5 : d + 0.5;
 
-  T truncated(toTruncate);
+  T truncated = static_cast<T>(toTruncate);
 
   if (truncated == toTruncate) {
     /*
@@ -303,7 +308,8 @@ template<>
 struct PrimitiveConversionTraits<bool, eDefault> {
   typedef JSBool jstype;
   typedef bool intermediateType;
-  static inline bool converter(JSContext* /* unused */, JS::Value v, jstype* retval) {
+  static inline bool converter(JSContext* /* unused */, JS::Handle<JS::Value> v,
+                               jstype* retval) {
     *retval = JS::ToBoolean(v);
     return true;
   }
@@ -319,7 +325,8 @@ struct PrimitiveConversionTraits<double, B> : public DisallowedConversion<double
 struct PrimitiveConversionTraits_float {
   typedef double jstype;
   typedef double intermediateType;
-  static inline bool converter(JSContext* cx, JS::Value v, jstype* retval) {
+  static inline bool converter(JSContext* cx, JS::Handle<JS::Value> v,
+                               jstype* retval) {
     return JS::ToNumber(cx, v, retval);
   }
 };
@@ -333,14 +340,14 @@ struct PrimitiveConversionTraits<double, eDefault> : PrimitiveConversionTraits_f
 
 
 template<typename T, ConversionBehavior B>
-bool ValueToPrimitive(JSContext* cx, JS::Value v, T* retval)
+bool ValueToPrimitive(JSContext* cx, JS::Handle<JS::Value> v, T* retval)
 {
   typename PrimitiveConversionTraits<T, B>::jstype t;
   if (!PrimitiveConversionTraits<T, B>::converter(cx, v, &t))
     return false;
 
-  *retval =
-    static_cast<typename PrimitiveConversionTraits<T, B>::intermediateType>(t);
+  *retval = static_cast<T>(
+    static_cast<typename PrimitiveConversionTraits<T, B>::intermediateType>(t));
   return true;
 }
 

@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=99:
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -155,7 +155,7 @@ void edge(unsigned src_index, unsigned dest_index)
 
 void run()
 {
-    finder = new ComponentFinder<TestNode>(rt->nativeStackLimit);
+    finder = new ComponentFinder<TestNode>(rt->mainThread.nativeStackLimit);
     for (unsigned i = 0; i < vertex_count; ++i)
         finder->addNode(&Vertex[i]);
     resultsList = finder->getResultsList();
@@ -246,7 +246,7 @@ BEGIN_TEST(testFindSCCsStackLimit)
     for (unsigned i = initial; i < (max - 10); ++i)
         vertices[i].edge = &vertices[i + 1];
 
-    ComponentFinder<TestNode2> finder(rt->nativeStackLimit);
+    ComponentFinder<TestNode2> finder(rt->mainThread.nativeStackLimit);
     for (unsigned i = 0; i < max; ++i)
         finder.addNode(&vertices[i]);
 

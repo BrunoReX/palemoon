@@ -23,7 +23,7 @@ class FontEntry;
 typedef struct FT_LibraryRec_ *FT_Library;
 #endif
 
-class THEBES_API gfxPlatformGtk : public gfxPlatform {
+class gfxPlatformGtk : public gfxPlatform {
 public:
     gfxPlatformGtk();
     virtual ~gfxPlatformGtk();
@@ -123,11 +123,15 @@ public:
 
     virtual gfxImageFormat GetOffscreenFormat();
 
+    virtual int GetScreenDepth() const;
+
 protected:
     static gfxFontconfigUtils *sFontconfigUtils;
 
 private:
     virtual qcms_profile *GetPlatformCMSOutputProfile();
+
+    virtual bool SupportsOffMainThreadCompositing();
 #ifdef MOZ_X11
     static bool sUseXRender;
 #endif

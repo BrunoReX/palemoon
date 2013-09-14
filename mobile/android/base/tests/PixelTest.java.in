@@ -10,6 +10,7 @@ abstract class PixelTest extends BaseTest {
         Actions.RepeatedEventExpecter paintExpecter = mActions.expectPaint();
         loadUrl(url);
         paintExpecter.blockUntilClear(PAINT_CLEAR_DELAY);
+        paintExpecter.unregisterListener();
         PaintedSurface p = mDriver.getPaintedSurface();
         if (p == null) {
             mAsserter.ok(p != null, "checking that painted surface loaded", 
@@ -27,10 +28,11 @@ abstract class PixelTest extends BaseTest {
         Actions.RepeatedEventExpecter paintExpecter = mActions.expectPaint();
 
         mActions.sendSpecialKey(Actions.SpecialKey.MENU);
-        mSolo.waitForText("Reload");
+        waitForText("Reload");
         mSolo.clickOnText("Reload");
 
         paintExpecter.blockUntilClear(PAINT_CLEAR_DELAY);
+        paintExpecter.unregisterListener();
         PaintedSurface p = mDriver.getPaintedSurface();
         if (p == null) {
             mAsserter.ok(p != null, "checking that painted surface loaded", 

@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "CSFLog.h"
+
 #include "CC_Common.h"
 
 #include "CC_SIPCCDeviceInfo.h"
@@ -21,8 +23,6 @@ extern "C"
 
 using namespace std;
 using namespace CSF;
-
-#include "CSFLog.h"
 
 #define MAX_SUPPORTED_NUM_CALLS        100
 #define MAX_SUPPORTED_NUM_LINES        100
@@ -59,7 +59,7 @@ vector<CC_CallPtr> CC_SIPCCDeviceInfo::getCalls ()
 
     for (int i=0; i<numHandles; i++)
     {
-        CC_CallPtr callPtr = CC_SIPCCCall::wrap(handles[i]);
+        CC_CallPtr callPtr = CC_SIPCCCall::wrap(handles[i]).get();
         callsVector.push_back(callPtr);
     }
 
@@ -77,7 +77,7 @@ vector<CC_LinePtr> CC_SIPCCDeviceInfo::getLines ()
 
     for (int i=0; i<numLines; i++)
     {
-        CC_LinePtr linePtr = CC_SIPCCLine::wrap(lines[i]);
+        CC_LinePtr linePtr = CC_SIPCCLine::wrap(lines[i]).get();
         linesVector.push_back(linePtr);
     }
 
@@ -95,7 +95,8 @@ vector<CC_FeatureInfoPtr> CC_SIPCCDeviceInfo::getFeatures ()
 
     for (int i=0; i<numFeatureInfos; i++)
     {
-        CC_FeatureInfoPtr featurePtr = CC_SIPCCFeatureInfo::wrap(features[i]);
+        CC_FeatureInfoPtr featurePtr =
+          CC_SIPCCFeatureInfo::wrap(features[i]).get();
         featuresVector.push_back(featurePtr);
     }
 
@@ -113,7 +114,8 @@ vector<CC_CallServerInfoPtr> CC_SIPCCDeviceInfo::getCallServers ()
 
     for (int i=0; i<numCallServerInfos; i++)
     {
-        CC_CallServerInfoPtr callServerPtr = CC_SIPCCCallServerInfo::wrap(callServers[i]);
+        CC_CallServerInfoPtr callServerPtr =
+          CC_SIPCCCallServerInfo::wrap(callServers[i]).get();
         callServersVector.push_back(callServerPtr);
     }
 

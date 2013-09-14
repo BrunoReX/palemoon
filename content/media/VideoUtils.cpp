@@ -4,9 +4,8 @@
 
 #include "VideoUtils.h"
 #include "MediaResource.h"
-#include "nsTimeRanges.h"
+#include "mozilla/dom/TimeRanges.h"
 #include "nsMathUtils.h"
-#include "prtypes.h"
 
 #include "mozilla/StandardInteger.h"
 
@@ -51,7 +50,7 @@ static int64_t BytesToTime(int64_t offset, int64_t length, int64_t durationUs) {
 
 void GetEstimatedBufferedTimeRanges(mozilla::MediaResource* aStream,
                                     int64_t aDurationUsecs,
-                                    nsTimeRanges* aOutBuffered)
+                                    mozilla::dom::TimeRanges* aOutBuffered)
 {
   // Nothing to cache if the media takes 0us to play.
   if (aDurationUsecs <= 0 || !aStream || !aOutBuffered)

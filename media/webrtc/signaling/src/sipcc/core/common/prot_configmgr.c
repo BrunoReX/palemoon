@@ -75,8 +75,6 @@ int i;
   for (i=0; i< MAX_CONFIG_LINES; i++) {
     initCfgTblEntry(CFGID_LINE_INDEX+i, "Index", CFGVAR(line[i].index), PA_INT, PR_INT, 0);
     initCfgTblEntry(CFGID_LINE_FEATURE+i, "Feat", CFGVAR(line[i].feature), PA_INT, PR_INT, 0);
-    initCfgTblEntry(CFGID_LINE_MAXNUMCALLS+i, "MNC", CFGVAR(line[i].maxnumcalls), PA_INT, PR_INT, 0);
-    initCfgTblEntry(CFGID_LINE_BUSY_TRIGGER+i, "BT", CFGVAR(line[i].busy_trigger), PA_INT, PR_INT, 0);
     initCfgTblEntry(CFGID_PROXY_ADDRESS+i, "ProxyAddr", CFGVAR(line[i].proxy_address), PA_STR, PR_STR, 0);
     initCfgTblEntry(CFGID_PROXY_PORT+i, "ProxyPort", CFGVAR(line[i].proxy_port), PA_INT, PR_INT, 0);
     initCfgTblEntry(CFGID_LINE_CALL_WAITING+i, "CWait", CFGVAR(line[i].call_waiting), PA_INT, PR_INT, 0);
@@ -366,7 +364,7 @@ sip_config_check_line (line_t line)
 
     if ((line < 1) || (line > max_lines_allowed)) {
         if (line != 0) {
-            PLAT_ERROR(PLAT_COMMON_F_PREFIX"Invalid Line: %d\n", fname, line);
+            PLAT_ERROR(PLAT_COMMON_F_PREFIX"Invalid Line: %d", fname, line);
         }
         return FALSE;
     }
@@ -424,12 +422,12 @@ sip_config_get_keepalive_expires()
 
     if (keepalive_interval < MIN_KEEPALIVE_EXPIRES) {
         keepalive_interval = MIN_KEEPALIVE_EXPIRES;
-        TNP_DEBUG(DEB_F_PREFIX"Keepalive interval less than minimum acceptable.Resetting it to %d\n",
+        TNP_DEBUG(DEB_F_PREFIX"Keepalive interval less than minimum acceptable.Resetting it to %d",
             DEB_F_PREFIX_ARGS(SIP_KA, "sip_config_get_keepalive_expires"),
             keepalive_interval);
     } else if (keepalive_interval > MAX_KEEPALIVE_EXPIRES) {
         keepalive_interval = MAX_KEEPALIVE_EXPIRES;
-        TNP_DEBUG(DEB_F_PREFIX"Keepalive interval more than maximum acceptable.Resetting it to %d\n",
+        TNP_DEBUG(DEB_F_PREFIX"Keepalive interval more than maximum acceptable.Resetting it to %d",
             DEB_F_PREFIX_ARGS(SIP_KA, "sip_config_get_keepalive_expires"),
             keepalive_interval);
     }

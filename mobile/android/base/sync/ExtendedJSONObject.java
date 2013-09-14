@@ -41,7 +41,8 @@ public class ExtendedJSONObject {
   /**
    * Parse a JSON encoded string.
    *
-   * @param input JSON encoded input string to parse; not necessarily a JSON object.
+   * @param in <code>Reader</code> over a JSON-encoded input to parse; not
+   *            necessarily a JSON object.
    * @return a regular Java <code>Object</code>.
    * @throws ParseException
    * @throws IOException
@@ -55,7 +56,7 @@ public class ExtendedJSONObject {
    * <p>
    * You should prefer the streaming interface {@link #parseRaw(Reader)}.
    *
-   * @param input JSON encoded input string to parse; not necessarily a JSON object.
+   * @param input JSON-encoded input string to parse; not necessarily a JSON object.
    * @return a regular Java <code>Object</code>.
    * @throws ParseException
    */
@@ -66,7 +67,7 @@ public class ExtendedJSONObject {
   /**
    * Helper method to get a JSON array from a stream.
    *
-   * @param jsonString input.
+   * @param in <code>Reader</code> over a JSON-encoded array to parse.
    * @throws ParseException
    * @throws IOException
    * @throws NonArrayJSONException if the object is valid JSON, but not an array.
@@ -114,7 +115,7 @@ public class ExtendedJSONObject {
   /**
    * Helper method to get a JSON object from a stream.
    *
-   * @param jsonString input.
+   * @param in input {@link Reader}.
    * @throws ParseException
    * @throws IOException
    * @throws NonArrayJSONException if the object is valid JSON, but not an object.
@@ -284,7 +285,7 @@ public class ExtendedJSONObject {
   }
 
   @SuppressWarnings("unchecked")
-  public Iterable<Entry<String, Object>> entryIterable() {
+  public Set<Entry<String, Object>> entrySet() {
     return this.object.entrySet();
   }
 
@@ -306,5 +307,28 @@ public class ExtendedJSONObject {
 
   public int size() {
     return this.object.size();
+  }
+
+  @Override
+  public int hashCode() {
+    if (this.object == null) {
+      return getClass().hashCode();
+    }
+    return this.object.hashCode() ^ getClass().hashCode();
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (o == null || !(o instanceof ExtendedJSONObject)) {
+      return false;
+    }
+    if (o == this) {
+      return true;
+    }
+    ExtendedJSONObject other = (ExtendedJSONObject) o;
+    if (this.object == null) {
+      return other.object == null;
+    }
+    return this.object.equals(other.object);
   }
 }

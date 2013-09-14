@@ -19,6 +19,8 @@ let openTabs = [];
 let loadedTabCount = 0;
 
 function test() {
+  requestLongerTimeout(2);
+
   // Add two tabs in the main window.
   addTabs(win1);
 
@@ -57,15 +59,15 @@ function openConsoles() {
     let tab = openTabs[i];
     openConsole(tab, function(index, hud) {
       ok(hud, "HUD is open for tab " + index);
-      let window = hud.tab.linkedBrowser.contentWindow;
+      let window = hud.target.tab.linkedBrowser.contentWindow;
       window.console.log("message for tab " + index);
       consolesOpen++;
     }.bind(null, i));
   }
 
   waitForSuccess({
-    name: "4 web consoles opened",
     timeout: 15000,
+    name: "4 web consoles opened",
     validatorFn: function()
     {
       return consolesOpen == 4;
@@ -99,8 +101,8 @@ function closeConsoles() {
   }
 
   waitForSuccess({
-    name: "4 web consoles closed",
     timeout: 10000,
+    name: "4 web consoles closed",
     validatorFn: function()
     {
       return consolesClosed == 4;

@@ -1,11 +1,13 @@
-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsmath_h___
-#define jsmath_h___
+#ifndef jsmath_h
+#define jsmath_h
+
+#include "jsapi.h"
 
 namespace js {
 
@@ -54,9 +56,6 @@ class MathCache
 extern JSObject *
 js_InitMathClass(JSContext *cx, js::HandleObject obj);
 
-extern void
-js_InitRandom(JSContext *cx);
-
 extern double
 math_random_no_outparam(JSContext *cx);
 
@@ -96,6 +95,9 @@ js_math_floor_impl(double x);
 namespace js {
 
 extern JSBool
+math_exp(JSContext *cx, unsigned argc, Value *vp);
+
+extern JSBool
 math_imul(JSContext *cx, unsigned argc, js::Value *vp);
 
 extern JSBool
@@ -117,10 +119,49 @@ extern double
 math_cos_impl(MathCache *cache, double x);
 
 extern JSBool
+math_exp(JSContext *cx, unsigned argc, js::Value *vp);
+
+extern double
+math_exp_impl(MathCache *cache, double x);
+
+extern JSBool
 math_tan(JSContext *cx, unsigned argc, js::Value *vp);
 
 extern double
 math_tan_impl(MathCache *cache, double x);
+
+extern JSBool
+math_asin(JSContext *cx, unsigned argc, Value *vp);
+
+extern JSBool
+math_acos(JSContext *cx, unsigned argc, Value *vp);
+
+extern JSBool
+math_atan(JSContext *cx, unsigned argc, Value *vp);
+
+extern JSBool
+math_atan2(JSContext *cx, unsigned argc, Value *vp);
+
+extern double
+ecmaAtan2(double x, double y);
+
+extern double
+math_atan_impl(MathCache *cache, double x);
+
+extern JSBool
+math_atan(JSContext *cx, unsigned argc, js::Value *vp);
+
+extern double
+math_asin_impl(MathCache *cache, double x);
+
+extern JSBool
+math_asin(JSContext *cx, unsigned argc, js::Value *vp);
+
+extern double
+math_acos_impl(MathCache *cache, double x);
+
+extern JSBool
+math_acos(JSContext *cx, unsigned argc, js::Value *vp);
 
 extern double
 powi(double x, int y);
@@ -128,6 +169,9 @@ powi(double x, int y);
 extern double
 ecmaPow(double x, double y);
 
+extern JSBool
+math_imul(JSContext *cx, unsigned argc, Value *vp);
+
 } /* namespace js */
 
-#endif /* jsmath_h___ */
+#endif /* jsmath_h */

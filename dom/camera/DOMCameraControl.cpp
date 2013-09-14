@@ -7,16 +7,21 @@
 #include "nsDOMClassInfo.h"
 #include "jsapi.h"
 #include "nsThread.h"
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/Services.h"
+#include "mozilla/unused.h"
 #include "nsIObserverService.h"
 #include "nsIDOMDeviceStorage.h"
+#include "nsXULAppAPI.h"
 #include "DOMCameraManager.h"
 #include "DOMCameraCapabilities.h"
 #include "DOMCameraControl.h"
 #include "CameraCommon.h"
+#include "mozilla/dom/CameraManagerBinding.h"
+#include "mozilla/dom/BindingUtils.h"
 
 using namespace mozilla;
-using namespace dom;
+using namespace mozilla::dom;
 
 DOMCI_DATA(CameraControl, nsICameraControl)
 
@@ -241,7 +246,7 @@ nsDOMCameraControl::StartRecording(const JS::Value& aOptions, nsIDOMDeviceStorag
   NS_ENSURE_TRUE(onSuccess, NS_ERROR_INVALID_ARG);
   NS_ENSURE_TRUE(storageArea, NS_ERROR_INVALID_ARG);
 
-  CameraStartRecordingOptions options;
+  mozilla::idl::CameraStartRecordingOptions options;
 
   // Default values, until the dictionary parser can handle them.
   options.rotation = 0;
@@ -259,6 +264,11 @@ nsDOMCameraControl::StartRecording(const JS::Value& aOptions, nsIDOMDeviceStorag
   obs->NotifyObservers(nullptr,
                        "recording-device-events",
                        NS_LITERAL_STRING("starting").get());
+  // Forward recording events to parent process.
+  // The events are gathered in chrome process and used for recording indicator
+  if (XRE_GetProcessType() != GeckoProcessType_Default) {
+    unused << ContentChild::GetSingleton()->SendRecordingDeviceEvents(NS_LITERAL_STRING("starting"));
+  }
 
   #ifdef MOZ_B2G
   if (!mAudioChannelAgent) {
@@ -274,7 +284,8 @@ nsDOMCameraControl::StartRecording(const JS::Value& aOptions, nsIDOMDeviceStorag
   #endif
 
   nsCOMPtr<nsIFile> folder;
-  storageArea->GetRootDirectory(getter_AddRefs(folder));
+  rv = storageArea->GetRootDirectoryForFile(filename, getter_AddRefs(folder));
+  NS_ENSURE_SUCCESS(rv, rv);
   return mCameraControl->StartRecording(&options, folder, filename, onSuccess, onError);
 }
 
@@ -291,6 +302,11 @@ nsDOMCameraControl::StopRecording()
   obs->NotifyObservers(nullptr,
                        "recording-device-events",
                        NS_LITERAL_STRING("shutdown").get());
+  // Forward recording events to parent process.
+  // The events are gathered in chrome process and used for recording indicator
+  if (XRE_GetProcessType() != GeckoProcessType_Default) {
+    unused << ContentChild::GetSingleton()->SendRecordingDeviceEvents(NS_LITERAL_STRING("shutdown"));
+  }
 
   #ifdef MOZ_B2G
   if (mAudioChannelAgent) {
@@ -308,7 +324,7 @@ nsDOMCameraControl::GetPreviewStream(const JS::Value& aOptions, nsICameraPreview
 {
   NS_ENSURE_TRUE(onSuccess, NS_ERROR_INVALID_ARG);
 
-  CameraSize size;
+  mozilla::idl::CameraSize size;
   nsresult rv = size.Init(cx, &aOptions);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -336,14 +352,16 @@ nsDOMCameraControl::TakePicture(const JS::Value& aOptions, nsICameraTakePictureC
 {
   NS_ENSURE_TRUE(onSuccess, NS_ERROR_INVALID_ARG);
 
-  CameraPictureOptions  options;
-  CameraSize            size;
-  CameraPosition        pos;
+  RootedDictionary<CameraPictureOptions> options(cx);
+  mozilla::idl::CameraSize           size;
+  mozilla::idl::CameraPosition       pos;
 
-  nsresult rv = options.Init(cx, &aOptions);
-  NS_ENSURE_SUCCESS(rv, rv);
+  JS::Rooted<JS::Value> optionVal(cx, aOptions);
+  if (!options.Init(cx, optionVal)) {
+    return NS_ERROR_FAILURE;
+  }
 
-  rv = size.Init(cx, &options.pictureSize);
+  nsresult rv = size.Init(cx, &options.mPictureSize);
   NS_ENSURE_SUCCESS(rv, rv);
 
   /**
@@ -354,10 +372,10 @@ nsDOMCameraControl::TakePicture(const JS::Value& aOptions, nsICameraTakePictureC
   pos.longitude = NAN;
   pos.altitude = NAN;
   pos.timestamp = NAN;
-  rv = pos.Init(cx, &options.position);
+  rv = pos.Init(cx, &options.mPosition);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return mCameraControl->TakePicture(size, options.rotation, options.fileFormat, pos, onSuccess, onError);
+  return mCameraControl->TakePicture(size, options.mRotation, options.mFileFormat, pos, options.mDateTime, onSuccess, onError);
 }
 
 /* [implicit_jscontext] void GetPreviewStreamVideoMode (in jsval aOptions, in nsICameraPreviewStreamCallback onSuccess, [optional] in nsICameraErrorCallback onError); */
@@ -366,7 +384,7 @@ nsDOMCameraControl::GetPreviewStreamVideoMode(const JS::Value& aOptions, nsICame
 {
   NS_ENSURE_TRUE(onSuccess, NS_ERROR_INVALID_ARG);
 
-  CameraRecorderOptions options;
+  mozilla::idl::CameraRecorderOptions options;
   nsresult rv = options.Init(cx, &aOptions);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -382,7 +400,11 @@ nsDOMCameraControl::ReleaseHardware(nsICameraReleaseCallback* onSuccess, nsICame
 class GetCameraResult : public nsRunnable
 {
 public:
-  GetCameraResult(nsDOMCameraControl* aDOMCameraControl, nsresult aResult, nsICameraGetCameraCallback* onSuccess, nsICameraErrorCallback* onError, uint64_t aWindowId)
+  GetCameraResult(nsDOMCameraControl* aDOMCameraControl,
+    nsresult aResult,
+    const nsMainThreadPtrHandle<nsICameraGetCameraCallback>& onSuccess,
+    const nsMainThreadPtrHandle<nsICameraErrorCallback>& onError,
+    uint64_t aWindowId)
     : mDOMCameraControl(aDOMCameraControl)
     , mResult(aResult)
     , mOnSuccessCb(onSuccess)
@@ -397,11 +419,11 @@ public:
     if (nsDOMCameraManager::IsWindowStillActive(mWindowId)) {
       DOM_CAMERA_LOGT("%s : this=%p -- BEFORE CALLBACK\n", __func__, this);
       if (NS_FAILED(mResult)) {
-        if (mOnErrorCb) {
+        if (mOnErrorCb.get()) {
           mOnErrorCb->HandleEvent(NS_LITERAL_STRING("FAILURE"));
         }
       } else {
-        if (mOnSuccessCb) {
+        if (mOnSuccessCb.get()) {
           mOnSuccessCb->HandleEvent(mDOMCameraControl);
         }
       }
@@ -424,13 +446,16 @@ protected:
    */
   nsDOMCameraControl* mDOMCameraControl;
   nsresult mResult;
-  nsCOMPtr<nsICameraGetCameraCallback> mOnSuccessCb;
-  nsCOMPtr<nsICameraErrorCallback> mOnErrorCb;
+  nsMainThreadPtrHandle<nsICameraGetCameraCallback> mOnSuccessCb;
+  nsMainThreadPtrHandle<nsICameraErrorCallback> mOnErrorCb;
   uint64_t mWindowId;
 };
 
 nsresult
-nsDOMCameraControl::Result(nsresult aResult, nsICameraGetCameraCallback* onSuccess, nsICameraErrorCallback* onError, uint64_t aWindowId)
+nsDOMCameraControl::Result(nsresult aResult,
+                           const nsMainThreadPtrHandle<nsICameraGetCameraCallback>& onSuccess,
+                           const nsMainThreadPtrHandle<nsICameraErrorCallback>& onError,
+                           uint64_t aWindowId)
 {
   nsCOMPtr<GetCameraResult> getCameraResult = new GetCameraResult(this, aResult, onSuccess, onError, aWindowId);
   return NS_DispatchToMainThread(getCameraResult);
@@ -441,4 +466,10 @@ nsDOMCameraControl::Shutdown()
 {
   DOM_CAMERA_LOGI("%s:%d\n", __func__, __LINE__);
   mCameraControl->Shutdown();
+}
+
+nsRefPtr<ICameraControl>
+nsDOMCameraControl::GetNativeCameraControl()
+{
+  return mCameraControl;
 }

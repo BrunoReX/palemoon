@@ -5,10 +5,9 @@
 #ifndef nsIContent_h___
 #define nsIContent_h___
 
+#include "mozilla/Attributes.h"
 #include "nsCaseTreatment.h" // for enum, cannot be forward-declared
-#include "nsCOMPtr.h"        // for already_AddRefed in constructor
-#include "nsIDocument.h"     // for use in inline function (IsInHTMLDocument)
-#include "nsINode.h"         // for base class
+#include "nsIDocument.h"
 
 // Forward declarations
 class nsAString;
@@ -34,8 +33,8 @@ enum nsLinkState {
 
 // IID for the nsIContent interface
 #define NS_ICONTENT_IID \
-{ 0xe2985850, 0x81ca, 0x4b5d, \
-  { 0xb0, 0xf3, 0xe3, 0x95, 0xd5, 0x0d, 0x85, 0x64 } }
+{ 0x8a8b4b1d, 0x72d8, 0x428e, \
+ { 0x95, 0x75, 0xf9, 0x18, 0xba, 0xf6, 0x9e, 0xa1 } }
 
 /**
  * A node of content in a document's content model. This interface
@@ -372,8 +371,8 @@ public:
    * @returns true if the attribute was set (even when set to empty string)
    *          false when not set.
    */
-  virtual bool GetAttr(int32_t aNameSpaceID, nsIAtom* aName, 
-                         nsAString& aResult) const = 0;
+  bool GetAttr(int32_t aNameSpaceID, nsIAtom* aName,
+               nsAString& aResult) const;
 
   /**
    * Determine if an attribute has been set (empty string or otherwise).
@@ -382,7 +381,7 @@ public:
    * @param aAttr the attribute name
    * @return whether an attribute exists
    */
-  virtual bool HasAttr(int32_t aNameSpaceID, nsIAtom* aName) const = 0;
+  bool HasAttr(int32_t aNameSpaceID, nsIAtom* aName) const;
 
   /**
    * Test whether this content node's given attribute has the given value.  If
@@ -394,13 +393,10 @@ public:
    * @param aValue The value to compare to.
    * @param aCaseSensitive Whether to do a case-sensitive compare on the value.
    */
-  virtual bool AttrValueIs(int32_t aNameSpaceID,
-                             nsIAtom* aName,
-                             const nsAString& aValue,
-                             nsCaseTreatment aCaseSensitive) const
-  {
-    return false;
-  }
+  bool AttrValueIs(int32_t aNameSpaceID,
+                   nsIAtom* aName,
+                   const nsAString& aValue,
+                   nsCaseTreatment aCaseSensitive) const;
   
   /**
    * Test whether this content node's given attribute has the given value.  If
@@ -412,13 +408,10 @@ public:
    * @param aValue The value to compare to.  Must not be null.
    * @param aCaseSensitive Whether to do a case-sensitive compare on the value.
    */
-  virtual bool AttrValueIs(int32_t aNameSpaceID,
-                             nsIAtom* aName,
-                             nsIAtom* aValue,
-                             nsCaseTreatment aCaseSensitive) const
-  {
-    return false;
-  }
+  bool AttrValueIs(int32_t aNameSpaceID,
+                   nsIAtom* aName,
+                   nsIAtom* aValue,
+                   nsCaseTreatment aCaseSensitive) const;
   
   enum {
     ATTR_MISSING = -1,
@@ -435,7 +428,7 @@ public:
    * @param aNameSpaceID The namespace ID of the attribute.  Must not
    *                     be kNameSpaceID_Unknown.
    * @param aName The name atom of the attribute.  Must not be null.
-   * @param aValues a NULL-terminated array of pointers to atom values to test
+   * @param aValues a nullptr-terminated array of pointers to atom values to test
    *                against.
    * @param aCaseSensitive Whether to do a case-sensitive compare on the values.
    * @return ATTR_MISSING, ATTR_VALUE_NO_MATCH or the non-negative index
@@ -640,17 +633,6 @@ public:
   virtual bool IsLink(nsIURI** aURI) const = 0;
 
   /**
-   * Get the cached state of the link.  If the state is unknown, 
-   * return eLinkState_Unknown.
-   *
-   * @return The cached link state of the link.
-   */
-  virtual nsLinkState GetLinkState() const
-  {
-    return eLinkState_NotLink;
-  }
-
-  /**
     * Get a pointer to the full href URI (fully resolved and canonicalized,
     * since it's an nsIURI object) for link elements.
     *
@@ -679,7 +661,7 @@ public:
    * If you also need to determine whether the parser is the one creating your
    * element (through createElement() or cloneNode() generally) then add a
    * uint32_t aFromParser to the NS_NewXXX() constructor for your element and
-   * have the parser pass the appropriate flags. See nsHTMLInputElement.cpp and
+   * have the parser pass the appropriate flags. See HTMLInputElement.cpp and
    * nsHTMLContentSink::MakeContentObject().
    *
    * DO NOT USE THIS METHOD to get around the fact that it's hard to deal with
@@ -715,7 +697,7 @@ public:
    * If you also need to determine whether the parser is the one creating your
    * element (through createElement() or cloneNode() generally) then add a
    * boolean aFromParser to the NS_NewXXX() constructor for your element and
-   * have the parser pass true.  See nsHTMLInputElement.cpp and
+   * have the parser pass true.  See HTMLInputElement.cpp and
    * nsHTMLContentSink::MakeContentObject().
    *
    * @param aHaveNotified Whether there has been a
@@ -854,9 +836,9 @@ public:
   }
 
   // Overloaded from nsINode
-  virtual already_AddRefed<nsIURI> GetBaseURI() const;
+  virtual already_AddRefed<nsIURI> GetBaseURI() const MOZ_OVERRIDE;
 
-  virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
+  virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor) MOZ_OVERRIDE;
 
   virtual bool IsPurple() = 0;
   virtual void RemovePurple() = 0;

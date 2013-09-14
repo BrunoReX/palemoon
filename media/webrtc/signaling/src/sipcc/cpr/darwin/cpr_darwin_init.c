@@ -107,7 +107,6 @@
 #include "cpr_stdlib.h"
 #include "cpr_stdio.h"
 #include "cpr_timers.h"
-#include "cpr_darwin_locks.h"
 #include "cpr_darwin_timers.h"
 #include "plat_api.h"
 #include "plat_debug.h"
@@ -206,7 +205,6 @@ cprPostInit (void)
      */
 
     debug_bind_keyword("cpr-info", &cprInfo);
-    //bind_show_keyword("cpr-msgq", cprShowMessageQueueStats);
 
     return CPR_SUCCESS;
 }

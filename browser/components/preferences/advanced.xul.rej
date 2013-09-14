@@ -1,0 +1,16 @@
+***************
+*** 121,126 ****
+          <tab id="networkTab" label="&networkTab.label;" helpTopic="prefs-advanced-network"/>
+          <tab id="updateTab" label="&updateTab.label;"  helpTopic="prefs-advanced-update"/>
+          <tab id="encryptionTab" label="&encryptionTab.label;" helpTopic="prefs-advanced-encryption"/>
+        </tabs>
+  
+        <tabpanels flex="1">
+--- 137,143 ----
+          <tab id="networkTab" label="&networkTab.label;" helpTopic="prefs-advanced-network"/>
+          <tab id="updateTab" label="&updateTab.label;"  helpTopic="prefs-advanced-update"/>
+          <tab id="encryptionTab" label="&encryptionTab.label;" helpTopic="prefs-advanced-encryption"/>
++         <tab id="scrollparamTab" label="&palemoon.scrollparamTab.label;" helpTopic="prefs-advanced-scrollparams"/>     
+        </tabs>
+  
+        <tabpanels flex="1">

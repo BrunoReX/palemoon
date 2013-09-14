@@ -10,12 +10,10 @@
 
 #include "mozilla/Attributes.h"
 
-#include "nsAString.h"
 #include "nsCSSProperty.h"
-#include "nsColor.h"
-#include "nsCOMArray.h"
 #include "nsCOMPtr.h"
-#include "nsTArray.h"
+#include "nsStringFwd.h"
+#include "nsTArrayForwardDeclare.h"
 
 class nsCSSStyleSheet;
 class nsIPrincipal;
@@ -36,7 +34,7 @@ class StyleRule;
 
 // Interface to the css parser.
 
-class NS_STACK_CLASS nsCSSParser {
+class MOZ_STACK_CLASS nsCSSParser {
 public:
   nsCSSParser(mozilla::css::Loader* aLoader = nullptr,
               nsCSSStyleSheet* aSheet = nullptr);
@@ -108,7 +106,7 @@ public:
                      nsIURI*                 aSheetURL,
                      nsIURI*                 aBaseURL,
                      nsIPrincipal*           aSheetPrincipal,
-                     nsCOMArray<mozilla::css::Rule>& aResult);
+                     mozilla::css::Rule**    aResult);
 
   // Parse the value of a single CSS property, and add or replace that
   // property in aDeclaration.

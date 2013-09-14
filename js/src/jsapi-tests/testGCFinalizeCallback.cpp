@@ -9,6 +9,8 @@
 #include "jsfriendapi.h"
 #include "jscntxt.h"
 
+#include "vm/ObjectImpl-inl.h"
+
 const unsigned BufferSize = 20;
 static unsigned FinalizeCalls = 0;
 static JSFinalizeStatus StatusBuffer[BufferSize];
@@ -39,25 +41,25 @@ BEGIN_TEST(testGCFinalizeCallback)
 
     /* Full GC, incremental. */
     FinalizeCalls = 0;
-    js::PrepareForFullGC(rt);
-    js::IncrementalGC(rt, js::gcreason::API, 1000000);
+    JS::PrepareForFullGC(rt);
+    JS::IncrementalGC(rt, JS::gcreason::API, 1000000);
     CHECK(rt->gcIncrementalState == js::gc::NO_INCREMENTAL);
     CHECK(rt->gcIsFull);
     CHECK(checkMultipleGroups());
     CHECK(checkFinalizeStatus());
     CHECK(checkFinalizeIsCompartmentGC(false));
 
-    js::AutoObjectRooter global1(cx, createGlobal());
-    js::AutoObjectRooter global2(cx, createGlobal());
-    js::AutoObjectRooter global3(cx, createGlobal());
-    CHECK(global1.object());
-    CHECK(global2.object());
-    CHECK(global3.object());
+    JS::RootedObject global1(cx, createGlobal());
+    JS::RootedObject global2(cx, createGlobal());
+    JS::RootedObject global3(cx, createGlobal());
+    CHECK(global1);
+    CHECK(global2);
+    CHECK(global3);
 
     /* Compartment GC, non-incremental, single compartment. */
     FinalizeCalls = 0;
-    js::PrepareCompartmentForGC(global1.object()->compartment());
-    js::GCForReason(rt, js::gcreason::API);
+    JS::PrepareZoneForGC(global1->zone());
+    JS::GCForReason(rt, JS::gcreason::API);
     CHECK(!rt->gcIsFull);
     CHECK(checkSingleGroup());
     CHECK(checkFinalizeStatus());
@@ -65,10 +67,10 @@ BEGIN_TEST(testGCFinalizeCallback)
 
     /* Compartment GC, non-incremental, multiple compartments. */
     FinalizeCalls = 0;
-    js::PrepareCompartmentForGC(global1.object()->compartment());
-    js::PrepareCompartmentForGC(global2.object()->compartment());
-    js::PrepareCompartmentForGC(global3.object()->compartment());
-    js::GCForReason(rt, js::gcreason::API);
+    JS::PrepareZoneForGC(global1->zone());
+    JS::PrepareZoneForGC(global2->zone());
+    JS::PrepareZoneForGC(global3->zone());
+    JS::GCForReason(rt, JS::gcreason::API);
     CHECK(!rt->gcIsFull);
     CHECK(checkSingleGroup());
     CHECK(checkFinalizeStatus());
@@ -76,8 +78,8 @@ BEGIN_TEST(testGCFinalizeCallback)
 
     /* Compartment GC, incremental, single compartment. */
     FinalizeCalls = 0;
-    js::PrepareCompartmentForGC(global1.object()->compartment());
-    js::IncrementalGC(rt, js::gcreason::API, 1000000);
+    JS::PrepareZoneForGC(global1->zone());
+    JS::IncrementalGC(rt, JS::gcreason::API, 1000000);
     CHECK(rt->gcIncrementalState == js::gc::NO_INCREMENTAL);
     CHECK(!rt->gcIsFull);
     CHECK(checkSingleGroup());
@@ -86,10 +88,10 @@ BEGIN_TEST(testGCFinalizeCallback)
 
     /* Compartment GC, incremental, multiple compartments. */
     FinalizeCalls = 0;
-    js::PrepareCompartmentForGC(global1.object()->compartment());
-    js::PrepareCompartmentForGC(global2.object()->compartment());
-    js::PrepareCompartmentForGC(global3.object()->compartment());
-    js::IncrementalGC(rt, js::gcreason::API, 1000000);
+    JS::PrepareZoneForGC(global1->zone());
+    JS::PrepareZoneForGC(global2->zone());
+    JS::PrepareZoneForGC(global3->zone());
+    JS::IncrementalGC(rt, JS::gcreason::API, 1000000);
     CHECK(rt->gcIncrementalState == js::gc::NO_INCREMENTAL);
     CHECK(!rt->gcIsFull);
     CHECK(checkMultipleGroups());
@@ -102,12 +104,12 @@ BEGIN_TEST(testGCFinalizeCallback)
 
     FinalizeCalls = 0;
     JS_SetGCZeal(cx, 9, 1000000);
-    js::PrepareForFullGC(rt);
+    JS::PrepareForFullGC(rt);
     js::GCDebugSlice(rt, true, 1);
     CHECK(rt->gcIncrementalState == js::gc::MARK);
     CHECK(rt->gcIsFull);
 
-    js::AutoObjectRooter global4(cx, createGlobal());
+    JS::RootedObject global4(cx, createGlobal());
     js::GCDebugSlice(rt, true, 1);
     CHECK(rt->gcIncrementalState == js::gc::NO_INCREMENTAL);
     CHECK(!rt->gcIsFull);
@@ -121,6 +123,15 @@ BEGIN_TEST(testGCFinalizeCallback)
     JS_SetGCZeal(cx, 0, 0);
 
 #endif
+
+    /*
+     * Make some use of the globals here to ensure the compiler doesn't optimize
+     * them away in release builds, causing the compartments to be collected and
+     * the test to fail.
+     */
+    CHECK(JS_IsGlobalObject(global1));
+    CHECK(JS_IsGlobalObject(global2));
+    CHECK(JS_IsGlobalObject(global3));
 
     JS_SetFinalizeCallback(rt, NULL);
     return true;

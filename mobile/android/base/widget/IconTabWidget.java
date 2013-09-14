@@ -14,7 +14,6 @@ import android.widget.ImageButton;
 import android.widget.TabWidget;
 
 public class IconTabWidget extends TabWidget {
-    private Context mContext;
     private OnTabChangedListener mListener;
 
     public static interface OnTabChangedListener {
@@ -23,11 +22,10 @@ public class IconTabWidget extends TabWidget {
 
     public IconTabWidget(Context context, AttributeSet attrs) {
         super(context, attrs);
-        mContext = context;
     }
 
     public ImageButton addTab(int resId) {
-        ImageButton button = (ImageButton) LayoutInflater.from(mContext).inflate(R.layout.tabs_panel_indicator, null);
+        ImageButton button = (ImageButton) LayoutInflater.from(getContext()).inflate(R.layout.tabs_panel_indicator, null);
         button.setImageResource(resId);
 
         addView(button);

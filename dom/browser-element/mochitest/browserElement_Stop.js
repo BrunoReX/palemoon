@@ -10,17 +10,16 @@
 
 "use strict";
 SimpleTest.waitForExplicitFinish();
+browserElementTestHelpers.setEnabledPref(true);
+browserElementTestHelpers.addPermission();
 
 var iframe;
 var stopped = false;
 var imgSrc = 'http://test/tests/dom/browser-element/mochitest/file_bug709759.sjs';
 
 function runTest() {
-  browserElementTestHelpers.setEnabledPref(true);
-  browserElementTestHelpers.addPermission();
-
   iframe = document.createElement('iframe');
-  iframe.mozbrowser = true;
+  SpecialPowers.wrap(iframe).mozbrowser = true;
 
   iframe.addEventListener('mozbrowserloadend', loadend);
   iframe.src = 'data:text/html,<html>' +
@@ -49,4 +48,4 @@ function handleError() {
   ok(false, "mozbrowsererror should not be fired");
 }
 
-runTest();
+addEventListener('testready', runTest);

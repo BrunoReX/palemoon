@@ -6,33 +6,17 @@
 #include "mozilla/dom/SVGTSpanElement.h"
 #include "mozilla/dom/SVGTSpanElementBinding.h"
 
-DOMCI_NODE_DATA(SVGTSpanElement, mozilla::dom::SVGTSpanElement)
-
 NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(TSpan)
 
 namespace mozilla {
 namespace dom {
 
 JSObject*
-SVGTSpanElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+SVGTSpanElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return SVGTSpanElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return SVGTSpanElementBinding::Wrap(aCx, aScope, this);
 }
 
-
-//----------------------------------------------------------------------
-// nsISupports methods
-
-NS_IMPL_ADDREF_INHERITED(SVGTSpanElement,SVGTSpanElementBase)
-NS_IMPL_RELEASE_INHERITED(SVGTSpanElement,SVGTSpanElementBase)
-
-NS_INTERFACE_TABLE_HEAD(SVGTSpanElement)
-  NS_NODE_INTERFACE_TABLE6(SVGTSpanElement, nsIDOMNode, nsIDOMElement,
-                           nsIDOMSVGElement, nsIDOMSVGTSpanElement,
-                           nsIDOMSVGTextPositioningElement,
-                           nsIDOMSVGTextContentElement)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGTSpanElement)
-NS_INTERFACE_MAP_END_INHERITING(SVGTSpanElementBase)
 
 //----------------------------------------------------------------------
 // Implementation
@@ -40,7 +24,6 @@ NS_INTERFACE_MAP_END_INHERITING(SVGTSpanElementBase)
 SVGTSpanElement::SVGTSpanElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : SVGTSpanElementBase(aNodeInfo)
 {
-  SetIsDOMBinding();
 }
 
 
@@ -49,12 +32,6 @@ SVGTSpanElement::SVGTSpanElement(already_AddRefed<nsINodeInfo> aNodeInfo)
 
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGTSpanElement)
-
-
-//----------------------------------------------------------------------
-// nsIDOMSVGTSpanElement methods
-
-// - no methods -
 
 //----------------------------------------------------------------------
 // nsIContent methods
@@ -72,15 +49,6 @@ SVGTSpanElement::IsAttributeMapped(const nsIAtom* name) const
 
   return FindAttributeDependence(name, map) ||
     SVGTSpanElementBase::IsAttributeMapped(name);
-}
-
-//----------------------------------------------------------------------
-// nsSVGElement overrides
-
-bool
-SVGTSpanElement::IsEventName(nsIAtom* aName)
-{
-  return nsContentUtils::IsEventAttributeName(aName, EventNameType_SVGGraphic);
 }
 
 } // namespace dom

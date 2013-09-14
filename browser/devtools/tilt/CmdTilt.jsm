@@ -1,15 +1,26 @@
+/* -*- Mode: javascript; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
+"use strict";
 
 this.EXPORTED_SYMBOLS = [ ];
 
 Components.utils.import('resource://gre/modules/XPCOMUtils.jsm');
-Components.utils.import("resource:///modules/devtools/gcli.jsm");
+Components.utils.import("resource://gre/modules/devtools/gcli.jsm");
+Components.utils.import("resource://gre/modules/devtools/Loader.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "TiltManager",
-                                  "resource:///modules/devtools/Tilt.jsm");
+// Fetch TiltManager using the current loader, but don't save a
+// reference to it, because it might change with a tool reload.
+// We can clean this up once the command line is loadered.
+Object.defineProperty(this, "TiltManager", {
+  get: function() {
+    return devtools.require("devtools/tilt/tilt").TiltManager;
+  },
+  enumerable: true
+});
+
 /**
  * 'tilt' command
  */
@@ -57,9 +68,11 @@ gcli.addCommand({
       tilt.on("change", aChangeHandler);
     },
     offChange: function(aTarget, aChangeHandler) {
-      let browserWindow = aTarget.tab.ownerDocument.defaultView;
-      let tilt = TiltManager.getTiltForBrowser(browserWindow);
-      tilt.off("change", aChangeHandler);
+      if (aTarget.tab) {
+        let browserWindow = aTarget.tab.ownerDocument.defaultView;
+        let tilt = TiltManager.getTiltForBrowser(browserWindow);
+        tilt.off("change", aChangeHandler);
+      }
     },
   },
   exec: function(args, context) {

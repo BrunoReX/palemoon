@@ -1,9 +1,12 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=99:
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#ifndef gdb_gdb_tests_h
+#define gdb_gdb_tests_h
 
 // Support for C++ fragments to be used by Python unit tests for SpiderMonkey's
 // GDB support.
@@ -68,3 +71,4 @@ void FRAGMENT_CLASS_NAME(category, subname)::run(JSContext *cx, const char **&ar
 #define FRAGMENT_STRING_NAME(category, subname) (#category "." #subname)
 #define FRAGMENT_CLASS_NAME(category, subname) Fragment_ ## category ## _ ## subname
 
+#endif /* gdb_gdb_tests_h */

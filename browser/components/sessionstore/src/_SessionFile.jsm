@@ -32,7 +32,7 @@ const Ci = Components.interfaces;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/osfile.jsm");
-Cu.import("resource://gre/modules/commonjs/promise/core.js");
+Cu.import("resource://gre/modules/commonjs/sdk/core/promise.js");
 
 XPCOMUtils.defineLazyModuleGetter(this, "TelemetryStopwatch",
   "resource://gre/modules/TelemetryStopwatch.jsm");
@@ -42,10 +42,16 @@ XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
   "resource://gre/modules/FileUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Task",
   "resource://gre/modules/Task.jsm");
+XPCOMUtils.defineLazyServiceGetter(this, "Telemetry",
+  "@mozilla.org/base/telemetry;1", "nsITelemetry");
 
 // An encoder to UTF-8.
 XPCOMUtils.defineLazyGetter(this, "gEncoder", function () {
   return new TextEncoder();
+});
+// A decoder.
+XPCOMUtils.defineLazyGetter(this, "gDecoder", function () {
+  return new TextDecoder();
 });
 
 this._SessionFile = {
@@ -143,58 +149,114 @@ let SessionFileInternal = {
   backupPath: OS.Path.join(OS.Constants.Path.profileDir, "sessionstore.bak"),
 
   /**
+   * Utility function to safely read a file synchronously.
+   * @param aPath
+   *        A path to read the file from.
+   * @returns string if successful, undefined otherwise.
+   */
+  readAuxSync: function ssfi_readAuxSync(aPath) {
+    let text;
+    try {
+      let file = new FileUtils.File(aPath);
+      let chan = NetUtil.newChannel(file);
+      let stream = chan.open();
+      text = NetUtil.readInputStreamToString(stream, stream.available(),
+        {charset: "utf-8"});
+    } catch (e if e.result == Components.results.NS_ERROR_FILE_NOT_FOUND) {
+      // Ignore exceptions about non-existent files.
+    } catch (ex) {
+      // Any other error.
+      Cu.reportError(ex);
+    } finally {
+      return text;
+    }
+  },
+
+  /**
    * Read the sessionstore file synchronously.
    *
    * This function is meant to serve as a fallback in case of race
    * between a synchronous usage of the API and asynchronous
    * initialization.
+   *
+   * In case if sessionstore.js file does not exist or is corrupted (something
+   * happened between backup and write), attempt to read the sessionstore.bak
+   * instead.
    */
   syncRead: function ssfi_syncRead() {
-    let text;
-    let exn;
+    // Start measuring the duration of the synchronous read.
     TelemetryStopwatch.start("FX_SESSION_RESTORE_SYNC_READ_FILE_MS");
-    try {
-      let file = new FileUtils.File(this.path);
-      if (!file.exists()) {
-        return null;
-      }
-      let chan = NetUtil.newChannel(file);
-      let stream = chan.open();
-      text = NetUtil.readInputStreamToString(stream, stream.available(), {charset: "utf-8"});
-    } catch(ex) {
-      exn = ex;
-    } finally {
-      TelemetryStopwatch.finish("FX_SESSION_RESTORE_SYNC_READ_FILE_MS");
+    // First read the sessionstore.js.
+    let text = this.readAuxSync(this.path);
+    if (typeof text === "undefined") {
+      // If sessionstore.js does not exist or is corrupted, read sessionstore.bak.
+      text = this.readAuxSync(this.backupPath);
     }
-    if (exn) {
-      Cu.reportError(exn);
-      return "";
-    }
-    return text;
+    // Finish the telemetry probe and return an empty string.
+    TelemetryStopwatch.finish("FX_SESSION_RESTORE_SYNC_READ_FILE_MS");
+    return text || "";
   },
 
-  read: function ssfi_read() {
-    let refObj = {};
+  /**
+   * Utility function to safely read a file asynchronously.
+   * @param aPath
+   *        A path to read the file from.
+   * @param aReadOptions
+   *        Read operation options.
+   *        |outExecutionDuration| option will be reused and can be
+   *        incrementally updated by the worker process.
+   * @returns string if successful, undefined otherwise.
+   */
+  readAux: function ssfi_readAux(aPath, aReadOptions) {
     let self = this;
-    return TaskUtils.spawn(function task() {
-      TelemetryStopwatch.start("FX_SESSION_RESTORE_READ_FILE_MS", refObj);
+    return TaskUtils.spawn(function () {
       let text;
       try {
-        let bytes = yield OS.File.read(self.path);
-        text = new TextDecoder().decode(bytes);
-        TelemetryStopwatch.finish("FX_SESSION_RESTORE_READ_FILE_MS", refObj);
+        let bytes = yield OS.File.read(aPath, undefined, aReadOptions);
+        text = gDecoder.decode(bytes);
+        // If the file is read successfully, add a telemetry probe based on
+        // the updated duration value of the |outExecutionDuration| option.
+        let histogram = Telemetry.getHistogramById(
+          "FX_SESSION_RESTORE_READ_FILE_MS");
+        histogram.add(aReadOptions.outExecutionDuration);
+      } catch (ex if self._isNoSuchFile(ex)) {
+        // Ignore exceptions about non-existent files.
       } catch (ex) {
-        if (self._isNoSuchFile(ex)) {
-          // The file does not exist, this is perfectly valid
-          TelemetryStopwatch.finish("FX_SESSION_RESTORE_READ_FILE_MS", refObj);
-        } else {
-          // Any other error: let's not measure with telemetry
-          TelemetryStopwatch.cancel("FX_SESSION_RESTORE_READ_FILE_MS", refObj);
-          Cu.reportError(ex);
-        }
-        text = "";
+        Cu.reportError(ex);
       }
       throw new Task.Result(text);
+    });
+  },
+
+  /**
+   * Read the sessionstore file asynchronously.
+   *
+   * In case sessionstore.js file does not exist or is corrupted (something
+   * happened between backup and write), attempt to read the sessionstore.bak
+   * instead.
+   */
+  read: function ssfi_read() {
+    let self = this;
+    return TaskUtils.spawn(function task() {
+      // Specify |outExecutionDuration| option to hold the combined duration of
+      // the asynchronous reads off the main thread (of both sessionstore.js and
+      // sessionstore.bak, if necessary). If sessionstore.js does not exist or
+      // is corrupted, |outExecutionDuration| will register the time it took to
+      // attempt to read the file. It will then be subsequently incremented by
+      // the read time of sessionsore.bak.
+      let readOptions = {
+        outExecutionDuration: null
+      };
+      // First read the sessionstore.js.
+      let text = yield self.readAux(self.path, readOptions);
+      if (typeof text === "undefined") {
+        // If sessionstore.js does not exist or is corrupted, read the
+        // sessionstore.bak.
+        text = yield self.readAux(self.backupPath, readOptions);
+      }
+      // Return either the content of the sessionstore.bak if it was read
+      // successfully or an empty string otherwise.
+      throw new Task.Result(text || "");
     });
   },
 
@@ -203,13 +265,20 @@ let SessionFileInternal = {
     let self = this;
     return TaskUtils.spawn(function task() {
       TelemetryStopwatch.start("FX_SESSION_RESTORE_WRITE_FILE_MS", refObj);
+      TelemetryStopwatch.start("FX_SESSION_RESTORE_WRITE_FILE_LONGEST_OP_MS", refObj);
 
       let bytes = gEncoder.encode(aData);
 
       try {
-        yield OS.File.writeAtomic(self.path, bytes, {tmpPath: self.path + ".tmp"});
+        let promise = OS.File.writeAtomic(self.path, bytes, {tmpPath: self.path + ".tmp"});
+        // At this point, we measure how long we stop the main thread
+        TelemetryStopwatch.finish("FX_SESSION_RESTORE_WRITE_FILE_LONGEST_OP_MS", refObj);
+
+        // Now wait for the result and measure how long we had to wait for the result
+        yield promise;
         TelemetryStopwatch.finish("FX_SESSION_RESTORE_WRITE_FILE_MS", refObj);
       } catch (ex) {
+        TelemetryStopwatch.cancel("FX_SESSION_RESTORE_WRITE_FILE_LONGEST_OP_MS", refObj);
         TelemetryStopwatch.cancel("FX_SESSION_RESTORE_WRITE_FILE_MS", refObj);
         Cu.reportError("Could not write session state file " + self.path
                        + ": " + aReason);
@@ -218,15 +287,20 @@ let SessionFileInternal = {
   },
 
   createBackupCopy: function ssfi_createBackupCopy() {
+    let backupCopyOptions = {
+      outExecutionDuration: null
+    };
     let self = this;
     return TaskUtils.spawn(function task() {
       try {
-        yield OS.File.copy(self.path, self.backupPath);
+        yield OS.File.move(self.path, self.backupPath, backupCopyOptions);
+        Telemetry.getHistogramById("FX_SESSION_RESTORE_BACKUP_FILE_MS").add(
+          backupCopyOptions.outExecutionDuration);
+      } catch (ex if self._isNoSuchFile(ex)) {
+        // Ignore exceptions about non-existent files.
       } catch (ex) {
-        if (!self._isNoSuchFile(ex)) {
-          Cu.reportError("Could not backup session state file: " + ex);
-          throw ex;
-        }
+        Cu.reportError("Could not backup session state file: " + ex);
+        throw ex;
       }
     });
   },
@@ -236,12 +310,17 @@ let SessionFileInternal = {
     return TaskUtils.spawn(function task() {
       try {
         yield OS.File.remove(self.path);
+      } catch (ex if self._isNoSuchFile(ex)) {
+        // Ignore exceptions about non-existent files.
       } catch (ex) {
         Cu.reportError("Could not remove session state file: " + ex);
         throw ex;
       }
+
       try {
         yield OS.File.remove(self.backupPath);
+      } catch (ex if self._isNoSuchFile(ex)) {
+        // Ignore exceptions about non-existent files.
       } catch (ex) {
         Cu.reportError("Could not remove session state backup file: " + ex);
         throw ex;

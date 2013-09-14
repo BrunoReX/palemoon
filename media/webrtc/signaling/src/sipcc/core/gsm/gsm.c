@@ -27,6 +27,7 @@
 #include "kpmlmap.h"
 #include "subapi.h"
 #include "platform_api.h"
+#include "thread_monitor.h"
 
 static void sub_process_feature_msg(uint32_t cmd, void *msg);
 static void sub_process_feature_notify(ccsip_sub_not_data_t *msg, callid_t call_id,
@@ -34,7 +35,7 @@ static void sub_process_feature_notify(ccsip_sub_not_data_t *msg, callid_t call_
 static void sub_process_b2bcnf_msg(uint32_t cmd, void *msg);
 void fsmb2bcnf_get_sub_call_id_from_ccb(fsmcnf_ccb_t *ccb, callid_t *cnf_call_id,
                 callid_t *cns_call_id);
-cprMsgQueue_t gsm_msg_queue;
+extern cprMsgQueue_t gsm_msgq;
 void destroy_gsm_thread(void);
 void dp_shutdown();
 extern void dcsm_process_jobs(void);
@@ -86,7 +87,7 @@ gsm_send_msg (uint32_t cmd, cprBuffer_t buf, uint16_t len)
     syshdr->Cmd = cmd;
     syshdr->Len = len;
 
-    if (cprSendMessage(gsm_msg_queue, buf, (void **) &syshdr) == CPR_FAILURE) {
+    if (cprSendMessage(gsm_msgq, buf, (void **) &syshdr) == CPR_FAILURE) {
         cprReleaseSysHeader(syshdr);
         return CPR_FAILURE;
     }
@@ -102,7 +103,7 @@ gsm_process_msg (uint32_t cmd, void *msg)
     cc_msgs_t       msg_id   = ((cc_setup_t *)msg)->msg_id;
     int             event_id = msg_id;
 
-    GSM_DEBUG(DEB_F_PREFIX"cmd= 0x%x\n", DEB_F_PREFIX_ARGS(GSM, fname), cmd);
+    GSM_DEBUG(DEB_F_PREFIX"cmd= 0x%x", DEB_F_PREFIX_ARGS(GSM, fname), cmd);
 
     switch (cmd) {
     case GSM_GSM:
@@ -117,7 +118,7 @@ gsm_process_msg (uint32_t cmd, void *msg)
                 /* Release all memory for CC_FEATURE_CAC_..message */
                 release_msg = TRUE;
 
-                GSM_DEBUG(DEB_F_PREFIX"CAC Message Processed: 0x%x\n", DEB_F_PREFIX_ARGS(GSM, fname), cmd);
+                GSM_DEBUG(DEB_F_PREFIX"CAC Message Processed: 0x%x", DEB_F_PREFIX_ARGS(GSM, fname), cmd);
             } else  if (event_id == CC_MSG_FEATURE &&
                 (((cc_feature_t *) msg)->feature_id == CC_FEATURE_CAC_RESP_FAIL)) {
 
@@ -126,11 +127,11 @@ gsm_process_msg (uint32_t cmd, void *msg)
                 /* Release all memory for CC_FEATURE_CAC_..message */
                 release_msg = TRUE;
 
-                GSM_DEBUG(DEB_F_PREFIX"CAC Message Processed: 0x%x\n", DEB_F_PREFIX_ARGS(GSM, fname), cmd);
+                GSM_DEBUG(DEB_F_PREFIX"CAC Message Processed: 0x%x", DEB_F_PREFIX_ARGS(GSM, fname), cmd);
             } else {
 
                 release_msg = fim_process_event(msg, FALSE);
-                GSM_DEBUG(DEB_F_PREFIX"Message Processed: 0x%x\n", DEB_F_PREFIX_ARGS(GSM, fname), cmd);
+                GSM_DEBUG(DEB_F_PREFIX"Message Processed: 0x%x", DEB_F_PREFIX_ARGS(GSM, fname), cmd);
             }
         }
         if (release_msg == TRUE) {
@@ -139,7 +140,7 @@ gsm_process_msg (uint32_t cmd, void *msg)
         break;
 
     default:
-        GSM_DEBUG(DEB_F_PREFIX"Unknown Cmd received: 0x%x\n", DEB_F_PREFIX_ARGS(GSM, fname), cmd);
+        GSM_DEBUG(DEB_F_PREFIX"Unknown Cmd received: 0x%x", DEB_F_PREFIX_ARGS(GSM, fname), cmd);
         break;
     }
 
@@ -155,7 +156,7 @@ gsm_process_timer_expiration (void *msg)
     void *timeout_msg = NULL;
 
     timerMsg = (cprCallBackTimerMsg_t *) msg;
-    TMR_DEBUG(DEB_F_PREFIX"Timer %s expired\n", DEB_F_PREFIX_ARGS(GSM, fname), timerMsg->expiredTimerName);
+    TMR_DEBUG(DEB_F_PREFIX"Timer %s expired", DEB_F_PREFIX_ARGS(GSM, fname), timerMsg->expiredTimerName);
 
     switch (timerMsg->expiredTimerId) {
 
@@ -215,7 +216,7 @@ gsm_process_timer_expiration (void *msg)
 		lsm_tone_duration_tmr_callback(timerMsg->usrData);
 		break;
     default:
-        GSM_ERR_MSG(GSM_F_PREFIX"unknown timer %d\n", fname,
+        GSM_ERR_MSG(GSM_F_PREFIX"unknown timer %s", fname,
                     timerMsg->expiredTimerName);
         break;
     }
@@ -264,14 +265,10 @@ GSMTask (void *arg)
     phn_syshdr_t   *syshdr;
     boolean        release_msg = TRUE;
 
-    /*
-     * Get the GSM message queue handle
-     * A hack until the tasks in irx are
-     * CPRized.
-     */
-    gsm_msg_queue = (cprMsgQueue_t) arg;
-    if (!gsm_msg_queue) {
-        GSM_ERR_MSG(GSM_F_PREFIX"invalid input, exiting\n", fname);
+    MOZ_ASSERT (gsm_msgq == (cprMsgQueue_t) arg);
+
+    if (!gsm_msgq) {
+        GSM_ERR_MSG(GSM_F_PREFIX"invalid input, exiting", fname);
         return;
     }
 
@@ -312,7 +309,7 @@ GSMTask (void *arg)
 
         release_msg = TRUE;
 
-        msg = cprGetMessage(gsm_msg_queue, TRUE, (void **) &syshdr);
+        msg = cprGetMessage(gsm_msgq, TRUE, (void **) &syshdr);
         if (msg) {
             switch (syshdr->Cmd) {
             case TIMER_EXPIRATION:
@@ -350,23 +347,16 @@ GSMTask (void *arg)
                 sub_process_feature_msg(syshdr->Cmd, msg);
                 break;
 
-            case SUB_MSG_KPML_SUBSCRIBE:
-            case SUB_MSG_KPML_TERMINATE:
-            case SUB_MSG_KPML_NOTIFY_ACK:
-            case SUB_MSG_KPML_SUBSCRIBE_TIMER:
-            case SUB_MSG_KPML_DIGIT_TIMER:
-                kpml_process_msg(syshdr->Cmd, msg);
-                break;
-
             case REG_MGR_STATE_CHANGE:
                 gsm_reset();
                 break;
             case THREAD_UNLOAD:
+                thread_ended(THREADMON_GSM);
                 destroy_gsm_thread();
                 break;
 
             default:
-                GSM_ERR_MSG(GSM_F_PREFIX"Unknown message\n", fname);
+                GSM_ERR_MSG(GSM_F_PREFIX"Unknown message", fname);
                 break;
             }
 
@@ -408,12 +398,12 @@ static void sub_process_b2bcnf_sub_resp (ccsip_sub_not_data_t *msg)
 
         cause = CC_CAUSE_OK;
 
-        GSM_DEBUG(DEB_F_PREFIX"B2BCNF subs response  = OK\n",
+        GSM_DEBUG(DEB_F_PREFIX"B2BCNF subs response  = OK",
                 DEB_F_PREFIX_ARGS(GSM,fname));
 
     } else {
 
-        GSM_DEBUG(DEB_F_PREFIX"B2BCNF subs response  = ERROR\n",
+        GSM_DEBUG(DEB_F_PREFIX"B2BCNF subs response  = ERROR",
                 DEB_F_PREFIX_ARGS(GSM,fname));
 
         cause = CC_CAUSE_ERROR;
@@ -442,13 +432,13 @@ static void sub_process_b2bcnf_msg (uint32_t cmd, void *msg)
                                 &call_id, &other_call_id);
     switch (cmd) {
     case SUB_MSG_B2BCNF_SUBSCRIBE_RESP:
-        GSM_DEBUG(DEB_F_PREFIX"B2BCNF subs response\n",
+        GSM_DEBUG(DEB_F_PREFIX"B2BCNF subs response",
                 DEB_F_PREFIX_ARGS(GSM,fname));
         sub_process_b2bcnf_sub_resp((ccsip_sub_not_data_t *)msg);
         break;
 
     case SUB_MSG_B2BCNF_NOTIFY:
-        GSM_DEBUG(DEB_F_PREFIX"B2BCNF subs notify\n",
+        GSM_DEBUG(DEB_F_PREFIX"B2BCNF subs notify",
                 DEB_F_PREFIX_ARGS(GSM,fname));
         sub_process_feature_notify((ccsip_sub_not_data_t *)msg, call_id, other_call_id);
         break;
@@ -457,7 +447,7 @@ static void sub_process_b2bcnf_msg (uint32_t cmd, void *msg)
           * This is posted by SIP stack if it is shutting down or rolling over.
           * if so, notify b2bcnf to cleanup state machine.
           */
-        GSM_DEBUG(DEB_F_PREFIX"B2BCNF subs terminate\n",
+        GSM_DEBUG(DEB_F_PREFIX"B2BCNF subs terminate",
                 DEB_F_PREFIX_ARGS(GSM,fname));
 
         data.notify.subscription = CC_SUBSCRIPTIONS_REMOTECC;
@@ -470,7 +460,7 @@ static void sub_process_b2bcnf_msg (uint32_t cmd, void *msg)
 
         break;
     default:
-        GSM_DEBUG(DEB_F_PREFIX"B2BCNF subs unknown event\n",
+        GSM_DEBUG(DEB_F_PREFIX"B2BCNF subs unknown event",
                 DEB_F_PREFIX_ARGS(GSM,fname));
          break;
     }
@@ -556,7 +546,7 @@ static void sub_process_feature_notify (ccsip_sub_not_data_t *msg, callid_t call
     ev_data     = msg->u.notify_ind_data.eventData;
     msg->u.notify_ind_data.eventData = NULL;
     if (ev_data == NULL) {
-        GSM_ERR_MSG(DEB_F_PREFIX"No body in the NOTIFY message\n",
+        GSM_ERR_MSG(DEB_F_PREFIX"No body in the NOTIFY message",
                     DEB_F_PREFIX_ARGS(GSM, fname));
         /*
          * if (no content & subscription state is TERMINATED
@@ -599,10 +589,9 @@ gsm_is_idle (void)
 void destroy_gsm_thread()
 {
     static const char fname[] = "destroy_gsm_thread";
-    DEF_DEBUG(DEB_F_PREFIX"Unloading GSM and destroying GSM thread\n",
+    DEF_DEBUG(DEB_F_PREFIX"Unloading GSM and destroying GSM thread",
         DEB_F_PREFIX_ARGS(SIP_CC_INIT, fname));
     gsm_shutdown();
     dp_shutdown();
-    kpml_shutdown();
     (void) cprDestroyThread(gsm_thread);
 }

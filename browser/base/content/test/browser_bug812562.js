@@ -8,16 +8,27 @@ function test() {
   waitForExplicitFinish();
   registerCleanupFunction(function() {
     Services.prefs.clearUserPref("plugins.click_to_play");
+    var plugin = getTestPlugin();
+    plugin.enabledState = Ci.nsIPluginTag.STATE_ENABLED;
   });
+  Services.prefs.setBoolPref("plugins.click_to_play", true);
+  var plugin = getTestPlugin();
+  plugin.enabledState = Ci.nsIPluginTag.STATE_CLICKTOPLAY;
 
-  Services.prefs.setBoolPref("plugins.click_to_play", false);
   var newTab = gBrowser.addTab();
   gBrowser.selectedTab = newTab;
   gTestBrowser = gBrowser.selectedBrowser;
   gTestBrowser.addEventListener("load", pageLoad, true);
   setAndUpdateBlocklist(gHttpTestRoot + "blockPluginVulnerableUpdatable.xml",
   function() {
-    prepareTest(testPart1, gHttpTestRoot + "plugin_test.html");
+    prepareTest(function() {
+        // Due to layout being async, "PluginBindAttached" may trigger later.
+        // This forces a layout flush, thus triggering it, and schedules the
+        // test so it is definitely executed afterwards.
+        gTestBrowser.contentDocument.getElementById('test').clientTop;
+        testPart1();
+      },
+      gHttpTestRoot + "plugin_test.html");
   });
 }
 
@@ -68,7 +79,7 @@ function testPart2() {
 }
 
 function testPart3() {
-  Services.obs.removeObserver(testPart3, "PopupNotifications-updateNotShowing", false);
+  Services.obs.removeObserver(testPart3, "PopupNotifications-updateNotShowing");
   var condition = function() PopupNotifications.getNotification("click-to-play-plugins", gTestBrowser);
   waitForCondition(condition, testPart4, "test part 3: waited too long for click-to-play-plugin notification");
 }

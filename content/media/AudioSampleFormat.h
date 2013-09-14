@@ -7,6 +7,7 @@
 #define MOZILLA_AUDIOSAMPLEFORMAT_H_
 
 #include "nsAlgorithm.h"
+#include <algorithm>
 
 namespace mozilla {
 
@@ -29,6 +30,10 @@ enum AudioSampleFormat
 #else
   AUDIO_OUTPUT_FORMAT = AUDIO_FORMAT_FLOAT32
 #endif
+};
+
+enum {
+  MAX_AUDIO_SAMPLE_SIZE = sizeof(float)
 };
 
 template <AudioSampleFormat Format> class AudioSampleTraits;
@@ -74,7 +79,7 @@ template <> inline int16_t
 FloatToAudioSample<int16_t>(float aValue)
 {
   float v = aValue*32768.0f;
-  float clamped = NS_MAX(-32768.0f, NS_MIN(32767.0f, v));
+  float clamped = std::max(-32768.0f, std::min(32767.0f, v));
   return int16_t(clamped);
 }
 
@@ -139,7 +144,6 @@ ScaleAudioSamples(float* aBuffer, int aCount, float aScale)
   }
 }
 
-
 inline void
 ScaleAudioSamples(short* aBuffer, int aCount, float aScale)
 {
@@ -147,6 +151,18 @@ ScaleAudioSamples(short* aBuffer, int aCount, float aScale)
   for (int32_t i = 0; i < aCount; ++i) {
     aBuffer[i] = short((int32_t(aBuffer[i]) * volume) >> 16);
   }
+}
+
+inline const void*
+AddAudioSampleOffset(const void* aBase, AudioSampleFormat aFormat,
+                     int32_t aOffset)
+{
+  MOZ_STATIC_ASSERT(AUDIO_FORMAT_S16 == 0, "Bad constant");
+  MOZ_STATIC_ASSERT(AUDIO_FORMAT_FLOAT32 == 1, "Bad constant");
+  NS_ASSERTION(aFormat == AUDIO_FORMAT_S16 || aFormat == AUDIO_FORMAT_FLOAT32,
+               "Unknown format");
+
+  return static_cast<const uint8_t*>(aBase) + (aFormat + 1)*2*aOffset;
 }
 
 } // namespace mozilla

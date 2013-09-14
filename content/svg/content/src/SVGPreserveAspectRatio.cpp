@@ -6,6 +6,7 @@
 #include "SVGPreserveAspectRatio.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
 #include "mozilla/dom/SVGPreserveAspectRatioBinding.h"
+#include "nsContentUtils.h"
 
 using namespace mozilla;
 using namespace dom;
@@ -29,9 +30,9 @@ SVGPreserveAspectRatio::operator==(const SVGPreserveAspectRatio& aOther) const
 }
 
 JSObject*
-DOMSVGPreserveAspectRatio::WrapObject(JSContext* aCx, JSObject* aScope, bool* aTriedToWrap)
+DOMSVGPreserveAspectRatio::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 {
-  return mozilla::dom::SVGPreserveAspectRatioBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return mozilla::dom::SVGPreserveAspectRatioBinding::Wrap(aCx, aScope, this);
 }
 
 uint16_t

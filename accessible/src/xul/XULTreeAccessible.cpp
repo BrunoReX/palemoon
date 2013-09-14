@@ -27,6 +27,9 @@
 #include "nsIDOMXULTreeElement.h"
 #include "nsITreeSelection.h"
 #include "nsIMutableArray.h"
+#include "nsTreeBodyFrame.h"
+#include "nsTreeColumns.h"
+#include "nsTreeUtils.h"
 
 using namespace mozilla::a11y;
 
@@ -35,20 +38,18 @@ using namespace mozilla::a11y;
 ////////////////////////////////////////////////////////////////////////////////
 
 XULTreeAccessible::
-  XULTreeAccessible(nsIContent* aContent, DocAccessible* aDoc) :
+  XULTreeAccessible(nsIContent* aContent, DocAccessible* aDoc,
+                    nsTreeBodyFrame* aTreeFrame) :
   AccessibleWrap(aContent, aDoc)
 {
   mType = eXULTreeType;
   mGenericTypes |= eSelect;
 
+  nsCOMPtr<nsITreeView> view = aTreeFrame->GetExistingView();
+  mTreeView = view;
+
   mTree = nsCoreUtils::GetTreeBoxObject(aContent);
   NS_ASSERTION(mTree, "Can't get mTree!\n");
-
-  if (mTree) {
-    nsCOMPtr<nsITreeView> treeView;
-    mTree->GetView(getter_AddRefs(treeView));
-    mTreeView = treeView;
-  }
 
   nsIContent* parentContent = mContent->GetParent();
   if (parentContent) {
@@ -159,11 +160,16 @@ XULTreeAccessible::NativeRole()
   // No primary column means we're in a list. In fact, history and mail turn off
   // the primary flag when switching to a flat view.
 
-  nsCOMPtr<nsITreeColumns> cols;
-  mTree->GetColumns(getter_AddRefs(cols));
+  nsIContent* child = nsTreeUtils::GetDescendantChild(mContent, nsGkAtoms::treechildren);
+  NS_ASSERTION(child, "tree without treechildren!");
+  nsTreeBodyFrame* treeFrame = do_QueryFrame(child->GetPrimaryFrame());
+  NS_ASSERTION(treeFrame, "xul tree accessible for tree without a frame!");
+  if (!treeFrame)
+    return roles::LIST;
+
+  nsRefPtr<nsTreeColumns> cols = treeFrame->Columns();
   nsCOMPtr<nsITreeColumn> primaryCol;
-  if (cols)
-    cols->GetPrimaryColumn(getter_AddRefs(primaryCol));
+  cols->GetPrimaryColumn(getter_AddRefs(primaryCol));
 
   return primaryCol ? roles::OUTLINE : roles::LIST;
 }
@@ -269,9 +275,7 @@ XULTreeAccessible::SelectedItems()
     }
   }
 
-  nsIMutableArray* items = nullptr;
-  selectedItems.forget(&items);
-  return items;
+  return selectedItems.forget();
 }
 
 uint32_t
@@ -435,6 +439,19 @@ XULTreeAccessible::ChildCount() const
   childCount += rowCount;
 
   return childCount;
+}
+
+Relation
+XULTreeAccessible::RelationByType(uint32_t aType)
+{
+  if (aType == nsIAccessibleRelation::RELATION_NODE_PARENT_OF) {
+    if (mTreeView)
+      return Relation(new XULTreeItemIterator(this, mTreeView, -1));
+
+    return Relation();
+  }
+
+  return Accessible::RelationByType(aType);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -798,18 +815,34 @@ XULTreeItemAccessibleBase::RelationByType(uint32_t aType)
   if (!mTreeView)
     return Relation();
 
-  if (aType != nsIAccessibleRelation::RELATION_NODE_CHILD_OF)
-    return Relation();
+  switch (aType) {
+    case nsIAccessibleRelation::RELATION_NODE_CHILD_OF: {
+      int32_t parentIndex = -1;
+      if (!NS_SUCCEEDED(mTreeView->GetParentIndex(mRow, &parentIndex)))
+        return Relation();
 
-  int32_t parentIndex = -1;
-  if (!NS_SUCCEEDED(mTreeView->GetParentIndex(mRow, &parentIndex)))
-    return Relation();
+      if (parentIndex == -1)
+        return Relation(mParent);
 
-  if (parentIndex == -1)
-    return Relation(mParent);
+      XULTreeAccessible* treeAcc = mParent->AsXULTree();
+      return Relation(treeAcc->GetTreeItemAccessible(parentIndex));
+    }
 
-  XULTreeAccessible* treeAcc = mParent->AsXULTree();
-  return Relation(treeAcc->GetTreeItemAccessible(parentIndex));
+    case nsIAccessibleRelation::RELATION_NODE_PARENT_OF: {
+      bool isTrue = false;
+      if (NS_FAILED(mTreeView->IsContainerEmpty(mRow, &isTrue)) || isTrue)
+        return Relation();
+
+      if (NS_FAILED(mTreeView->IsContainerOpen(mRow, &isTrue)) || !isTrue)
+        return Relation();
+
+      XULTreeAccessible* tree = mParent->AsXULTree();
+      return Relation(new XULTreeItemIterator(tree, mTreeView, mRow));
+    }
+
+    default:
+      return Relation();
+  }
 }
 
 uint8_t

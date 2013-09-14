@@ -33,7 +33,7 @@ public:
 
   virtual void SetSlider(nsSliderFrame* aSlider) { mSlider = aSlider; }
 
-  NS_IMETHOD HandleEvent(nsIDOMEvent* aEvent);
+  NS_IMETHOD HandleEvent(nsIDOMEvent* aEvent) MOZ_OVERRIDE;
 };
 
 class nsSliderFrame : public nsBoxFrame
@@ -70,21 +70,21 @@ public:
 
   virtual void DestroyFrom(nsIFrame* aDestructRoot) MOZ_OVERRIDE;
 
-  NS_IMETHOD BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
-                                         const nsRect&           aDirtyRect,
-                                         const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+  virtual void BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
+                                           const nsRect&           aDirtyRect,
+                                           const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
  
   NS_IMETHOD AttributeChanged(int32_t aNameSpaceID,
                               nsIAtom* aAttribute,
                               int32_t aModType) MOZ_OVERRIDE;
 
-  NS_IMETHOD  Init(nsIContent*      aContent,
-                   nsIFrame*        aParent,
-                   nsIFrame*        asPrevInFlow) MOZ_OVERRIDE;
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        asPrevInFlow) MOZ_OVERRIDE;
 
 
   NS_IMETHOD HandleEvent(nsPresContext* aPresContext, 
@@ -127,16 +127,17 @@ private:
 
   bool GetScrollToClick();
   nsIFrame* GetScrollbar();
+  bool ShouldScrollForEvent(nsGUIEvent* aEvent);
+  bool ShouldScrollToClickForEvent(nsGUIEvent* aEvent);
+  bool IsEventOverThumb(nsGUIEvent* aEvent);
 
   void PageUpDown(nscoord change);
   void SetCurrentThumbPosition(nsIContent* aScrollbar, nscoord aNewPos, bool aIsSmooth,
-                               bool aImmediateRedraw, bool aMaySnap);
-  void SetCurrentPosition(nsIContent* aScrollbar, int32_t aNewPos, bool aIsSmooth,
-                          bool aImmediateRedraw);
+                               bool aMaySnap);
+  void SetCurrentPosition(nsIContent* aScrollbar, int32_t aNewPos, bool aIsSmooth);
   void SetCurrentPositionInternal(nsIContent* aScrollbar, int32_t pos,
-                                  bool aIsSmooth, bool aImmediateRedraw);
-  nsresult CurrentPositionChanged(nsPresContext* aPresContext,
-                                  bool aImmediateRedraw);
+                                  bool aIsSmooth);
+  void CurrentPositionChanged();
 
   void DragThumb(bool aGrabMouseEvents);
   void AddListener();

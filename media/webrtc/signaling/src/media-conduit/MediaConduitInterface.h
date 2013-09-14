@@ -5,9 +5,6 @@
 #ifndef MEDIA_CONDUIT_ABSTRACTION_
 #define MEDIA_CONDUIT_ABSTRACTION_
 
-#include "nspr.h"
-#include "prerror.h"
-
 #include "nsISupportsImpl.h"
 #include "nsXPCOM.h"
 #include "mozilla/RefPtr.h"
@@ -170,6 +167,7 @@ public:
    * and attaches the new to the Conduit.
    */
   virtual MediaConduitErrorCode AttachRenderer(RefPtr<VideoRenderer> aRenderer) = 0;
+  virtual void DetachRenderer() = 0;
 
   /**
    * Function to deliver a capture video frame for encoding and transport
@@ -226,7 +224,7 @@ public:
     * return: Concrete VideoSessionConduitObject or NULL in the case
     *         of failure
     */
-  static mozilla::RefPtr<AudioSessionConduit> Create();
+  static mozilla::RefPtr<AudioSessionConduit> Create(AudioSessionConduit *aOther);
 
   virtual ~AudioSessionConduit() {}
 

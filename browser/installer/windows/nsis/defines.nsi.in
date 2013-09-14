@@ -82,7 +82,7 @@ VIAddVersionKey "LegalCopyright"  "Moonchild Productions"
 VIAddVersionKey "FileVersion"     "${AppVersion}"
 VIAddVersionKey "ProductVersion"  "${AppVersion}"
 # Comments is not used but left below commented out for future reference
-# VIAddVersionKey "Comments"        "Comments" 
+# VIAddVersionKey "Comments"        "Comments"
 
 # It isn't possible to get the size of the installation prior to downloading
 # so the stub installer uses an estimate.

@@ -6,11 +6,8 @@
 #ifndef mozilla_dom_SVGMPathElement_h
 #define mozilla_dom_SVGMPathElement_h
 
-#include "nsIDOMSVGMpathElement.h"
-#include "nsIDOMSVGURIReference.h"
 #include "nsSVGElement.h"
 #include "nsStubMutationObserver.h"
-#include "nsSVGPathElement.h"
 #include "nsSVGString.h"
 #include "nsReferencedElement.h"
 
@@ -21,10 +18,9 @@ typedef nsSVGElement SVGMPathElementBase;
 
 namespace mozilla {
 namespace dom {
+class SVGPathElement;
 
 class SVGMPathElement MOZ_FINAL : public SVGMPathElementBase,
-                                  public nsIDOMSVGMpathElement,
-                                  public nsIDOMSVGURIReference,
                                   public nsStubMutationObserver
 {
 protected:
@@ -33,50 +29,40 @@ protected:
   SVGMPathElement(already_AddRefed<nsINodeInfo> aNodeInfo);
   ~SVGMPathElement();
 
-  virtual JSObject* WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap) MOZ_OVERRIDE;
+  virtual JSObject* WrapNode(JSContext *aCx,
+                             JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
 public:
   // interfaces:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIDOMSVGMPATHELEMENT
-  NS_DECL_NSIDOMSVGURIREFERENCE
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(SVGMPathElement,
                                            SVGMPathElementBase)
 
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
 
-  // Forward interface implementations to base class
-  NS_FORWARD_NSIDOMNODE_TO_NSINODE
-  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
-  NS_FORWARD_NSIDOMSVGELEMENT(SVGMPathElementBase::)
-
   // nsIContent interface
-  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
+  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const MOZ_OVERRIDE;
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                               nsIContent* aBindingParent,
-                              bool aCompileEventHandlers);
-  virtual void UnbindFromTree(bool aDeep, bool aNullParent);
+                              bool aCompileEventHandlers) MOZ_OVERRIDE;
+  virtual void UnbindFromTree(bool aDeep, bool aNullParent) MOZ_OVERRIDE;
 
   virtual nsresult UnsetAttr(int32_t aNamespaceID, nsIAtom* aAttribute,
-                             bool aNotify);
+                             bool aNotify) MOZ_OVERRIDE;
   // Element specializations
   virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
-                                nsAttrValue& aResult);
+                                nsAttrValue& aResult) MOZ_OVERRIDE;
 
   // Public helper method: If our xlink:href attribute links to a <path>
   // element, this method returns a pointer to that element. Otherwise,
   // this returns nullptr.
-  nsSVGPathElement* GetReferencedPath();
-
-  virtual nsXPCClassInfo* GetClassInfo();
-
-  virtual nsIDOMNode* AsDOMNode() { return this; }
+  SVGPathElement* GetReferencedPath();
 
   // WebIDL
-  already_AddRefed<nsIDOMSVGAnimatedString> Href();
+  already_AddRefed<SVGAnimatedString> Href();
 
 protected:
   class PathReference : public nsReferencedElement {
@@ -87,7 +73,7 @@ protected:
     // We need to be notified when target changes, in order to request a sample
     // (which will clear animation effects that used the old target-path
     // and recompute the animation effects using the new target-path).
-    virtual void ElementChanged(Element* aFrom, Element* aTo) {
+    virtual void ElementChanged(Element* aFrom, Element* aTo) MOZ_OVERRIDE {
       nsReferencedElement::ElementChanged(aFrom, aTo);
       if (aFrom) {
         aFrom->RemoveMutationObserver(mMpathElement);
@@ -100,12 +86,12 @@ protected:
 
     // We need to override IsPersistent to get persistent tracking (beyond the
     // first time the target changes)
-    virtual bool IsPersistent() { return true; }
+    virtual bool IsPersistent() MOZ_OVERRIDE { return true; }
   private:
     SVGMPathElement* const mMpathElement;
   };
 
-  virtual StringAttributesInfo GetStringInfo();
+  virtual StringAttributesInfo GetStringInfo() MOZ_OVERRIDE;
 
   void UpdateHrefTarget(nsIContent* aParent, const nsAString& aHrefStr);
   void UnlinkHrefTarget(bool aNotifyParent);

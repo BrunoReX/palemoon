@@ -27,6 +27,7 @@
 #include "nsString.h"
 #include "nsCRT.h"
 #include "nspr.h"
+#include "nsXULAppAPI.h"
 
 extern PRLogModuleInfo *MCD;
 
@@ -167,7 +168,7 @@ nsresult nsReadConfig::readConfigFile()
 
         mRead = true;
     }
-    // If the lockFileName is NULL return ok, because no lockFile will be used
+    // If the lockFileName is nullptr return ok, because no lockFile will be used
   
   
     // Once the config file is read, we should check that the vendor name 
@@ -199,10 +200,10 @@ nsresult nsReadConfig::readConfigFile()
   
     rv = prefBranch->GetCharPref("general.config.vendor", 
                                   getter_Copies(lockVendor));
-    // If vendor is not NULL, do this check
+    // If vendor is not nullptr, do this check
     if (NS_SUCCEEDED(rv)) {
 
-        fileNameLen = PL_strlen(lockFileName);
+        fileNameLen = strlen(lockFileName);
     
         // lockVendor and lockFileName should be the same with the addtion of 
         // .cfg to the filename by checking this post reading of the cfg file 
@@ -242,12 +243,12 @@ nsresult nsReadConfig::openAndEvaluateJSFile(const char *aFileName, int32_t obsc
     nsCOMPtr<nsIInputStream> inStr;
     if (isBinDir) {
         nsCOMPtr<nsIFile> jsFile;
-        rv = NS_GetSpecialDirectory(NS_XPCOM_CURRENT_PROCESS_DIR, 
+        rv = NS_GetSpecialDirectory(XRE_EXECUTABLE_FILE,
                                     getter_AddRefs(jsFile));
         if (NS_FAILED(rv)) 
             return rv;
 
-        rv = jsFile->AppendNative(nsDependentCString(aFileName));
+        rv = jsFile->SetNativeLeafName(nsDependentCString(aFileName));
         if (NS_FAILED(rv)) 
             return rv;
 

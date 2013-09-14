@@ -22,7 +22,7 @@
 #include "nsIDocument.h"
 #include "nsIXMLContentSink.h"
 #include "nsContentCID.h"
-#include "nsXMLDocument.h"
+#include "mozilla/dom/XMLDocument.h"
 #include "nsGkAtoms.h"
 #include "nsIMemory.h"
 #include "nsIObserverService.h"
@@ -45,6 +45,7 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsIScriptError.h"
 #include "nsXBLSerialize.h"
+#include "nsDOMEvent.h"
 
 #ifdef MOZ_XUL
 #include "nsXULPrototypeCache.h"
@@ -55,6 +56,7 @@
 #include "mozilla/Attributes.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 #define NS_MAX_XBL_BINDING_RECURSION 20
 
@@ -107,18 +109,6 @@ public:
   nsCOMPtr<nsIURI> mBindingURI;
   nsCOMPtr<nsIContent> mBoundElement;
 
-  static nsXBLBindingRequest*
-  Create(nsFixedSizeAllocator& aPool, nsIURI* aURI, nsIContent* aBoundElement) {
-    void* place = aPool.Alloc(sizeof(nsXBLBindingRequest));
-    return place ? ::new (place) nsXBLBindingRequest(aURI, aBoundElement) : nullptr;
-  }
-
-  static void
-  Destroy(nsFixedSizeAllocator& aPool, nsXBLBindingRequest* aRequest) {
-    aRequest->~nsXBLBindingRequest();
-    aPool.Free(aRequest, sizeof(*aRequest));
-  }
-
   void DocumentLoaded(nsIDocument* aBindingDoc)
   {
     // We only need the document here to cause frame construction, so
@@ -157,27 +147,12 @@ public:
     }
   }
 
-protected:
   nsXBLBindingRequest(nsIURI* aURI, nsIContent* aBoundElement)
     : mBindingURI(aURI),
       mBoundElement(aBoundElement)
   {
   }
-
-private:
-  // Hide so that only Create() and Destroy() can be used to
-  // allocate and deallocate from the heap
-  static void* operator new(size_t) CPP_THROW_NEW { return 0; }
-  static void operator delete(void*, size_t) {}
 };
-
-static const size_t kBucketSizes[] = {
-  sizeof(nsXBLBindingRequest)
-};
-
-static const int32_t kNumBuckets = sizeof(kBucketSizes)/sizeof(size_t);
-static const int32_t kNumElements = 64;
-static const int32_t kInitialSize = sizeof(nsXBLBindingRequest) * kNumElements;
 
 // nsXBLStreamListener, a helper class used for 
 // asynchronous parsing of URLs
@@ -227,13 +202,13 @@ nsXBLStreamListener::~nsXBLStreamListener()
 {
   for (uint32_t i = 0; i < mBindingRequests.Length(); i++) {
     nsXBLBindingRequest* req = mBindingRequests.ElementAt(i);
-    nsXBLBindingRequest::Destroy(nsXBLService::GetInstance()->mPool, req);
+    delete req;
   }
 }
 
 NS_IMETHODIMP
 nsXBLStreamListener::OnDataAvailable(nsIRequest *request, nsISupports* aCtxt,
-                                     nsIInputStream* aInStr, 
+                                     nsIInputStream* aInStr,
                                      uint64_t aSourceOffset, uint32_t aCount)
 {
   if (mInner)
@@ -267,9 +242,8 @@ nsXBLStreamListener::OnStartRequest(nsIRequest* request, nsISupports* aCtxt)
 
   // Make sure to add ourselves as a listener after StartDocumentLoad,
   // since that resets the event listners on the document.
-  nsCOMPtr<nsIDOMEventTarget> target(do_QueryInterface(doc));
-  target->AddEventListener(NS_LITERAL_STRING("load"), this, false);
-  
+  doc->AddEventListener(NS_LITERAL_STRING("load"), this, false);
+
   return mInner->OnStartRequest(request, aCtxt);
 }
 
@@ -313,8 +287,8 @@ nsXBLStreamListener::HandleEvent(nsIDOMEvent* aEvent)
 
   // Get the binding document; note that we don't hold onto it in this object
   // to avoid creating a cycle
-  nsCOMPtr<nsIDOMEventTarget> target;
-  aEvent->GetCurrentTarget(getter_AddRefs(target));
+  nsDOMEvent* event = aEvent->InternalDOMEvent();
+  EventTarget* target = event->GetCurrentTarget();
   nsCOMPtr<nsIDocument> bindingDocument = do_QueryInterface(target);
   NS_ASSERTION(bindingDocument, "Event not targeted at document?!");
 
@@ -419,8 +393,6 @@ nsXBLService::Init()
 // Constructors/Destructors
 nsXBLService::nsXBLService(void)
 {
-  mPool.Init("XBL Binding Requests", kBucketSizes, kNumBuckets, kInitialSize);
-
   gClassTable = new nsHashtable();
 
   Preferences::AddBoolVarCache(&gAllowDataURIs, "layout.debug.enable_data_xbl");
@@ -459,7 +431,7 @@ nsXBLService::IsChromeOrResourceURI(nsIURI* aURI)
 // onto the element.
 nsresult
 nsXBLService::LoadBindings(nsIContent* aContent, nsIURI* aURL,
-                           nsIPrincipal* aOriginPrincipal, bool aAugmentFlag,
+                           nsIPrincipal* aOriginPrincipal,
                            nsXBLBinding** aBinding, bool* aResolveStyle) 
 {
   NS_PRECONDITION(aOriginPrincipal, "Must have an origin principal");
@@ -482,7 +454,7 @@ nsXBLService::LoadBindings(nsIContent* aContent, nsIURI* aURL,
   nsBindingManager *bindingManager = document->BindingManager();
   
   nsXBLBinding *binding = bindingManager->GetBinding(aContent);
-  if (binding && !aAugmentFlag) {
+  if (binding) {
     nsXBLBinding *styleBinding = binding->GetFirstStyleBinding();
     if (styleBinding) {
       if (binding->MarkedForDeath()) {
@@ -520,31 +492,14 @@ nsXBLService::LoadBindings(nsIContent* aContent, nsIURI* aURL,
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
-  if (aAugmentFlag) {
-    nsXBLBinding *baseBinding;
-    nsXBLBinding *nextBinding = newBinding;
-    do {
-      baseBinding = nextBinding;
-      nextBinding = baseBinding->GetBaseBinding();
-      baseBinding->SetIsStyleBinding(false);
-    } while (nextBinding);
-
-    // XXX Handle adjusting the prototype chain! We need to somehow indicate to
-    // InstallImplementation that the whole chain should just be whacked and rebuilt.
-    // We are becoming the new binding.
-    baseBinding->SetBaseBinding(binding);
-    bindingManager->SetBinding(aContent, newBinding);
+  // We loaded a style binding.  It goes on the end.
+  if (binding) {
+    // Get the last binding that is in the append layer.
+    binding->RootBinding()->SetBaseBinding(newBinding);
   }
   else {
-    // We loaded a style binding.  It goes on the end.
-    if (binding) {
-      // Get the last binding that is in the append layer.
-      binding->RootBinding()->SetBaseBinding(newBinding);
-    }
-    else {
-      // Install the binding on the content node.
-      bindingManager->SetBinding(aContent, newBinding);
-    }
+    // Install the binding on the content node.
+    bindingManager->SetBinding(aContent, newBinding);
   }
 
   {
@@ -604,11 +559,11 @@ nsXBLService::FlushStyleBindings(nsIContent* aContent)
 // then extra work needs to be done to hook it up to the document (XXX WHY??)
 //
 nsresult
-nsXBLService::AttachGlobalKeyHandler(nsIDOMEventTarget* aTarget)
+nsXBLService::AttachGlobalKeyHandler(EventTarget* aTarget)
 {
   // check if the receiver is a content node (not a document), and hook
   // it to the document if that is the case.
-  nsCOMPtr<nsIDOMEventTarget> piTarget = aTarget;
+  nsCOMPtr<EventTarget> piTarget = aTarget;
   nsCOMPtr<nsIContent> contentNode(do_QueryInterface(aTarget));
   if (contentNode) {
     // Only attach if we're really in a document
@@ -618,21 +573,19 @@ nsXBLService::AttachGlobalKeyHandler(nsIDOMEventTarget* aTarget)
   }
 
   nsEventListenerManager* manager = piTarget->GetListenerManager(true);
-    
+
   if (!piTarget || !manager)
     return NS_ERROR_FAILURE;
 
   // the listener already exists, so skip this
   if (contentNode && contentNode->GetProperty(nsGkAtoms::listener))
     return NS_OK;
-    
+
   nsCOMPtr<nsIDOMElement> elt(do_QueryInterface(contentNode));
 
   // Create the key handler
-  nsXBLWindowKeyHandler* handler;
-  NS_NewXBLWindowKeyHandler(elt, piTarget, &handler); // This addRef's
-  if (!handler)
-    return NS_ERROR_FAILURE;
+  nsRefPtr<nsXBLWindowKeyHandler> handler =
+    NS_NewXBLWindowKeyHandler(elt, piTarget);
 
   // listen to these events
   manager->AddEventListenerByType(handler, NS_LITERAL_STRING("keydown"),
@@ -643,12 +596,11 @@ nsXBLService::AttachGlobalKeyHandler(nsIDOMEventTarget* aTarget)
                                   dom::TrustedEventsAtSystemGroupBubble());
 
   if (contentNode)
-    return contentNode->SetProperty(nsGkAtoms::listener, handler,
+    return contentNode->SetProperty(nsGkAtoms::listener, handler.forget().get(),
                                     nsPropertyTable::SupportsDtorFunc, true);
 
-  // release the handler. The reference will be maintained by the event target,
+  // The reference to the handler will be maintained by the event target,
   // and, if there is a content node, the property.
-  NS_RELEASE(handler);
   return NS_OK;
 }
 
@@ -658,9 +610,9 @@ nsXBLService::AttachGlobalKeyHandler(nsIDOMEventTarget* aTarget)
 // Removes a key handler added by DeatchGlobalKeyHandler.
 //
 nsresult
-nsXBLService::DetachGlobalKeyHandler(nsIDOMEventTarget* aTarget)
+nsXBLService::DetachGlobalKeyHandler(EventTarget* aTarget)
 {
-  nsCOMPtr<nsIDOMEventTarget> piTarget = aTarget;
+  nsCOMPtr<EventTarget> piTarget = aTarget;
   nsCOMPtr<nsIContent> contentNode(do_QueryInterface(aTarget));
   if (!contentNode) // detaching is only supported for content nodes
     return NS_ERROR_FAILURE;
@@ -671,7 +623,7 @@ nsXBLService::DetachGlobalKeyHandler(nsIDOMEventTarget* aTarget)
     piTarget = do_QueryInterface(doc);
 
   nsEventListenerManager* manager = piTarget->GetListenerManager(true);
-    
+
   if (!piTarget || !manager)
     return NS_ERROR_FAILURE;
 
@@ -963,6 +915,10 @@ nsXBLService::LoadBindingDocumentInfo(nsIContent* aBoundElement,
     if (aBoundDocument) {
       bindingManager = aBoundDocument->BindingManager();
       info = bindingManager->GetXBLDocumentInfo(documentURI);
+      if (aBoundDocument->IsStaticDocument() &&
+          IsChromeOrResourceURI(aBindingURI)) {
+        aForceSyncLoad = true;
+      }
     }
 
     nsINodeInfo *ni = nullptr;
@@ -987,7 +943,7 @@ nsXBLService::LoadBindingDocumentInfo(nsIContent* aBoundElement,
           static_cast<nsXBLStreamListener*>(listener.get());
         // Create a new load observer.
         if (!xblListener->HasRequest(aBindingURI, aBoundElement)) {
-          nsXBLBindingRequest* req = nsXBLBindingRequest::Create(mPool, aBindingURI, aBoundElement);
+          nsXBLBindingRequest* req = new nsXBLBindingRequest(aBindingURI, aBoundElement);
           xblListener->AddRequest(req);
         }
         return NS_OK;
@@ -1111,9 +1067,8 @@ nsXBLService::FetchBindingDocument(nsIContent* aBoundElement, nsIDocument* aBoun
       bindingManager->PutLoadingDocListener(aDocumentURI, xblListener);
 
     // Add our request.
-    nsXBLBindingRequest* req = nsXBLBindingRequest::Create(mPool,
-                                                           aBindingURI,
-                                                           aBoundElement);
+    nsXBLBindingRequest* req = new nsXBLBindingRequest(aBindingURI,
+                                                       aBoundElement);
     xblListener->AddRequest(req);
 
     // Now kick off the async read.

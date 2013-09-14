@@ -287,6 +287,7 @@ class nsCookieService : public nsICookieService
     bool                          FindCookie(const nsCookieKey& aKey, const nsAFlatCString &aHost, const nsAFlatCString &aName, const nsAFlatCString &aPath, nsListIter &aIter);
     static void                   FindStaleCookie(nsCookieEntry *aEntry, int64_t aCurrentTime, nsListIter &aIter);
     void                          NotifyRejected(nsIURI *aHostURI);
+    void                          NotifyThirdParty(nsIURI *aHostURI, bool aAccepted, nsIChannel *aChannel);
     void                          NotifyChanged(nsISupports *aSubject, const PRUnichar *aData);
     void                          NotifyPurged(nsICookie2* aCookie);
     already_AddRefed<nsIArray>    CreatePurgeList(nsICookie2* aCookie);
@@ -325,7 +326,7 @@ class nsCookieService : public nsICookieService
     nsRefPtr<DBState>             mPrivateDBState;
 
     // cached prefs
-    uint8_t                       mCookieBehavior; // BEHAVIOR_{ACCEPT, REJECTFOREIGN, REJECT}
+    uint8_t                       mCookieBehavior; // BEHAVIOR_{ACCEPT, REJECTFOREIGN, REJECT, LIMITFOREIGN}
     bool                          mThirdPartySession;
     uint16_t                      mMaxNumberOfCookies;
     uint16_t                      mMaxCookiesPerHost;

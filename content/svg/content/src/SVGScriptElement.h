@@ -8,12 +8,11 @@
 #define mozilla_dom_SVGScriptElement_h
 
 #include "nsSVGElement.h"
-#include "nsIDOMSVGScriptElement.h"
-#include "nsIDOMSVGURIReference.h"
 #include "nsCOMPtr.h"
 #include "nsSVGString.h"
-#include "nsIDocument.h"
 #include "nsScriptElement.h"
+
+class nsIDocument;
 
 nsresult NS_NewSVGScriptElement(nsIContent **aResult,
                                 already_AddRefed<nsINodeInfo> aNodeInfo,
@@ -25,8 +24,6 @@ namespace dom {
 typedef nsSVGElement SVGScriptElementBase;
 
 class SVGScriptElement MOZ_FINAL : public SVGScriptElementBase,
-                                   public nsIDOMSVGScriptElement,
-                                   public nsIDOMSVGURIReference,
                                    public nsScriptElement
 {
 protected:
@@ -36,53 +33,46 @@ protected:
   SVGScriptElement(already_AddRefed<nsINodeInfo> aNodeInfo,
                    FromParser aFromParser);
 
-  virtual JSObject* WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap) MOZ_OVERRIDE;
+  virtual JSObject* WrapNode(JSContext *aCx,
+                             JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
 public:
   // interfaces:
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIDOMSVGSCRIPTELEMENT
-  NS_DECL_NSIDOMSVGURIREFERENCE
-
-  // xxx If xpcom allowed virtual inheritance we wouldn't need to
-  // forward here :-(
-  NS_FORWARD_NSIDOMNODE_TO_NSINODE
-  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
-  NS_FORWARD_NSIDOMSVGELEMENT(SVGScriptElementBase::)
 
   // nsIScriptElement
-  virtual void GetScriptType(nsAString& type);
-  virtual void GetScriptText(nsAString& text);
-  virtual void GetScriptCharset(nsAString& charset);
-  virtual void FreezeUriAsyncDefer();
-  virtual CORSMode GetCORSMode() const;
-  
+  virtual void GetScriptType(nsAString& type) MOZ_OVERRIDE;
+  virtual void GetScriptText(nsAString& text) MOZ_OVERRIDE;
+  virtual void GetScriptCharset(nsAString& charset) MOZ_OVERRIDE;
+  virtual void FreezeUriAsyncDefer() MOZ_OVERRIDE;
+  virtual CORSMode GetCORSMode() const MOZ_OVERRIDE;
+
   // nsScriptElement
-  virtual bool HasScriptContent();
+  virtual bool HasScriptContent() MOZ_OVERRIDE;
 
   // nsIContent specializations:
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                               nsIContent* aBindingParent,
-                              bool aCompileEventHandlers);
+                              bool aCompileEventHandlers) MOZ_OVERRIDE;
   virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
-                                const nsAttrValue* aValue, bool aNotify);
+                                const nsAttrValue* aValue, bool aNotify) MOZ_OVERRIDE;
   virtual bool ParseAttribute(int32_t aNamespaceID,
                               nsIAtom* aAttribute,
                               const nsAString& aValue,
-                              nsAttrValue& aResult);
+                              nsAttrValue& aResult) MOZ_OVERRIDE;
 
-  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
-
-  virtual nsXPCClassInfo* GetClassInfo();
-
-  virtual nsIDOMNode* AsDOMNode() { return this; }
+  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const MOZ_OVERRIDE;
 
   // WebIDL
-  already_AddRefed<nsIDOMSVGAnimatedString> Href();
+  void GetType(nsAString & aType);
+  void SetType(const nsAString & aType, ErrorResult& rv);
+  void GetCrossOrigin(nsAString & aOrigin);
+  void SetCrossOrigin(const nsAString & aOrigin, ErrorResult& rv);
+  already_AddRefed<SVGAnimatedString> Href();
 
 protected:
-  virtual StringAttributesInfo GetStringInfo();
+  virtual StringAttributesInfo GetStringInfo() MOZ_OVERRIDE;
 
   enum { HREF };
   nsSVGString mStringAttributes[1];

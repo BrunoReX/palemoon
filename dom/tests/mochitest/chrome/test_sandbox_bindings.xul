@@ -22,15 +22,18 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=741267
 
   /** Test for Bug 741267 **/
     function isXrayWrapper(x) {
-      return XPCNativeWrapper.unwrap(x) != x;
+      return Components.utils.isXrayWrapper(x);
     }
 
     function doTest() {
       var win = $("t").contentWindow;
       var sandbox = Components.utils.Sandbox(win, { sandboxPrototype: win });
+
+      is(sandbox._content, undefined, "_content does nothing over Xray");
+
       try {
         var css = Components.utils.evalInSandbox("CSSStyleDeclaration", sandbox);
-        is(css.prototype, "[object CSSStyleDeclarationPrototype]", "'CSSStyleDeclaration.prototype' in a sandbox should return the CSSStyleDeclaration interface prototype object");
+        is(css.prototype, "[object XrayWrapper [object CSSStyleDeclarationPrototype]]", "'CSSStyleDeclaration.prototype' in a sandbox should return the CSSStyleDeclaration interface prototype object");
       } catch (e) {
         ok(false, "'CSSStyleDeclaration' shouldn't throw in a sandbox");
       }
@@ -48,6 +51,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=741267
         ok(isXrayWrapper(xhr.constructor), "Getting the constructor property on an Xray wrapper of an interface prototype object should return an Xray wrapper");
       } catch (e) {
         ok(false, "'XMLHttpRequest.prototype' shouldn't throw in a sandbox");
+      }
+      try {
+        var img = Components.utils.evalInSandbox("Image.prototype", sandbox);
+        ok(img, "'Image.prototype' in a sandbox should return the interface prototype object");
+        ok(isXrayWrapper(img), "Getting an interface prototype object on an Xray wrapper should return an Xray wrapper");
+      } catch (e) {
+        ok(false, "'Image.prototype' shouldn't throw in a sandbox");
       }
       try {
         var xhr = Components.utils.evalInSandbox("XMLHttpRequest", sandbox);
@@ -82,7 +92,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=741267
       }
       try {
         var xhr = Components.utils.evalInSandbox("XMLHttpRequest()", sandbox);
-        is("" + xhr, "" + XMLHttpRequest(), "'XMLHttpRequest()' in a sandbox should create an XMLHttpRequest object");
+        is("" + xhr, "[object XrayWrapper " + XMLHttpRequest() + "]", "'XMLHttpRequest()' in a sandbox should create an XMLHttpRequest object");
       } catch (e) {
         ok(false, "'XMLHttpRequest()' shouldn't throw in a sandbox");
       }
@@ -114,7 +124,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=741267
         Components.utils.evalInSandbox("document.defaultView.XMLHttpRequest = function() {};", sandbox);
         var win = Components.utils.evalInSandbox("document.defaultView", sandbox);
         var xhr = win.XMLHttpRequest();
-        is("" + xhr, "" + XMLHttpRequest(), "'XMLHttpRequest()' in a sandbox should create an XMLHttpRequest object");
+        is("" + xhr, "[object XrayWrapper " + XMLHttpRequest() + "]", "'XMLHttpRequest()' in a sandbox should create an XMLHttpRequest object");
       } catch (e) {
         ok(false, "'XMLHttpRequest()' shouldn't throw in a sandbox");
       }
@@ -215,6 +225,36 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=741267
         is(es.url, "about:blank", "What is this object?");
       } catch (e) {
         ok(false, "Should be able to create an EventSource in a sandbox " + e);
+      }
+
+      try {
+        var nodeFilterIface = Components.utils.evalInSandbox(
+          'NodeFilter.myExpando = "FAIL"; NodeFilter', sandbox);
+        is(nodeFilterIface.myExpando, undefined,
+           "Should have Xrays for callback interface objects");
+      } catch (e) {
+        ok(false, "Should be able to return NodeFilter from a sandbox " + e);
+      }
+
+      try {
+        var eventCtor = Components.utils.evalInSandbox("Event", sandbox);
+        var e = new eventCtor("test", { bubbles: true });
+        is(e.bubbles, true, "Dictionary argument should work");
+      } catch (e) {
+        ok(false, "Should be able to construct my event " + e);
+      }
+
+      try {
+        var elem = Components.utils.evalInSandbox('document.createElement("p")', sandbox);
+        elem.expando = 5;
+        elem.expando = 7;
+        is(elem.expando, 7, "Should be able to set expandos on Xrays for DOM bindings");
+        var doc = Components.utils.evalInSandbox('document', sandbox);
+        doc.expando = 5;
+        doc.expando = 7;
+        is(doc.expando, 7, "Should be able to set expandos on Xrays for DOM bindings with named properties");
+      } catch (e) {
+        ok(false, "Setting expandos on Xrays shouldn't throw " + e);
       }
 
       SimpleTest.finish();

@@ -291,7 +291,6 @@ private:
  * txMozillaXSLTProcessor
  */
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(txMozillaXSLTProcessor)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(txMozillaXSLTProcessor)
     NS_IMPL_CYCLE_COLLECTION_UNLINK(mEmbeddedStylesheetRoot)
     NS_IMPL_CYCLE_COLLECTION_UNLINK(mSource)
@@ -1248,7 +1247,7 @@ txMozillaXSLTProcessor::ContentRemoved(nsIDocument* aDocument,
 
 NS_IMETHODIMP
 txMozillaXSLTProcessor::Initialize(nsISupports* aOwner, JSContext* cx,
-                                   JSObject* obj, uint32_t argc, jsval* argv)
+                                   JSObject* obj, const JS::CallArgs& args)
 {
     nsCOMPtr<nsIPrincipal> prin;
     nsIScriptSecurityManager* secMan = nsContentUtils::GetSecurityManager();
@@ -1439,11 +1438,10 @@ txVariable::Convert(nsIVariant *aValue, txAExprResult** aResult)
                 JSContext* cx = nsContentUtils::GetCurrentJSContext();
                 NS_ENSURE_TRUE(cx, NS_ERROR_NOT_AVAILABLE);
 
-                JSObject *jsobj;
-                rv = holder->GetJSObject(&jsobj);
-                NS_ENSURE_SUCCESS(rv, rv);
+                JS::RootedObject jsobj(cx, holder->GetJSObject());
+                NS_ENSURE_STATE(jsobj);
 
-                JSString *str = JS_ValueToString(cx, OBJECT_TO_JSVAL(jsobj));
+                JS::RootedString str(cx, JS_ValueToString(cx, OBJECT_TO_JSVAL(jsobj)));
                 NS_ENSURE_TRUE(str, NS_ERROR_FAILURE);
 
                 nsDependentJSString value;

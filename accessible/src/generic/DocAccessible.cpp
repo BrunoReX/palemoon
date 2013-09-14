@@ -18,7 +18,6 @@
 #include "nsIMutableArray.h"
 #include "nsICommandManager.h"
 #include "nsIDocShell.h"
-#include "nsIDocShellTreeItem.h"
 #include "nsIDocument.h"
 #include "nsIDOMAttr.h"
 #include "nsIDOMCharacterData.h"
@@ -104,24 +103,23 @@ DocAccessible::~DocAccessible()
 ////////////////////////////////////////////////////////////////////////////////
 // nsISupports
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(DocAccessible)
-
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(DocAccessible, Accessible)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentNode)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mNotificationController)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVirtualCursor)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mChildDocuments)
+  tmp->mDependentIDsHash.EnumerateRead(CycleCollectorTraverseDepIDsEntry, &cb);
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAccessibleCache)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAnchorJumpElm)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(DocAccessible, Accessible)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentNode)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mNotificationController)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mVirtualCursor)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mChildDocuments)
   tmp->mDependentIDsHash.Clear();
   tmp->mNodeToAccessibleMap.Clear();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mAccessibleCache)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mAnchorJumpElm)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(DocAccessible)
@@ -132,8 +130,6 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(DocAccessible)
   NS_INTERFACE_MAP_ENTRY(nsIObserver)
   NS_INTERFACE_MAP_ENTRY(nsIAccessiblePivotObserver)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIAccessibleDocument)
-  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIAccessibleCursorable,
-                                     (mDocFlags & eCursorable))
     foundInterface = 0;
 
   nsresult status;
@@ -187,14 +183,13 @@ DocAccessible::Name(nsString& aName)
 role
 DocAccessible::NativeRole()
 {
-  nsCOMPtr<nsIDocShellTreeItem> docShellTreeItem =
-    nsCoreUtils::GetDocShellTreeItemFor(mDocumentNode);
-  if (docShellTreeItem) {
+  nsCOMPtr<nsIDocShell> docShell = nsCoreUtils::GetDocShellFor(mDocumentNode);
+  if (docShell) {
     nsCOMPtr<nsIDocShellTreeItem> sameTypeRoot;
-    docShellTreeItem->GetSameTypeRootTreeItem(getter_AddRefs(sameTypeRoot));
+    docShell->GetSameTypeRootTreeItem(getter_AddRefs(sameTypeRoot));
     int32_t itemType;
-    docShellTreeItem->GetItemType(&itemType);
-    if (sameTypeRoot == docShellTreeItem) {
+    docShell->GetItemType(&itemType);
+    if (sameTypeRoot == docShell) {
       // Root of content or chrome tree
       if (itemType == nsIDocShellTreeItem::typeChrome)
         return roles::CHROME_WINDOW;
@@ -480,7 +475,6 @@ DocAccessible::GetChildDocumentAt(uint32_t aIndex,
   return *aDocument ? NS_OK : NS_ERROR_INVALID_ARG;
 }
 
-// nsIAccessibleVirtualCursor method
 NS_IMETHODIMP
 DocAccessible::GetVirtualCursor(nsIAccessiblePivot** aVirtualCursor)
 {
@@ -489,9 +483,6 @@ DocAccessible::GetVirtualCursor(nsIAccessiblePivot** aVirtualCursor)
 
   if (IsDefunct())
     return NS_ERROR_FAILURE;
-
-  if (!(mDocFlags & eCursorable))
-    return NS_OK;
 
   if (!mVirtualCursor) {
     mVirtualCursor = new nsAccessiblePivot(this);
@@ -708,11 +699,7 @@ DocAccessible::AddEventListeners()
       commandManager->AddCommandObserver(this, "obs_documentCreated");
   }
 
-  a11y::RootAccessible* rootAccessible = RootAccessible();
-  NS_ENSURE_TRUE(rootAccessible, NS_ERROR_FAILURE);
-  nsRefPtr<nsCaretAccessible> caretAccessible = rootAccessible->GetCaretAccessible();
-  if (caretAccessible)
-    caretAccessible->AddDocSelectionListener(mPresShell);
+  SelectionMgr()->AddDocSelectionListener(mPresShell);
 
   // Add document observer.
   mDocumentNode->AddObserver(this);
@@ -754,13 +741,7 @@ DocAccessible::RemoveEventListeners()
     NS_RELEASE_THIS(); // Kung fu death grip
   }
 
-  a11y::RootAccessible* rootAccessible = RootAccessible();
-  if (rootAccessible) {
-    nsRefPtr<nsCaretAccessible> caretAccessible = rootAccessible->GetCaretAccessible();
-    if (caretAccessible)
-      caretAccessible->RemoveDocSelectionListener(mPresShell);
-  }
-
+  SelectionMgr()->RemoveDocSelectionListener(mPresShell);
   return NS_OK;
 }
 
@@ -1074,7 +1055,7 @@ DocAccessible::ARIAAttributeChanged(Accessible* aAccessible, nsIAtom* aAttribute
 
   // For aria attributes like drag and drop changes we fire a generic attribute
   // change event; at least until native API comes up with a more meaningful event.
-  uint8_t attrFlags = nsAccUtils::GetAttributeCharacteristics(aAttribute);
+  uint8_t attrFlags = aria::AttrCharacteristicsFor(aAttribute);
   if (!(attrFlags & ATTR_BYPASSOBJ))
     FireDelayedEvent(nsIAccessibleEvent::EVENT_OBJECT_ATTRIBUTE_CHANGED,
                      aAccessible);
@@ -1433,7 +1414,11 @@ DocAccessible::CacheChildren()
 {
   // Search for accessible children starting from the document element since
   // some web pages tend to insert elements under it rather than document body.
-  TreeWalker walker(this, mDocumentNode->GetRootElement());
+  dom::Element* rootElm = mDocumentNode->GetRootElement();
+  if (!rootElm)
+    return;
+
+  TreeWalker walker(this, rootElm);
 
   Accessible* child = nullptr;
   while ((child = walker.NextChild()) && AppendChild(child));
@@ -1473,10 +1458,6 @@ DocAccessible::DoInitialUpdate()
 {
   if (nsCoreUtils::IsTabDocument(mDocumentNode))
     mDocFlags |= eTabDocument;
-
-  // We provide a virtual cursor if this is a root doc or if it's a tab doc.
-  if (!mDocumentNode->GetParentDocument() || (mDocFlags & eTabDocument))
-    mDocFlags |= eCursorable;
 
   mLoadState |= eTreeConstructed;
 
@@ -1524,7 +1505,7 @@ DocAccessible::ProcessLoad()
   // Fire complete/load stopped if the load event type is given.
   if (mLoadEventType) {
     nsRefPtr<AccEvent> loadEvent = new AccEvent(mLoadEventType, this);
-    nsEventShell::FireEvent(loadEvent);
+    FireDelayedEvent(loadEvent);
 
     mLoadEventType = 0;
   }
@@ -1532,7 +1513,7 @@ DocAccessible::ProcessLoad()
   // Fire busy state change event.
   nsRefPtr<AccEvent> stateEvent =
     new AccStateChangeEvent(this, states::BUSY, false);
-  nsEventShell::FireEvent(stateEvent);
+  FireDelayedEvent(stateEvent);
 }
 
 void
@@ -1757,29 +1738,34 @@ DocAccessible::UpdateTree(Accessible* aContainer, nsIContent* aChildNode,
 
   if (child) {
     updateFlags |= UpdateTreeInternal(child, aIsInsert, reorderEvent);
+  } else {
+    if (aIsInsert) {
+      TreeWalker walker(aContainer, aChildNode, true);
 
-    // XXX: since select change insertion point of option contained by optgroup
-    // then we need to have special processing for them (bug 690417).
-    if (!aIsInsert && aChildNode->IsHTML(nsGkAtoms::optgroup) &&
-        aContainer->GetContent()->IsHTML(nsGkAtoms::select)) {
-      for (nsIContent* optContent = aChildNode->GetFirstChild(); optContent;
-           optContent = optContent->GetNextSibling()) {
-        if (optContent->IsHTML(nsGkAtoms::option)) {
-          Accessible* option = GetAccessible(optContent);
-          if (option) {
-            NS_ASSERTION(option->Parent() == aContainer,
-                         "Not expected hierarchy on HTML select!");
-            if (option->Parent() == aContainer)
-              updateFlags |= UpdateTreeInternal(option, aIsInsert, reorderEvent);
-          }
+      while ((child = walker.NextChild()))
+        updateFlags |= UpdateTreeInternal(child, aIsInsert, reorderEvent);
+    } else {
+      // aChildNode may not coorespond to a particular accessible, to handle
+      // this we go through all the children of aContainer.  Then if a child
+      // has aChildNode as an ancestor, or does not have the node for
+      // aContainer as an ancestor remove that child of aContainer.  Note that
+      // when we are called aChildNode may already have been removed
+      // from the DOM so we can't expect it to have a parent or what was it's
+      // parent to have it as a child.
+      nsINode* containerNode = aContainer->GetNode();
+      for (uint32_t idx = 0; idx < aContainer->ContentChildCount();) {
+        Accessible* child = aContainer->ContentChildAt(idx);
+        nsINode* childNode = child->GetContent();
+        while (childNode != aChildNode && childNode != containerNode &&
+               (childNode = childNode->GetParentNode()));
+
+        if (childNode != containerNode) {
+          updateFlags |= UpdateTreeInternal(child, false, reorderEvent);
+        } else {
+          idx++;
         }
       }
     }
-  } else {
-    TreeWalker walker(aContainer, aChildNode, true);
-
-    while ((child = walker.NextChild()))
-      updateFlags |= UpdateTreeInternal(child, aIsInsert, reorderEvent);
   }
 
   // Content insertion/removal is not cause of accessible tree change.
@@ -1944,7 +1930,10 @@ DocAccessible::ShutdownChildrenInSubtree(Accessible* aAccessible)
       jdx++;
     }
 
-    ShutdownChildrenInSubtree(child);
+    // Don't cross document boundaries. The outerdoc shutdown takes care about
+    // its subdocument.
+    if (!child->IsDoc())
+      ShutdownChildrenInSubtree(child);
   }
 
   UnbindFromDocument(aAccessible);
@@ -1980,5 +1969,27 @@ DocAccessible::IsLoadEventTarget() const
   int32_t contentType;
   treeItem->GetItemType(&contentType);
   return (contentType == nsIDocShellTreeItem::typeContent);
+}
+
+PLDHashOperator
+DocAccessible::CycleCollectorTraverseDepIDsEntry(const nsAString& aKey,
+                                                 AttrRelProviderArray* aProviders,
+                                                 void* aUserArg)
+{
+  nsCycleCollectionTraversalCallback* cb =
+    static_cast<nsCycleCollectionTraversalCallback*>(aUserArg);
+
+  for (int32_t jdx = aProviders->Length() - 1; jdx >= 0; jdx--) {
+    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(*cb,
+                                       "content of dependent ids hash entry of document accessible");
+
+    AttrRelProvider* provider = (*aProviders)[jdx];
+    cb->NoteXPCOMChild(provider->mContent);
+
+    NS_ASSERTION(provider->mContent->IsInDoc(),
+                 "Referred content is not in document!");
+  }
+
+  return PL_DHASH_NEXT;
 }
 

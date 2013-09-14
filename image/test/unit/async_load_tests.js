@@ -48,16 +48,14 @@ function checkClone(other_listener, aRequest)
   var outer = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools)
                 .createScriptedObserver(listener);
   var clone = aRequest.clone(outer);
+  requests.push(clone);
 }
 
 // Ensure that all the callbacks were called on aRequest.
-function checkAllCallbacks(listener, aRequest)
+function checkSizeAndLoad(listener, aRequest)
 {
   do_check_neq(listener.state & SIZE_AVAILABLE, 0);
-  do_check_neq(listener.state & FRAME_COMPLETE, 0);
-  do_check_neq(listener.state & DECODE_COMPLETE, 0);
   do_check_neq(listener.state & LOAD_COMPLETE, 0);
-  do_check_eq(listener.state, ALL_BITS);
 
   do_test_finished();
 }
@@ -71,11 +69,12 @@ function secondLoadDone(oldlistener, aRequest)
 
     // For as long as clone notification is synchronous, we can't test the
     // clone state reliably.
-    var listener = new ImageListener(null, checkAllCallbacks);
+    var listener = new ImageListener(null, checkSizeAndLoad);
     listener.synchronous = false;
     var outer = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools)
                   .createScriptedObserver(listener);
     var staticrequestclone = staticrequest.clone(outer);
+    requests.push(staticrequestclone);
   } catch(e) {
     // We can't create a static request. Most likely the request we started
     // with didn't load successfully.
@@ -126,10 +125,6 @@ function getChannelLoadImageStartCallback(streamlistener)
 function getChannelLoadImageStopCallback(streamlistener, next)
 {
   return function channelLoadStop(imglistener, aRequest) {
-    // We absolutely must not get imgIScriptedNotificationObserver::onStopRequest
-    // after nsIRequestObserver::onStopRequest has fired. If we do that, we've
-    // broken people's expectations by delaying events from a channel we were given.
-    do_check_eq(streamlistener.requestStatus & STOP_REQUEST, 0);
 
     next();
 
@@ -208,8 +203,17 @@ function startImageCallback(otherCb)
 
 var gCurrentLoader;
 
+function cleanup()
+{
+  for (var i = 0; i < requests.length; ++i) {
+    requests[i].cancelAndForgetObserver(0);
+  }
+}
+
 function run_test()
 {
+  do_register_cleanup(cleanup);
+
   gCurrentLoader = Cc["@mozilla.org/image/loader;1"].createInstance(Ci.imgILoader);
 
   do_test_pending();

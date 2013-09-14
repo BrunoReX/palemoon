@@ -1,12 +1,13 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_frames_inl_h__
-#define jsion_frames_inl_h__
+#ifndef ion_IonFrames_inl_h
+#define ion_IonFrames_inl_h
+
+#ifdef JS_ION
 
 #include "ion/IonFrames.h"
 #include "ion/IonFrameIterator.h"
@@ -29,13 +30,16 @@ SizeOfFramePrefix(FrameType type)
     switch (type) {
       case IonFrame_Entry:
         return IonEntryFrameLayout::Size();
+      case IonFrame_BaselineJS:
       case IonFrame_OptimizedJS:
-      case IonFrame_Bailed_JS:
+      case IonFrame_Unwound_OptimizedJS:
         return IonJSFrameLayout::Size();
+      case IonFrame_BaselineStub:
+        return IonBaselineStubFrameLayout::Size();
       case IonFrame_Rectifier:
         return IonRectifierFrameLayout::Size();
-      case IonFrame_Bailed_Rectifier:
-        return IonBailedRectifierFrameLayout::Size();
+      case IonFrame_Unwound_Rectifier:
+        return IonUnwoundRectifierFrameLayout::Size();
       case IonFrame_Exit:
         return IonExitFrameLayout::Size();
       case IonFrame_Osr:
@@ -73,6 +77,24 @@ IonFrameIterator::prevType() const
     return current->prevType();
 }
 
+inline bool
+IonFrameIterator::isFakeExitFrame() const
+{
+    bool res = (prevType() == IonFrame_Unwound_Rectifier ||
+                prevType() == IonFrame_Unwound_OptimizedJS ||
+                prevType() == IonFrame_Unwound_BaselineStub);
+    JS_ASSERT_IF(res, type() == IonFrame_Exit || type() == IonFrame_BaselineJS);
+    return res;
+}
+
+inline IonExitFrameLayout *
+IonFrameIterator::exitFrame() const
+{
+    JS_ASSERT(type() == IonFrame_Exit);
+    JS_ASSERT(!isFakeExitFrame());
+    return (IonExitFrameLayout *) fp();
+}
+
 size_t
 IonFrameIterator::frameSize() const
 {
@@ -81,11 +103,10 @@ IonFrameIterator::frameSize() const
 }
 
 // Returns the JSScript associated with the topmost Ion frame.
-inline UnrootedScript
-GetTopIonJSScript(JSContext *cx, const SafepointIndex **safepointIndexOut, void **returnAddrOut)
+inline JSScript *
+GetTopIonJSScript(PerThreadData *pt, const SafepointIndex **safepointIndexOut, void **returnAddrOut)
 {
-    AutoAssertNoGC nogc;
-    IonFrameIterator iter(cx->runtime->ionTop);
+    IonFrameIterator iter(pt->ionTop);
     JS_ASSERT(iter.type() == IonFrame_Exit);
     ++iter;
 
@@ -97,13 +118,37 @@ GetTopIonJSScript(JSContext *cx, const SafepointIndex **safepointIndexOut, void 
     if (returnAddrOut)
         *returnAddrOut = (void *) iter.returnAddressToFp();
 
+    if (iter.isBaselineStub()) {
+        ++iter;
+        JS_ASSERT(iter.isBaselineJS());
+    }
+
     JS_ASSERT(iter.isScripted());
-    IonJSFrameLayout *frame = static_cast<IonJSFrameLayout*>(iter.current());
-    return ScriptFromCalleeToken(frame->calleeToken());
+    return iter.script();
+}
+
+
+inline JSScript *
+GetTopIonJSScript(JSContext *cx, const SafepointIndex **safepointIndexOut, void **returnAddrOut)
+{
+    return GetTopIonJSScript(&cx->mainThread(), safepointIndexOut, returnAddrOut);
+}
+
+inline BaselineFrame *
+GetTopBaselineFrame(JSContext *cx)
+{
+    IonFrameIterator iter(cx->mainThread().ionTop);
+    JS_ASSERT(iter.type() == IonFrame_Exit);
+    ++iter;
+    if (iter.isBaselineStub())
+        ++iter;
+    JS_ASSERT(iter.isBaselineJS());
+    return iter.baselineFrame();
 }
 
 } // namespace ion
 } // namespace js
 
-#endif // jsion_frames_inl_h__
+#endif // JS_ION
 
+#endif /* ion_IonFrames_inl_h */

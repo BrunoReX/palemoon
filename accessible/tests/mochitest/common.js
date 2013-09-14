@@ -582,13 +582,13 @@ function getTextFromClipboard()
   var clip = Components.classes["@mozilla.org/widget/clipboard;1"].
     getService(Components.interfaces.nsIClipboard);
   if (!clip)
-    return;
+    return "";
 
   var trans = Components.classes["@mozilla.org/widget/transferable;1"].
     createInstance(Components.interfaces.nsITransferable);
   trans.init(getLoadContext());
   if (!trans)
-    return;
+    return "";
 
   trans.addDataFlavor("text/unicode");
   clip.getData(trans, clip.kGlobalClipboard);
@@ -610,6 +610,17 @@ function getTextFromClipboard()
  */
 function prettyName(aIdentifier)
 {
+  if (aIdentifier instanceof Array) {
+    var msg = "";
+    for (var idx = 0; idx < aIdentifier.length; idx++) {
+      if (msg != "")
+        msg += ", ";
+
+      msg += prettyName(aIdentifier[idx]);
+    }
+    return msg;
+  }
+
   if (aIdentifier instanceof nsIAccessible) {
     var acc = getAccessible(aIdentifier);
     var msg = "[" + getNodePrettyName(acc.DOMNode);
@@ -649,6 +660,23 @@ function shortenString(aString, aMaxLength)
   return aString.substring(0, trimOffset - 1) + "..." +
     aString.substring(aString.length - trimOffset, aString.length);
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// General Utils
+////////////////////////////////////////////////////////////////////////////////
+/**
+ * Return main chrome window (crosses chrome boundary)
+ */
+function getMainChromeWindow(aWindow)
+{
+  return aWindow.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+                .getInterface(Components.interfaces.nsIWebNavigation)
+                .QueryInterface(Components.interfaces.nsIDocShellTreeItem)
+                .rootTreeItem
+                .QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+                .getInterface(Components.interfaces.nsIDOMWindow);
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Private

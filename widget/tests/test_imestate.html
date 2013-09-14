@@ -117,8 +117,6 @@ SimpleTest.waitForExplicitFinish();
 
 function hitEventLoop(aFunc, aTimes)
 {
-  SpecialPowers.getDOMWindowUtils(window).advanceTimeAndRefresh(100);
-
   if (--aTimes) {
     setTimeout(hitEventLoop, 0, aFunc, aTimes);
   } else {
@@ -242,9 +240,20 @@ function runBasicTest(aIsEditable, aInDesignMode, aDescription)
           case "MozIMEFocusOut":
             mozIMEFocusOutCount++;
             IMEHasFocus = false;
-            is_not(gUtils.IMEStatus, aTest.expectedEnabled,
-                   aDescription + ": " + aTest.description +
-                     ", MozIMEFocusOut event must be fired before IME state is updated");
+            var changingStatus = !(aIsEditable && aTest.expectedEnabled == gUtils.IME_STATUS_ENABLED);
+            if (aTest.toDesignModeEditor) {
+              is(gUtils.IME_STATUS_ENABLED, aTest.expectedEnabled,
+                 aDescription + ": " + aTest.description +
+                   ", MozIMEFocusOut event must be fired after IME state is updated");
+            } else if (changingStatus) {
+              isnot(gUtils.IMEStatus, aTest.expectedEnabled,
+                    aDescription + ": " + aTest.description +
+                      ", MozIMEFocusOut event must be fired before IME state is updated");
+            } else {
+              is(gUtils.IMEStatus, aTest.expectedEnabled,
+                 aDescription + ": " + aTest.description +
+                   ", MozIMEFocusOut event must be fired with expected IME state if the state isn't being changed");
+            }
             break;
         }
       }
@@ -260,9 +269,7 @@ function runBasicTest(aIsEditable, aInDesignMode, aDescription)
           if (aTest.expectedEnabled == gUtils.IME_STATUS_ENABLED || aTest.expectedEnabled == gUtils.IME_STATUS_PASSWORD) {
             ok(mozIMEFocusInCount > 0,
                aDescription + ": " + aTest.description + ", MozIMEFocusIn event should be fired");
-            var toDesignModeEditor = (document.activeElement.contentDocument &&
-                                      (document.activeElement.contentDocument.designMode == "on"));
-            if (aInDesignMode && !toDesignModeEditor) {
+            if (aInDesignMode && !aTest.toDesignModeEditor) {
               is(mozIMEFocusOutCount, 0,
                  aDescription + ": " + aTest.description +
                    ", MozIMEFocusOut event shouldn't be fired in designMode since focus isn't moved from another editor");
@@ -639,6 +646,7 @@ function runBasicTest(aIsEditable, aInDesignMode, aDescription)
     { id: "designModeEditor",
       description: "designMode editor",
       focusable: true,
+      toDesignModeEditor: true,
       expectedEnabled: gUtils.IME_STATUS_ENABLED },
   ];
 
@@ -1009,7 +1017,7 @@ function runComplexContenteditableTests()
   var editor =
     window.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
       getInterface(Components.interfaces.nsIWebNavigation).
-      QueryInterface(Components.interfaces.nsIEditorDocShell).editor;
+      QueryInterface(Components.interfaces.nsIDocShell).editor;
   var flags = editor.flags;
   editor.flags = flags | kReadonly;
   is(gFM.focusedElement, container,
@@ -1041,7 +1049,7 @@ function runComplexContenteditableTests()
   editor =
     window.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
       getInterface(Components.interfaces.nsIWebNavigation).
-      QueryInterface(Components.interfaces.nsIEditorDocShell).editor;
+      QueryInterface(Components.interfaces.nsIDocShell).editor;
   flags = editor.flags;
   editor.flags = flags | kReadonly;
   is(gFM.focusedElement, button,
@@ -1083,7 +1091,7 @@ function runComplexContenteditableTests()
     editor =
       window.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
         getInterface(Components.interfaces.nsIWebNavigation).
-        QueryInterface(Components.interfaces.nsIEditorDocShell).editor;
+        QueryInterface(Components.interfaces.nsIDocShell).editor;
     flags = editor.flags;
     editor.flags = flags | kReadonly;
     is(gFM.focusedElement, aEditor,
@@ -1151,7 +1159,7 @@ function runComplexContenteditableTests()
     editor =
       window.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
         getInterface(Components.interfaces.nsIWebNavigation).
-        QueryInterface(Components.interfaces.nsIEditorDocShell).editor;
+        QueryInterface(Components.interfaces.nsIDocShell).editor;
     flags = editor.flags;
     editor.flags = flags | kReadonly;
     is(gFM.focusedElement, aFocusNode,
@@ -1219,7 +1227,7 @@ function runEditorFlagChangeTests()
   var editor =
     window.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
       getInterface(Components.interfaces.nsIWebNavigation).
-      QueryInterface(Components.interfaces.nsIEditorDocShell).editor;
+      QueryInterface(Components.interfaces.nsIDocShell).editor;
   var editorIMESupport =
     editor.QueryInterface(Components.interfaces.nsIEditorIMESupport);
   var flags = editor.flags;

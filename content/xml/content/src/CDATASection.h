@@ -6,6 +6,7 @@
 #ifndef mozilla_dom_CDATASection_h
 #define mozilla_dom_CDATASection_h
 
+#include "mozilla/Attributes.h"
 #include "nsIDOMCDATASection.h"
 #include "mozilla/dom/Text.h"
 
@@ -15,14 +16,29 @@ namespace dom {
 class CDATASection : public Text,
                      public nsIDOMCDATASection
 {
-public:
-  CDATASection(already_AddRefed<nsINodeInfo> aNodeInfo)
-    : Text(aNodeInfo)
+private:
+  void Init()
   {
     NS_ABORT_IF_FALSE(mNodeInfo->NodeType() == nsIDOMNode::CDATA_SECTION_NODE,
                       "Bad NodeType in aNodeInfo");
     SetIsDOMBinding();
   }
+
+public:
+  CDATASection(already_AddRefed<nsINodeInfo> aNodeInfo)
+    : Text(aNodeInfo)
+  {
+    Init();
+  }
+
+  CDATASection(nsNodeInfoManager* aNodeInfoManager)
+    : Text(aNodeInfoManager->GetNodeInfo(nsGkAtoms::cdataTagName,
+                                         nullptr, kNameSpaceID_None,
+                                         nsIDOMNode::CDATA_SECTION_NODE))
+  {
+    Init();
+  }
+
   virtual ~CDATASection();
 
   // nsISupports
@@ -44,19 +60,17 @@ public:
   virtual bool IsNodeOfType(uint32_t aFlags) const;
 
   virtual nsGenericDOMDataNode* CloneDataNode(nsINodeInfo *aNodeInfo,
-                                              bool aCloneText) const;
+                                              bool aCloneText) const MOZ_OVERRIDE;
 
-  virtual nsXPCClassInfo* GetClassInfo();
-
-  virtual nsIDOMNode* AsDOMNode() { return this; }
+  virtual nsIDOMNode* AsDOMNode() MOZ_OVERRIDE { return this; }
 #ifdef DEBUG
-  virtual void List(FILE* out, int32_t aIndent) const;
-  virtual void DumpContent(FILE* out, int32_t aIndent,bool aDumpAll) const;
+  virtual void List(FILE* out, int32_t aIndent) const MOZ_OVERRIDE;
+  virtual void DumpContent(FILE* out, int32_t aIndent,bool aDumpAll) const MOZ_OVERRIDE;
 #endif
 
 protected:
-  virtual JSObject* WrapNode(JSContext *aCx, JSObject *aScope,
-                             bool *aTriedToWrap) MOZ_OVERRIDE;
+  virtual JSObject* WrapNode(JSContext *aCx,
+                             JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 };
 
 } // namespace dom

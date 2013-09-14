@@ -7,17 +7,24 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 
 let tempScope = {};
+Cu.import("resource://gre/modules/Services.jsm", tempScope);
 Cu.import("resource://gre/modules/devtools/dbg-server.jsm", tempScope);
 Cu.import("resource://gre/modules/devtools/dbg-client.jsm", tempScope);
-Cu.import("resource://gre/modules/Services.jsm", tempScope);
+Cu.import("resource:///modules/source-editor.jsm", tempScope);
+Cu.import("resource:///modules/devtools/gDevTools.jsm", tempScope);
+Cu.import("resource://gre/modules/devtools/Loader.jsm", tempScope);
+let Services = tempScope.Services;
+let SourceEditor = tempScope.SourceEditor;
 let DebuggerServer = tempScope.DebuggerServer;
 let DebuggerTransport = tempScope.DebuggerTransport;
 let DebuggerClient = tempScope.DebuggerClient;
-let Services = tempScope.Services;
-Cu.import("resource:///modules/devtools/gDevTools.jsm", tempScope);
 let gDevTools = tempScope.gDevTools;
-Cu.import("resource:///modules/devtools/Target.jsm", tempScope);
-let TargetFactory = tempScope.TargetFactory;
+let devtools = tempScope.devtools;
+let TargetFactory = devtools.TargetFactory;
+
+// Import the GCLI test helper
+let testDir = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
+Services.scriptloader.loadSubScript(testDir + "../../../commandline/test/helpers.js", this);
 
 const EXAMPLE_URL = "http://example.com/browser/browser/devtools/debugger/test/";
 const TAB1_URL = EXAMPLE_URL + "browser_dbg_tab1.html";
@@ -63,20 +70,20 @@ function addTab(aURL, aOnload, aWindow) {
   targetBrowser.selectedTab = targetBrowser.addTab(aURL);
 
   let tab = targetBrowser.selectedTab;
-  let win = tab.linkedBrowser.contentWindow;
-  let expectedReadyState = aURL == "about:blank" ? ["interactive", "complete"]
-                                                 : ["complete"];
+  let browser = tab.linkedBrowser;
+  let win = browser.contentWindow;
+  let expectedReadyState = aURL == "about:blank" ? ["interactive", "complete"] : ["complete"];
+
   if (aOnload) {
     let handler = function() {
-      if (tab.linkedBrowser.currentURI.spec != aURL ||
-          win.document == null ||
-          expectedReadyState.indexOf(win.document.readyState) == -1) {
+      if (browser.currentURI.spec != aURL ||
+          expectedReadyState.indexOf((win.document || {}).readyState) == -1) {
         return;
       }
-      tab.removeEventListener("load", handler, false);
+      browser.removeEventListener("load", handler, true);
       executeSoon(aOnload);
     }
-    tab.addEventListener("load", handler, false);
+    browser.addEventListener("load", handler, true);
   }
 
   return tab;
@@ -92,38 +99,27 @@ function removeTab(aTab, aWindow) {
 function closeDebuggerAndFinish(aRemoteFlag, aCallback, aWindow) {
   let debuggerClosed = false;
   let debuggerDisconnected = false;
+
   ok(gTab, "There is a gTab to use for getting a toolbox reference");
   let target = TargetFactory.forTab(gTab);
 
   window.addEventListener("Debugger:Shutdown", function cleanup() {
     window.removeEventListener("Debugger:Shutdown", cleanup, false);
     debuggerDisconnected = true;
-    _maybeFinish();
+    maybeFinish();
   }, false);
 
   let toolbox = gDevTools.getToolbox(target);
   toolbox.destroy().then(function() {
     debuggerClosed = true;
-    _maybeFinish();
+    maybeFinish();
   });
 
-  function _maybeFinish() {
+  function maybeFinish() {
     if (debuggerClosed && debuggerDisconnected) {
-      if (!aCallback)
-        aCallback = finish;
-      aCallback();
+      (finish || aCallback)();
     }
   }
-
-  // if (!aRemoteFlag) {
-  //   dbg.getDebugger().close(function() {
-  //     debuggerClosed = true;
-  //     _maybeFinish();
-  //   });
-  // } else {
-  //   debuggerClosed = true;
-  //   dbg.getRemoteDebugger().close();
-  // }
 }
 
 function get_tab_actor_for_url(aClient, aURL, aCallback) {
@@ -159,66 +155,52 @@ function attach_thread_actor_for_url(aClient, aURL, aCallback) {
 
 function wait_for_connect_and_resume(aOnDebugging, aTab) {
   let target = TargetFactory.forTab(aTab);
+
   gDevTools.showToolbox(target, "jsdebugger").then(function(toolbox) {
     let dbg = toolbox.getCurrentPanel();
-    dbg.once("connected", function dbgConnected() {
-      // Wait for the initial resume...
-      dbg.panelWin.gClient.addOneTimeListener("resumed", function() {
-        aOnDebugging();
-      });
+
+    // Wait for the initial resume...
+    dbg.panelWin.gClient.addOneTimeListener("resumed", function() {
+      aOnDebugging();
     });
   });
 }
 
-function debug_tab_pane(aURL, aOnDebugging) {
-  let tab = addTab(aURL, function() {
-    gBrowser.selectedTab = gTab;
-    let debuggee = gBrowser.selectedTab.linkedBrowser.contentWindow.wrappedJSObject;
+function debug_tab_pane(aURL, aOnDebugging, aBeforeTabAdded) {
+  // Make any necessary preparations (start the debugger server etc.)
+  if (aBeforeTabAdded) {
+    aBeforeTabAdded();
+  }
 
+  let tab = addTab(aURL, function() {
+    let debuggee = gBrowser.selectedTab.linkedBrowser.contentWindow.wrappedJSObject;
     let target = TargetFactory.forTab(gBrowser.selectedTab);
 
+    info("Opening Debugger");
     gDevTools.showToolbox(target, "jsdebugger").then(function(toolbox) {
       let dbg = toolbox.getCurrentPanel();
-      dbg.once("connected", function() {
-        // Wait for the initial resume...
-        dbg.panelWin.gClient.addOneTimeListener("resumed", function() {
-          dbg._view.Variables.lazyEmpty = false;
-          aOnDebugging(tab, debuggee, dbg);
-        });
-      });
-    });
-  });
-}
-
-function debug_remote(aURL, aOnDebugging, aBeforeTabAdded) {
-  // Make any necessary preparations (start the debugger server etc.)
-  aBeforeTabAdded();
-
-  let tab = addTab(aURL, function() {
-    gBrowser.selectedTab = gTab;
-    let debuggee = tab.linkedBrowser.contentWindow.wrappedJSObject;
-
-    let win = DebuggerUI.toggleRemoteDebugger();
-    win._dbgwin.addEventListener("Debugger:Connected", function dbgConnected() {
-      win._dbgwin.removeEventListener("Debugger:Connected", dbgConnected, true);
 
       // Wait for the initial resume...
-      win.panelWin.gClient.addOneTimeListener("resumed", function() {
-        win._dbgwin.DebuggerView.Variables.lazyEmpty = false;
-        aOnDebugging(tab, debuggee, win);
+      dbg.panelWin.gClient.addOneTimeListener("resumed", function() {
+        info("Debugger has started");
+        dbg._view.Variables.lazyEmpty = false;
+        dbg._view.Variables.lazyAppend = false;
+        dbg._view.Variables.lazyExpand = false;
+        aOnDebugging(tab, debuggee, dbg);
       });
-    }, true);
+    });
   });
 }
 
 function debug_chrome(aURL, aOnClosing, aOnDebugging) {
   let tab = addTab(aURL, function() {
-    gBrowser.selectedTab = gTab;
     let debuggee = tab.linkedBrowser.contentWindow.wrappedJSObject;
 
-    DebuggerUI.toggleChromeDebugger(aOnClosing, function dbgRan(process) {
+    info("Opening Browser Debugger");
+    let win = BrowserDebuggerProcess.init(aOnClosing, function(process) {
 
-      // Wait for the remote debugging process to start...
+      // The remote debugging process has started...
+      info("Browser Debugger has started");
       aOnDebugging(tab, debuggee, process);
     });
   });

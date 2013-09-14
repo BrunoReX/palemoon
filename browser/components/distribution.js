@@ -19,8 +19,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
 this.DistributionCustomizer = function DistributionCustomizer() {
   let dirSvc = Cc["@mozilla.org/file/directory_service;1"].
                getService(Ci.nsIProperties);
-  let iniFile = dirSvc.get("XCurProcD", Ci.nsIFile);
-  iniFile.append("distribution");
+  let iniFile = dirSvc.get("XREExeF", Ci.nsIFile);
+  iniFile.leafName = "distribution";
   iniFile.append("distribution.ini");
   if (iniFile.exists())
     this._iniFile = iniFile;
@@ -265,13 +265,18 @@ DistributionCustomizer.prototype = {
 
     let partnerAbout = Cc["@mozilla.org/supports-string;1"].
       createInstance(Ci.nsISupportsString);
-    if (globalPrefs["about." + this._locale]) {
-      partnerAbout.data = this._ini.getString("Global", "about." + this._locale);
-    } else {
-      partnerAbout.data = this._ini.getString("Global", "about");
+    try {
+      if (globalPrefs["about." + this._locale]) {
+        partnerAbout.data = this._ini.getString("Global", "about." + this._locale);
+      } else {
+        partnerAbout.data = this._ini.getString("Global", "about");
+      }
+      defaults.setComplexValue("distribution.about",
+                               Ci.nsISupportsString, partnerAbout);
+    } catch (e) {
+      /* ignore bad prefs due to bug 895473 and move on */
+      Cu.reportError(e);
     }
-    defaults.setComplexValue("distribution.about",
-                             Ci.nsISupportsString, partnerAbout);
 
     if (sections["Preferences"]) {
       for (let key in enumerate(this._ini.getKeys("Preferences"))) {

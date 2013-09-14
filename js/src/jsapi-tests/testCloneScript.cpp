@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=99:
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Test script cloning.
  */
@@ -13,8 +13,8 @@
 
 BEGIN_TEST(test_cloneScript)
 {
-    js::RootedObject A(cx, createGlobal());
-    js::RootedObject B(cx, createGlobal());
+    JS::RootedObject A(cx, createGlobal());
+    JS::RootedObject B(cx, createGlobal());
 
     CHECK(A);
     CHECK(B);
@@ -28,7 +28,7 @@ BEGIN_TEST(test_cloneScript)
         "}\n"
         "(sum);\n";
 
-    js::RootedObject obj(cx);
+    JS::RootedObject obj(cx);
 
     // compile for A
     {
@@ -90,8 +90,8 @@ BEGIN_TEST(test_cloneScriptWithPrincipals)
     JSPrincipals *principalsB = new Principals();
     AutoDropPrincipals dropB(rt, principalsB);
 
-    js::RootedObject A(cx, createGlobal(principalsA));
-    js::RootedObject B(cx, createGlobal(principalsB));
+    JS::RootedObject A(cx, createGlobal(principalsA));
+    JS::RootedObject B(cx, createGlobal(principalsB));
 
     CHECK(A);
     CHECK(B);
@@ -99,15 +99,15 @@ BEGIN_TEST(test_cloneScriptWithPrincipals)
     const char *argnames[] = { "arg" };
     const char *source = "return function() { return arg; }";
 
-    js::RootedObject obj(cx);
+    JS::RootedObject obj(cx);
 
     // Compile in A
     {
         JSAutoCompartment a(cx, A);
-        JSFunction *fun;
-        CHECK(fun = JS_CompileFunctionForPrincipals(cx, A, principalsA, "f",
-                                                    mozilla::ArrayLength(argnames), argnames,
-                                                    source, strlen(source), __FILE__, 1));
+        JS::RootedFunction fun(cx, JS_CompileFunctionForPrincipals(cx, A, principalsA, "f",
+                                                               mozilla::ArrayLength(argnames), argnames,
+                                                               source, strlen(source), __FILE__, 1));
+        CHECK(fun);
 
         JSScript *script;
         CHECK(script = JS_GetFunctionScript(cx, fun));
@@ -119,7 +119,7 @@ BEGIN_TEST(test_cloneScriptWithPrincipals)
     // Clone into B
     {
         JSAutoCompartment b(cx, B);
-        js::RootedObject cloned(cx);
+        JS::RootedObject cloned(cx);
         CHECK(cloned = JS_CloneFunctionObject(cx, obj, B));
 
         JSFunction *fun;
@@ -130,9 +130,9 @@ BEGIN_TEST(test_cloneScriptWithPrincipals)
 
         CHECK(JS_GetScriptPrincipals(script) == principalsB);
 
-        JS::Value v;
+        JS::RootedValue v(cx);
         JS::Value args[] = { JS::Int32Value(1) };
-        CHECK(JS_CallFunctionValue(cx, B, JS::ObjectValue(*cloned), 1, args, &v));
+        CHECK(JS_CallFunctionValue(cx, B, JS::ObjectValue(*cloned), 1, args, v.address()));
         CHECK(v.isObject());
 
         JSObject *funobj = &v.toObject();

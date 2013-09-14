@@ -258,126 +258,143 @@ let StackRenderer = {
 
     aDiv.appendChild(document.createElement("br"));
     aDiv.appendChild(document.createElement("br"));
+  },
+  renderStacks: function StackRenderer_renderStacks(aPrefix, aStacks,
+                                                    aMemoryMap, aRenderHeader) {
+    let div = document.getElementById(aPrefix + '-data');
+    clearDivData(div);
+
+    let fetchE = document.getElementById(aPrefix + '-fetch-symbols');
+    if (fetchE) {
+      fetchE.classList.remove("hidden");
+    }
+    let hideE = document.getElementById(aPrefix + '-hide-symbols');
+    if (hideE) {
+      hideE.classList.add("hidden");
+    }
+
+    if (aStacks.length == 0) {
+      showEmptySectionMessage(aPrefix + '-section');
+      return;
+    }
+
+    this.renderMemoryMap(div, aMemoryMap);
+
+    for (let i = 0; i < aStacks.length; ++i) {
+      let stack = aStacks[i];
+      aRenderHeader(i);
+      this.renderStack(div, stack)
+    }
+  },
+
+  /**
+   * Renders the title of the stack: e.g. "Late Write #1" or
+   * "Hang Report #1 (6 seconds)".
+   *
+   * @param aFormatArgs formating args to be passed to formatStringFromName.
+   */
+  renderHeader: function StackRenderer_renderHeader(aPrefix, aFormatArgs) {
+    let div = document.getElementById(aPrefix + "-data");
+
+    let titleElement = document.createElement("span");
+    titleElement.className = "stack-title";
+
+    let titleText = bundle.formatStringFromName(
+      aPrefix + "-title", aFormatArgs, aFormatArgs.length);
+    titleElement.appendChild(document.createTextNode(titleText));
+
+    div.appendChild(titleElement);
+    div.appendChild(document.createElement("br"));
   }
 };
+
+function SymbolicationRequest(aPrefix, aRenderHeader, aMemoryMap, aStacks) {
+  this.prefix = aPrefix;
+  this.renderHeader = aRenderHeader;
+  this.memoryMap = aMemoryMap;
+  this.stacks = aStacks;
+}
+/**
+ * A callback for onreadystatechange. It replaces the numeric stack with
+ * the symbolicated one returned by the symbolication server.
+ */
+SymbolicationRequest.prototype.handleSymbolResponse =
+function SymbolicationRequest_handleSymbolResponse() {
+  if (this.symbolRequest.readyState != 4)
+    return;
+
+  let fetchElement = document.getElementById(this.prefix + "-fetch-symbols");
+  fetchElement.classList.add("hidden");
+  let hideElement = document.getElementById(this.prefix + "-hide-symbols");
+  hideElement.classList.remove("hidden");
+  let div = document.getElementById(this.prefix + "-data");
+  clearDivData(div);
+  let errorMessage = bundle.GetStringFromName("errorFetchingSymbols");
+
+  if (this.symbolRequest.status != 200) {
+    div.appendChild(document.createTextNode(errorMessage));
+    return;
+  }
+
+  let jsonResponse = {};
+  try {
+    jsonResponse = JSON.parse(this.symbolRequest.responseText);
+  } catch (e) {
+    div.appendChild(document.createTextNode(errorMessage));
+    return;
+  }
+
+  for (let i = 0; i < jsonResponse.length; ++i) {
+    let stack = jsonResponse[i];
+    this.renderHeader(i);
+
+    for (let symbol of stack) {
+      div.appendChild(document.createTextNode(symbol));
+      div.appendChild(document.createElement("br"));
+    }
+    div.appendChild(document.createElement("br"));
+  }
+};
+/**
+ * Send a request to the symbolication server to symbolicate this stack.
+ */
+SymbolicationRequest.prototype.fetchSymbols =
+function SymbolicationRequest_fetchSymbols() {
+  let symbolServerURI =
+    getPref(PREF_SYMBOL_SERVER_URI, DEFAULT_SYMBOL_SERVER_URI);
+  let request = {"memoryMap" : this.memoryMap, "stacks" : this.stacks,
+                 "version" : 3};
+  let requestJSON = JSON.stringify(request);
+
+  this.symbolRequest = XMLHttpRequest();
+  this.symbolRequest.open("POST", symbolServerURI, true);
+  this.symbolRequest.setRequestHeader("Content-type", "application/json");
+  this.symbolRequest.setRequestHeader("Content-length",
+                                      requestJSON.length);
+  this.symbolRequest.setRequestHeader("Connection", "close");
+  this.symbolRequest.onreadystatechange = this.handleSymbolResponse.bind(this);
+  this.symbolRequest.send(requestJSON);
+}
 
 let ChromeHangs = {
 
   symbolRequest: null,
 
-  errorMessage: bundle.GetStringFromName("errorFetchingSymbols"),
-
   /**
    * Renders raw chrome hang data
    */
   render: function ChromeHangs_render() {
-    let hangsDiv = document.getElementById("chrome-hangs-data");
-    clearDivData(hangsDiv);
-    document.getElementById("fetch-symbols").classList.remove("hidden");
-    document.getElementById("hide-symbols").classList.add("hidden");
-
     let hangs = Telemetry.chromeHangs;
     let stacks = hangs.stacks;
-    if (stacks.length == 0) {
-      showEmptySectionMessage("chrome-hangs-section");
-      return;
-    }
-
     let memoryMap = hangs.memoryMap;
-    StackRenderer.renderMemoryMap(hangsDiv, memoryMap);
 
-    let durations = hangs.durations;
-    for (let i = 0; i < stacks.length; ++i) {
-      let stack = stacks[i];
-      this.renderHangHeader(hangsDiv, i + 1, durations[i]);
-      StackRenderer.renderStack(hangsDiv, stack)
-    }
+    StackRenderer.renderStacks("chrome-hangs", stacks, memoryMap,
+			       this.renderHangHeader);
   },
 
-  /**
-   * Renders the title of the hang: e.g. "Hang Report #1 (6 seconds)"
-   *
-   * @param aDiv Output div
-   * @param aIndex The number of the hang
-   * @param aDuration The duration of the hang
-   */
-  renderHangHeader: function ChromeHangs_renderHangHeader(aDiv, aIndex, aDuration) {
-    let titleElement = document.createElement("span");
-    titleElement.className = "hang-title";
-
-    let titleText = bundle.formatStringFromName(
-      "hangTitle", [aIndex, aDuration], 2);
-    titleElement.appendChild(document.createTextNode(titleText));
-
-    aDiv.appendChild(titleElement);
-    aDiv.appendChild(document.createElement("br"));
-  },
-
-  /**
-   * Sends a symbolication request for the recorded hangs
-   */
-  fetchSymbols: function ChromeHangs_fetchSymbols() {
-    let symbolServerURI =
-      getPref(PREF_SYMBOL_SERVER_URI, DEFAULT_SYMBOL_SERVER_URI);
-
-    let hangs = Telemetry.chromeHangs;
-    let memoryMap = hangs.memoryMap;
-    let stacks = hangs.stacks;
-    let request = {"memoryMap" : memoryMap, "stacks" : stacks,
-                   "version" : 2};
-    let requestJSON = JSON.stringify(request);
-
-    this.symbolRequest = XMLHttpRequest();
-    this.symbolRequest.open("POST", symbolServerURI, true);
-    this.symbolRequest.setRequestHeader("Content-type", "application/json");
-    this.symbolRequest.setRequestHeader("Content-length", requestJSON.length);
-    this.symbolRequest.setRequestHeader("Connection", "close");
-
-    this.symbolRequest.onreadystatechange = this.handleSymbolResponse.bind(this);
-    this.symbolRequest.send(requestJSON);
-  },
-
-  /**
-   * Called when the 'readyState' of the XMLHttpRequest changes. We only care
-   * about state 4 ("completed") - handling the response data.
-   */
-  handleSymbolResponse: function ChromeHangs_handleSymbolResponse() {
-    if (this.symbolRequest.readyState != 4)
-      return;
-
-    document.getElementById("fetch-symbols").classList.add("hidden");
-    document.getElementById("hide-symbols").classList.remove("hidden");
-
-    let hangsDiv = document.getElementById("chrome-hangs-data");
-    clearDivData(hangsDiv);
-
-    if (this.symbolRequest.status != 200) {
-      hangsDiv.appendChild(document.createTextNode(this.errorMessage));
-      return;
-    }
-
-    let jsonResponse = {};
-    try {
-      jsonResponse = JSON.parse(this.symbolRequest.responseText);
-    } catch (e) {
-      hangsDiv.appendChild(document.createTextNode(this.errorMessage));
-      return;
-    }
-
-    let hangs = Telemetry.chromeHangs;
-    let stacks = hangs.stacks;
-    let durations = hangs.durations;
-    for (let i = 0; i < jsonResponse.length; ++i) {
-      let stack = jsonResponse[i];
-      let hangDuration = durations[i];
-      this.renderHangHeader(hangsDiv, i + 1, hangDuration);
-
-      for (let symbol of stack) {
-        hangsDiv.appendChild(document.createTextNode(symbol));
-        hangsDiv.appendChild(document.createElement("br"));
-      }
-      hangsDiv.appendChild(document.createElement("br"));
-    }
+  renderHangHeader: function ChromeHangs_renderHangHeader(aIndex) {
+    let durations = Telemetry.chromeHangs.durations;
+    StackRenderer.renderHeader("chrome-hangs", [aIndex + 1, durations[aIndex]]);
   }
 };
 
@@ -645,15 +662,36 @@ function setupListeners() {
       Services.prefs.setBoolPref(PREF_TELEMETRY_ENABLED, !value);
   }, false);
 
-  document.getElementById("fetch-symbols").addEventListener("click",
+  document.getElementById("chrome-hangs-fetch-symbols").addEventListener("click",
     function () {
-      ChromeHangs.fetchSymbols();
+      let hangs = Telemetry.chromeHangs;
+      let req = new SymbolicationRequest("chrome-hangs",
+                                         ChromeHangs.renderHangHeader,
+                                         hangs.memoryMap, hangs.stacks);
+      req.fetchSymbols();
   }, false);
 
-  document.getElementById("hide-symbols").addEventListener("click",
+  document.getElementById("chrome-hangs-hide-symbols").addEventListener("click",
     function () {
       ChromeHangs.render();
   }, false);
+
+  document.getElementById("late-writes-fetch-symbols").addEventListener("click",
+    function () {
+      let lateWrites = TelemetryPing.getPayload().lateWrites;
+      let req = new SymbolicationRequest("late-writes",
+                                         LateWritesSingleton.renderHeader,
+                                         lateWrites.memoryMap,
+                                         lateWrites.stacks);
+      req.fetchSymbols();
+  }, false);
+
+  document.getElementById("late-writes-hide-symbols").addEventListener("click",
+    function () {
+      let ping = TelemetryPing.getPayload();
+      LateWritesSingleton.renderLateWrites(ping.lateWrites);
+  }, false);
+
 
   // Clicking on the section name will toggle its state
   let sectionHeaders = document.getElementsByClassName("section-name");
@@ -711,17 +749,79 @@ function onLoad() {
 
   // Get the Telemetry Ping payload
   Telemetry.asyncFetchTelemetryData(displayPingData);
+};
+
+let LateWritesSingleton = {
+  renderHeader: function LateWritesSingleton_renderHeader(aIndex) {
+    StackRenderer.renderHeader("late-writes", [aIndex + 1]);
+  },
+
+  renderLateWrites: function LateWritesSingleton_renderLateWrites(lateWrites) {
+    let stacks = lateWrites.stacks;
+    let memoryMap = lateWrites.memoryMap;
+    StackRenderer.renderStacks('late-writes', stacks, memoryMap,
+                               LateWritesSingleton.renderHeader);
+  }
+};
+
+/**
+ * Helper function for sorting the startup milestones in the Simple Measurements
+ * section into temporal order.
+ *
+ * @param aSimpleMeasurements Telemetry ping's "Simple Measurements" data
+ * @return Sorted measurements
+ */
+function sortStartupMilestones(aSimpleMeasurements) {
+  // List of startup milestones
+  const startupMilestones =
+    ["start", "main", "startupCrashDetectionBegin", "createTopLevelWindow",
+     "firstPaint", "delayedStartupStarted", "firstLoadURI",
+     "sessionRestoreInitialized", "sessionRestoreRestoring", "sessionRestored",
+     "delayedStartupFinished", "startupCrashDetectionEnd",
+     "AMI_startup_begin", "AMI_startup_end", "XPI_startup_begin", "XPI_startup_end",
+     "XPI_bootstrap_addons_begin", "XPI_bootstrap_addons_end"];
+
+  let sortedKeys = Object.keys(aSimpleMeasurements);
+
+  // Sort the measurements, with startup milestones at the front + ordered by time
+  sortedKeys.sort(function keyCompare(keyA, keyB) {
+    let isKeyAMilestone = (startupMilestones.indexOf(keyA) > -1);
+    let isKeyBMilestone = (startupMilestones.indexOf(keyB) > -1);
+
+    // First order by startup vs non-startup measurement
+    if (isKeyAMilestone && !isKeyBMilestone)
+      return -1;
+    if (!isKeyAMilestone && isKeyBMilestone)
+      return 1;
+    // Don't change order of non-startup measurements
+    if (!isKeyAMilestone && !isKeyBMilestone)
+      return 0;
+
+    // If both keys are startup measurements, order them by value
+    return aSimpleMeasurements[keyA] - aSimpleMeasurements[keyB];
+  });
+
+  // Insert measurements into a result object in sort-order
+  let result = {};
+  for (let key of sortedKeys) {
+    result[key] = aSimpleMeasurements[key];
+  }
+
+  return result;
 }
 
 function displayPingData() {
   let ping = TelemetryPing.getPayload();
 
   // Show simple measurements
-  if (Object.keys(ping.simpleMeasurements).length) {
-    KeyValueTable.render("simple-measurements-table", ping.simpleMeasurements);
+  let simpleMeasurements = sortStartupMilestones(ping.simpleMeasurements);
+  if (Object.keys(simpleMeasurements).length) {
+    KeyValueTable.render("simple-measurements-table", simpleMeasurements);
   } else {
     showEmptySectionMessage("simple-measurements-section");
   }
+
+  LateWritesSingleton.renderLateWrites(ping.lateWrites);
 
   // Show basic system info gathered
   if (Object.keys(ping.info).length) {

@@ -15,10 +15,8 @@ XPCOMUtils.defineLazyServiceGetter(this, "CrashReporter",
   "@mozilla.org/xre/app-info;1", "nsICrashReporter");
 #endif
 
-XPCOMUtils.defineLazyGetter(this, "NetUtil", function() {
-  Cu.import("resource://gre/modules/NetUtil.jsm");
-  return NetUtil;
-});
+XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
+                                  "resource://gre/modules/NetUtil.jsm");
 
 function dump(a) {
   Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService).logStringMessage(a);
@@ -82,7 +80,7 @@ SessionStore.prototype = {
   },
 
   _sendMessageToJava: function (aMsg) {
-    let data = Cc["@mozilla.org/android/bridge;1"].getService(Ci.nsIAndroidBridge).handleGeckoMessage(JSON.stringify({ gecko: aMsg }));
+    let data = Cc["@mozilla.org/android/bridge;1"].getService(Ci.nsIAndroidBridge).handleGeckoMessage(JSON.stringify(aMsg));
     return JSON.parse(data);
   },
 
@@ -382,11 +380,19 @@ SessionStore.prototype = {
     } else {
       // Serialize the tab data
       let entries = [];
+      let index = history.index + 1;
       for (let i = 0; i < history.count; i++) {
-        let entry = this._serializeHistoryEntry(history.getEntryAtIndex(i, false));
+        let historyEntry = history.getEntryAtIndex(i, false);
+        // Don't try to restore wyciwyg URLs
+        if (historyEntry.URI.schemeIs("wyciwyg")) {
+          // Adjust the index to account for skipped history entries
+          if (i <= history.index)
+            index--;
+          continue;
+        }
+        let entry = this._serializeHistoryEntry(historyEntry);
         entries.push(entry);
       }
-      let index = history.index + 1;
       let data = { entries: entries, index: index };
 
       delete aBrowser.__SS_data;
@@ -655,19 +661,21 @@ SessionStore.prototype = {
       return entry;
 
     if (aEntry.childCount > 0) {
-      entry.children = [];
+      let children = [];
       for (let i = 0; i < aEntry.childCount; i++) {
         let child = aEntry.GetChildAt(i);
-        if (child)
-          entry.children.push(this._serializeHistoryEntry(child));
-        else // to maintain the correct frame order, insert a dummy entry
-          entry.children.push({ url: "about:blank" });
 
-        // don't try to restore framesets containing wyciwyg URLs (cf. bug 424689 and bug 450595)
-        if (/^wyciwyg:\/\//.test(entry.children[i].url)) {
-          delete entry.children;
-          break;
+        if (child) {
+          // don't try to restore framesets containing wyciwyg URLs (cf. bug 424689 and bug 450595)
+          if (child.URI.schemeIs("wyciwyg")) {
+            children = [];
+            break;
+          }
+          children.push(this._serializeHistoryEntry(child));
         }
+
+        if (children.length)
+          entry.children = children;
       }
     }
 

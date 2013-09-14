@@ -20,11 +20,12 @@ class ImageContainer;
 /**
  * A Layer which renders an Image.
  */
-class THEBES_API ImageLayer : public Layer {
+class ImageLayer : public Layer {
 public:
   enum ScaleMode {
     SCALE_NONE,
-    SCALE_STRETCH
+    SCALE_STRETCH,
+    SCALE_SENTINEL
   // Unimplemented - SCALE_PRESERVE_ASPECT_RATIO_CONTAIN
   };
 
@@ -33,13 +34,20 @@ public:
    * Set the ImageContainer. aContainer must have the same layer manager
    * as this layer.
    */
-  void SetContainer(ImageContainer* aContainer);
+  virtual void SetContainer(ImageContainer* aContainer);
 
   /**
    * CONSTRUCTION PHASE ONLY
    * Set the filter used to resample this image if necessary.
    */
-  void SetFilter(gfxPattern::GraphicsFilter aFilter) { mFilter = aFilter; }
+  void SetFilter(gfxPattern::GraphicsFilter aFilter)
+  {
+    if (mFilter != aFilter) {
+      MOZ_LAYERS_LOG_IF_SHADOWABLE(this, ("Layer::Mutated(%p) Filter", this));
+      mFilter = aFilter;
+      Mutated();
+    }
+  }
 
   /**
    * CONSTRUCTION PHASE ONLY
@@ -47,8 +55,11 @@ public:
    */
   void SetScaleToSize(const gfxIntSize &aSize, ScaleMode aMode)
   {
-    mScaleToSize = aSize;
-    mScaleMode = aMode;
+    if (mScaleToSize != aSize || mScaleMode != aMode) {
+      mScaleToSize = aSize;
+      mScaleMode = aMode;
+      Mutated();
+    }
   }
 
 
@@ -66,8 +77,11 @@ public:
    */
   void SetForceSingleTile(bool aForceSingleTile)
   {
-    mForceSingleTile = aForceSingleTile;
-    Mutated();
+    if (mForceSingleTile != aForceSingleTile) {
+      MOZ_LAYERS_LOG_IF_SHADOWABLE(this, ("Layer::Mutated(%p) ForceSingleTile", this));
+      mForceSingleTile = aForceSingleTile;
+      Mutated();
+    }
   }
 
 protected:

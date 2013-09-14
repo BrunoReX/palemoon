@@ -85,8 +85,6 @@ public:
   nsThreadClassInfo() {}
 };
 
-static nsThreadClassInfo sThreadClassInfo;
-
 NS_IMETHODIMP_(nsrefcnt) nsThreadClassInfo::AddRef() { return 2; }
 NS_IMETHODIMP_(nsrefcnt) nsThreadClassInfo::Release() { return 1; }
 NS_IMPL_QUERY_INTERFACE1(nsThreadClassInfo, nsIClassInfo)
@@ -156,6 +154,7 @@ NS_INTERFACE_MAP_BEGIN(nsThread)
   NS_INTERFACE_MAP_ENTRY(nsISupportsPriority)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIThread)
   if (aIID.Equals(NS_GET_IID(nsIClassInfo))) {
+    static nsThreadClassInfo sThreadClassInfo;
     foundInterface = static_cast<nsIClassInfo*>(&sThreadClassInfo);
   } else
 NS_INTERFACE_MAP_END
@@ -486,7 +485,7 @@ nsThread::Shutdown()
 #ifdef DEBUG
   {
     MutexAutoLock lock(mLock);
-    NS_ASSERTION(!mObserver, "Should have been cleared at shutdown!");
+    MOZ_ASSERT(!mObserver, "Should have been cleared at shutdown!");
   }
 #endif
 
@@ -626,8 +625,8 @@ nsThread::ProcessNextEvent(bool mayWait, bool *result)
         HangMonitor::NotifyActivity();
       event->Run();
     } else if (mayWait) {
-      NS_ASSERTION(ShuttingDown(),
-                   "This should only happen when shutting down");
+      MOZ_ASSERT(ShuttingDown(),
+                 "This should only happen when shutting down");
       rv = NS_ERROR_UNEXPECTED;
     }
   }

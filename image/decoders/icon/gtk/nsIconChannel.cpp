@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include "mozilla/DebugOnly.h"
+#include <algorithm>
 
 #ifdef MOZ_ENABLE_GNOMEUI
 // Older versions of these headers seem to be missing an extern "C"
@@ -25,6 +26,7 @@ extern "C" {
 
 #include <gtk/gtk.h>
 
+#include "nsMimeTypes.h"
 #include "nsIMIMEService.h"
 
 #include "nsIStringBundle.h"
@@ -125,7 +127,7 @@ moz_gdk_pixbuf_to_channel(GdkPixbuf* aPixbuf, nsIURI *aURI,
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = NS_NewInputStreamChannel(aChannel, aURI, stream,
-                                NS_LITERAL_CSTRING("image/icon"));
+                                NS_LITERAL_CSTRING(IMAGE_ICON_MS));
   return rv;
 }
 
@@ -574,7 +576,7 @@ nsIconChannel::Init(nsIURI* aURI)
     // the same pathes and so share caches.
     gint width, height;
     if (gtk_icon_size_lookup(icon_size, &width, &height)) {
-      gint size = NS_MIN(width, height);
+      gint size = std::min(width, height);
       // We use gtk_icon_theme_lookup_icon() without
       // GTK_ICON_LOOKUP_USE_BUILTIN instead of gtk_icon_theme_has_icon() so
       // we don't pick up fallback icons added by distributions for backward

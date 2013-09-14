@@ -48,7 +48,7 @@ function test()
 }
 
 function testSimpleCall() {
-  var frames = gDebugger.DebuggerView.StackFrames._container._list,
+  var frames = gDebugger.DebuggerView.StackFrames.widget._list,
       childNodes = frames.childNodes;
 
   is(gDebugger.DebuggerController.activeThread.state, "paused",
@@ -73,26 +73,20 @@ function testSimpleCall() {
 function testLocationChange()
 {
   gDebugger.DebuggerController.activeThread.resume(function() {
-    gDebugger.DebuggerController.client.addListener("tabNavigated", function onTabNavigated(aEvent, aPacket) {
-      dump("tabNavigated state " + aPacket.state + "\n");
-      if (aPacket.state == "start") {
-        return;
-      }
-      gDebugger.DebuggerController.client.removeListener("tabNavigated", onTabNavigated);
-
+    gDebugger.DebuggerController._target.once("navigate", function onTabNavigated(aEvent, aPacket) {
       ok(true, "tabNavigated event was fired.");
       info("Still attached to the tab.");
 
-      gDebugger.addEventListener("Debugger:AfterScriptsAdded", function _onEvent(aEvent) {
+      gDebugger.addEventListener("Debugger:AfterSourcesAdded", function _onEvent(aEvent) {
         gDebugger.removeEventListener(aEvent.type, _onEvent);
 
-        is(gDebugger.DebuggerView.Sources.selectedValue, null,
+        is(gDebugger.DebuggerView.Sources.selectedValue, "",
           "There should be no selected script.");
         is(gDebugger.editor.getText().length, 0,
           "The source editor not have any text displayed.");
 
-        let menulist = gDebugger.DebuggerView.Sources._container;
-        let noScripts = gDebugger.L10N.getStr("noScriptsText");
+        let menulist = gDebugger.DebuggerView.Sources.widget;
+        let noScripts = gDebugger.L10N.getStr("noSourcesText");
         is(menulist.getAttribute("label"), noScripts,
           "The menulist should display a notice that there are no scripts availalble.");
         is(menulist.getAttribute("tooltiptext"), "",

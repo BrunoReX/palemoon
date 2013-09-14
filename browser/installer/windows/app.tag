@@ -1,4 +1,4 @@
 ;!@Install@!UTF-8!
-Title="Pale Moon"
+Title="Mozilla Firefox"
 RunProgram="setup.exe"
 ;!@InstallEnd@!

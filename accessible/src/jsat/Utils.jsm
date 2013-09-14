@@ -8,9 +8,13 @@ const Cu = Components.utils;
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 
-Cu.import('resource://gre/modules/Services.jsm');
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, 'Services',
+  'resource://gre/modules/Services.jsm');
+XPCOMUtils.defineLazyModuleGetter(this, 'Rect',
+  'resource://gre/modules/Geometry.jsm');
 
-this.EXPORTED_SYMBOLS = ['Utils', 'Logger'];
+this.EXPORTED_SYMBOLS = ['Utils', 'Logger', 'PivotContext', 'PrefCache'];
 
 this.Utils = {
   _buildAppMap: {
@@ -18,6 +22,28 @@ this.Utils = {
     '{ec8030f7-c20a-464f-9b0e-13a3a9e97384}': 'browser',
     '{aa3c5121-dab2-40e2-81ca-7ea25febc110}': 'mobile/android',
     '{a23983c0-fd0e-11dc-95ff-0800200c9a66}': 'mobile/xul'
+  },
+
+  init: function Utils_init(aWindow) {
+    if (this._win)
+      // XXX: only supports attaching to one window now.
+      throw new Error('Only one top-level window could used with AccessFu');
+
+    this._win = Cu.getWeakReference(aWindow);
+  },
+
+  uninit: function Utils_uninit() {
+    if (!this._win) {
+      return;
+    }
+    delete this._win;
+  },
+
+  get win() {
+    if (!this._win) {
+      return null;
+    }
+    return this._win.get();
   },
 
   get AccRetrieval() {
@@ -45,6 +71,12 @@ this.Utils = {
     return this._OS;
   },
 
+  get widgetToolkit() {
+    if (!this._widgetToolkit)
+      this._widgetToolkit = Services.appinfo.widgetToolkit;
+    return this._widgetToolkit;
+  },
+
   get ScriptName() {
     if (!this._ScriptName)
       this._ScriptName =
@@ -69,28 +101,64 @@ this.Utils = {
     this._AndroidSdkVersion = value;
   },
 
-  getBrowserApp: function getBrowserApp(aWindow) {
+  get BrowserApp() {
+    if (!this.win) {
+      return null;
+    }
     switch (this.MozBuildApp) {
       case 'mobile/android':
-        return aWindow.BrowserApp;
+        return this.win.BrowserApp;
       case 'browser':
-        return aWindow.gBrowser;
+        return this.win.gBrowser;
       case 'b2g':
-        return aWindow.shell;
+        return this.win.shell;
       default:
         return null;
     }
   },
 
-  getCurrentBrowser: function getCurrentBrowser(aWindow) {
+  get CurrentBrowser() {
+    if (!this.BrowserApp) {
+      return null;
+    }
     if (this.MozBuildApp == 'b2g')
-      return this.getBrowserApp(aWindow).contentBrowser;
-    return this.getBrowserApp(aWindow).selectedBrowser;
+      return this.BrowserApp.contentBrowser;
+    return this.BrowserApp.selectedBrowser;
   },
 
-  getCurrentContentDoc: function getCurrentContentDoc(aWindow) {
-    let browser = this.getCurrentBrowser(aWindow);
+  get CurrentContentDoc() {
+    let browser = this.CurrentBrowser;
     return browser ? browser.contentDocument : null;
+  },
+
+  get AllMessageManagers() {
+    let messageManagers = [];
+
+    for (let i = 0; i < this.win.messageManager.childCount; i++)
+      messageManagers.push(this.win.messageManager.getChildAt(i));
+
+    let document = this.CurrentContentDoc;
+
+    if (document) {
+      let remoteframes = document.querySelectorAll('iframe');
+
+      for (let i = 0; i < remoteframes.length; ++i) {
+        let mm = this.getMessageManager(remoteframes[i]);
+        if (mm) {
+          messageManagers.push(mm);
+        }
+      }
+
+    }
+
+    return messageManagers;
+  },
+
+  get isContentProcess() {
+    delete this.isContentProcess;
+    this.isContentProcess =
+      Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT;
+    return this.isContentProcess;
   },
 
   getMessageManager: function getMessageManager(aBrowser) {
@@ -101,24 +169,6 @@ this.Utils = {
       Logger.logException(x);
       return null;
     }
-  },
-
-  getAllMessageManagers: function getAllMessageManagers(aWindow) {
-    let messageManagers = [];
-
-    for (let i = 0; i < aWindow.messageManager.childCount; i++)
-      messageManagers.push(aWindow.messageManager.getChildAt(i));
-
-    let document = this.getCurrentContentDoc(aWindow);
-
-    if (document) {
-      let remoteframes = document.querySelectorAll('iframe[remote=true]');
-
-      for (let i = 0; i < remoteframes.length; ++i)
-        messageManagers.push(this.getMessageManager(remoteframes[i]));
-    }
-
-    return messageManagers;
   },
 
   getViewport: function getViewport(aWindow) {
@@ -140,19 +190,31 @@ this.Utils = {
     return [state.value, extState.value];
   },
 
+  getAttributes: function getAttributes(aAccessible) {
+    let attributesEnum = aAccessible.attributes.enumerate();
+    let attributes = {};
+
+    // Populate |attributes| object with |aAccessible|'s attribute key-value
+    // pairs.
+    while (attributesEnum.hasMoreElements()) {
+      let attribute = attributesEnum.getNext().QueryInterface(
+        Ci.nsIPropertyElement);
+      attributes[attribute.key] = attribute.value;
+    }
+
+    return attributes;
+  },
+
   getVirtualCursor: function getVirtualCursor(aDocument) {
     let doc = (aDocument instanceof Ci.nsIAccessible) ? aDocument :
       this.AccRetrieval.getAccessibleFor(aDocument);
 
-    while (doc) {
-      try {
-        return doc.QueryInterface(Ci.nsIAccessibleCursorable).virtualCursor;
-      } catch (x) {
-        doc = doc.parentDocument;
-      }
-    }
+    return doc.QueryInterface(Ci.nsIAccessibleDocument).virtualCursor;
+  },
 
-    return null;
+  getPixelsPerCSSPixel: function getPixelsPerCSSPixel(aWindow) {
+    return aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
+      .getInterface(Ci.nsIDOMWindowUtils).screenPixelsPerCSSPixel;
   }
 };
 
@@ -165,13 +227,25 @@ this.Logger = {
 
   logLevel: 1, // INFO;
 
+  test: false,
+
   log: function log(aLogLevel) {
     if (aLogLevel < this.logLevel)
       return;
 
     let message = Array.prototype.slice.call(arguments, 1).join(' ');
-    dump('[' + Utils.ScriptName + '] ' +
-         this._LEVEL_NAMES[aLogLevel] +' ' + message + '\n');
+    message = '[' + Utils.ScriptName + '] ' + this._LEVEL_NAMES[aLogLevel] +
+      ' ' + message + '\n';
+    dump(message);
+    // Note: used for testing purposes. If |this.test| is true, also log to
+    // the console service.
+    if (this.test) {
+      try {
+        Services.console.logStringMessage(message);
+      } catch (ex) {
+        // There was an exception logging to the console service.
+      }
+    }
   },
 
   info: function info() {
@@ -196,9 +270,10 @@ this.Logger = {
 
   logException: function logException(aException) {
     try {
-      this.error(
-        aException.message,
-        '(' + aException.fileName + ':' + aException.lineNumber + ')');
+      let args = [aException.message];
+      args.push.apply(args, aException.stack ? ['\n', aException.stack] :
+        ['(' + aException.fileName + ':' + aException.lineNumber + ')']);
+      this.error.apply(this, args);
     } catch (x) {
       this.error(x);
     }
@@ -219,7 +294,7 @@ this.Logger = {
     let str = Utils.AccRetrieval.getStringEventType(aEvent.eventType);
     if (aEvent.eventType == Ci.nsIAccessibleEvent.EVENT_STATE_CHANGE) {
       let event = aEvent.QueryInterface(Ci.nsIAccessibleStateChangeEvent);
-      let stateStrings = (event.isExtraState()) ?
+      let stateStrings = event.isExtraState ?
         Utils.AccRetrieval.getStringStates(0, event.state) :
         Utils.AccRetrieval.getStringStates(event.state, 0);
       str += ' (' + stateStrings.item(0) + ')';
@@ -254,4 +329,173 @@ this.Logger = {
     for (var i=0; i < aAccessible.childCount; i++)
       this._dumpTreeInternal(aLogLevel, aAccessible.getChildAt(i), aIndent + 1);
     }
+};
+
+/**
+ * PivotContext: An object that generates and caches context information
+ * for a given accessible and its relationship with another accessible.
+ */
+this.PivotContext = function PivotContext(aAccessible, aOldAccessible) {
+  this._accessible = aAccessible;
+  this._oldAccessible =
+    this._isDefunct(aOldAccessible) ? null : aOldAccessible;
+}
+
+PivotContext.prototype = {
+  get accessible() {
+    return this._accessible;
+  },
+
+  get oldAccessible() {
+    return this._oldAccessible;
+  },
+
+  /*
+   * This is a list of the accessible's ancestry up to the common ancestor
+   * of the accessible and the old accessible. It is useful for giving the
+   * user context as to where they are in the heirarchy.
+   */
+  get newAncestry() {
+    if (!this._newAncestry) {
+      let newLineage = [];
+      let oldLineage = [];
+
+      let parent = this._accessible;
+      while (parent && (parent = parent.parent))
+        newLineage.push(parent);
+
+      parent = this._oldAccessible;
+      while (parent && (parent = parent.parent))
+        oldLineage.push(parent);
+
+      this._newAncestry = [];
+
+      while (true) {
+        let newAncestor = newLineage.pop();
+        let oldAncestor = oldLineage.pop();
+
+        if (newAncestor == undefined)
+          break;
+
+        if (newAncestor != oldAncestor)
+          this._newAncestry.push(newAncestor);
+      }
+
+    }
+
+    return this._newAncestry;
+  },
+
+  /*
+   * Traverse the accessible's subtree in pre or post order.
+   * It only includes the accessible's visible chidren.
+   * Note: needSubtree is a function argument that can be used to determine
+   * whether aAccessible's subtree is required.
+   */
+  _traverse: function _traverse(aAccessible, aPreorder, aStop) {
+    if (aStop && aStop(aAccessible)) {
+      return;
+    }
+    let child = aAccessible.firstChild;
+    while (child) {
+      let state = {};
+      child.getState(state, {});
+      if (!(state.value & Ci.nsIAccessibleStates.STATE_INVISIBLE)) {
+        if (aPreorder) {
+          yield child;
+          [yield node for (node of this._traverse(child, aPreorder, aStop))];
+        } else {
+          [yield node for (node of this._traverse(child, aPreorder, aStop))];
+          yield child;
+        }
+      }
+      child = child.nextSibling;
+    }
+  },
+
+  /*
+   * A subtree generator function, used to generate a flattened
+   * list of the accessible's subtree in pre or post order.
+   * It only includes the accessible's visible chidren.
+   * @param {boolean} aPreorder A flag for traversal order. If true, traverse
+   * in preorder; if false, traverse in postorder.
+   * @param {function} aStop An optional function, indicating whether subtree
+   * traversal should stop.
+   */
+  subtreeGenerator: function subtreeGenerator(aPreorder, aStop) {
+    return this._traverse(this._accessible, aPreorder, aStop);
+  },
+
+  get bounds() {
+    if (!this._bounds) {
+      let objX = {}, objY = {}, objW = {}, objH = {};
+
+      this._accessible.getBounds(objX, objY, objW, objH);
+
+      this._bounds = new Rect(objX.value, objY.value, objW.value, objH.value);
+    }
+
+    return this._bounds.clone();
+  },
+
+  _isDefunct: function _isDefunct(aAccessible) {
+    try {
+      let extstate = {};
+      aAccessible.getState({}, extstate);
+      return !!(aAccessible.value & Ci.nsIAccessibleStates.EXT_STATE_DEFUNCT);
+    } catch (x) {
+      return true;
+    }
+  }
+};
+
+this.PrefCache = function PrefCache(aName, aCallback, aRunCallbackNow) {
+  this.name = aName;
+  this.callback = aCallback;
+
+  let branch = Services.prefs;
+  this.value = this._getValue(branch);
+
+  if (this.callback && aRunCallbackNow) {
+    try {
+      this.callback(this.name, this.value);
+    } catch (x) {
+      Logger.logException(x);
+    }
+  }
+
+  branch.addObserver(aName, this, true);
+};
+
+PrefCache.prototype = {
+  _getValue: function _getValue(aBranch) {
+    if (!this.type) {
+      this.type = aBranch.getPrefType(this.name);
+    }
+
+    switch (this.type) {
+      case Ci.nsIPrefBranch.PREF_STRING:
+        return aBranch.getCharPref(this.name);
+      case Ci.nsIPrefBranch.PREF_INT:
+        return aBranch.getIntPref(this.name);
+      case Ci.nsIPrefBranch.PREF_BOOL:
+        return aBranch.getBoolPref(this.name);
+      default:
+        return null;
+    }
+  },
+
+  observe: function observe(aSubject, aTopic, aData) {
+    this.value = this._getValue(aSubject.QueryInterface(Ci.nsIPrefBranch));
+    if (this.callback) {
+      try {
+        this.callback(this.name, this.value);
+      } catch (x) {
+        Logger.logException(x);
+      }
+    }
+  },
+
+  QueryInterface : XPCOMUtils.generateQI([Ci.nsIObserver,
+                                          Ci.nsISupportsWeakReference])
 };

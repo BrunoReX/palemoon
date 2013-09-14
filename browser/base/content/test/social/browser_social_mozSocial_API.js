@@ -28,15 +28,15 @@ var tests = {
     }
 
     function triggerIconPanel() {
-      let statusIcon = document.querySelector("#social-toolbar-item > .social-notification-container > .toolbarbutton-1");
-      info("status icon is " + statusIcon);
       waitForCondition(function() {
-        statusIcon = document.querySelector("#social-toolbar-item > .social-notification-container > .toolbarbutton-1");
-        info("status icon is " + statusIcon);
-        return !!statusIcon;
+        let mButton = document.getElementById("social-mark-button");
+        let pButton = document.getElementById("social-provider-button");
+        // wait for a new button to be inserted inbetween the provider and mark
+        // button
+        return pButton.nextSibling != mButton;
       }, function() {
         // Click the button to trigger its contentPanel
-        let panel = document.getElementById("social-notification-panel");
+        let statusIcon = document.getElementById("social-provider-button").nextSibling;
         EventUtils.synthesizeMouseAtCenter(statusIcon, {});
       }, "Status icon didn't become non-hidden");
     }
@@ -53,7 +53,7 @@ var tests = {
         case "got-panel-message":
           ok(true, "got panel message");
           // Check the panel isn't in our history.
-          ensureSocialUrlNotRemembered(e.data.location);
+          gURLsNotRemembered.push(e.data.location);
           break;
         case "got-social-panel-visibility":
           if (e.data.result == "shown") {

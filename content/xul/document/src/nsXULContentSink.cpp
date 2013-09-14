@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* vim: set ts=8 sts=4 et sw=4 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,25 +12,28 @@
  * see http://developer.mozilla.org/en/docs/XUL
  */
 
+#include "nsXULContentSink.h"
+
 #include "jsapi.h"
 #include "jsfriendapi.h"
-#include "nsXULContentSink.h"
+
 #include "nsCOMPtr.h"
 #include "nsForwardReference.h"
+#include "nsHTMLStyleSheet.h"
 #include "nsIContentSink.h"
+#include "nsIDocument.h"
 #include "nsIDOMEventListener.h"
 #include "nsIDOMHTMLFormElement.h"
 #include "nsIDOMXULDocument.h"
-#include "nsIDocument.h"
 #include "nsIFormControl.h"
-#include "nsHTMLStyleSheet.h"
 #include "nsINameSpaceManager.h"
 #include "nsINodeInfo.h"
 #include "nsIScriptContext.h"
-#include "nsIScriptRuntime.h"
 #include "nsIScriptGlobalObject.h"
+#include "nsIScriptRuntime.h"
 #include "nsIServiceManager.h"
 #include "nsIURL.h"
+#include "nsParserBase.h"
 #include "nsViewManager.h"
 #include "nsIXULDocument.h"
 #include "nsIScriptSecurityManager.h"
@@ -143,6 +147,16 @@ XULContentSinkImpl::ContextStack::Clear()
   mDepth = 0;
 }
 
+void
+XULContentSinkImpl::ContextStack::Traverse(nsCycleCollectionTraversalCallback& aCb)
+{
+  nsCycleCollectionTraversalCallback& cb = aCb;
+  for (ContextStack::Entry* tmp = mTop; tmp; tmp = tmp->mNext) {
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mNode)
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mChildren)
+  }
+}
+
 //----------------------------------------------------------------------
 
 
@@ -176,10 +190,29 @@ XULContentSinkImpl::~XULContentSinkImpl()
 //----------------------------------------------------------------------
 // nsISupports interface
 
-NS_IMPL_ISUPPORTS3(XULContentSinkImpl,
-                   nsIXMLContentSink,
-                   nsIContentSink,
-                   nsIExpatSink)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(XULContentSinkImpl)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mNodeInfoManager)
+  tmp->mContextStack.Clear();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPrototype)
+  NS_IF_RELEASE(tmp->mParser);
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(XULContentSinkImpl)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mNodeInfoManager)
+  tmp->mContextStack.Traverse(cb);
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPrototype)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_RAWPTR(mParser)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(XULContentSinkImpl)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIXMLContentSink)
+  NS_INTERFACE_MAP_ENTRY(nsIXMLContentSink)
+  NS_INTERFACE_MAP_ENTRY(nsIExpatSink)
+  NS_INTERFACE_MAP_ENTRY(nsIContentSink)
+NS_INTERFACE_MAP_END
+
+NS_IMPL_CYCLE_COLLECTING_ADDREF(XULContentSinkImpl)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(XULContentSinkImpl)
 
 //----------------------------------------------------------------------
 // nsIContentSink interface
@@ -396,8 +429,6 @@ XULContentSinkImpl::NormalizeAttributeString(const PRUnichar *aExpatName,
     ni = mNodeInfoManager->GetNodeInfo(localName, prefix,
                                        nameSpaceID,
                                        nsIDOMNode::ATTRIBUTE_NODE);
-    NS_ENSURE_TRUE(ni, NS_ERROR_OUT_OF_MEMORY);
-
     aName.SetTo(ni);
 
     return NS_OK;
@@ -450,7 +481,6 @@ XULContentSinkImpl::HandleStartElement(const PRUnichar *aName,
   nsCOMPtr<nsINodeInfo> nodeInfo;
   nodeInfo = mNodeInfoManager->GetNodeInfo(localName, prefix, nameSpaceID,
                                            nsIDOMNode::ELEMENT_NODE);
-  NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
   
   nsresult rv = NS_OK;
   switch (mState) {
@@ -515,8 +545,7 @@ XULContentSinkImpl::HandleEndElement(const PRUnichar *aName)
 
         int32_t count = children->Length();
         if (count) {
-            if (!element->mChildren.SetCapacity(count))
-                return NS_ERROR_OUT_OF_MEMORY;
+            element->mChildren.SetCapacity(count);
 
             for (int32_t i = 0; i < count; ++i)
                 element->mChildren.AppendElement(children->ElementAt(i));
@@ -536,7 +565,8 @@ XULContentSinkImpl::HandleEndElement(const PRUnichar *aName)
             script->mOutOfLine = false;
             if (doc)
                 script->Compile(mText, mTextLength, mDocumentURL,
-                                script->mLineNo, doc, mPrototype);
+                                script->mLineNo, doc,
+                                mPrototype->GetScriptGlobalObject());
         }
 
         FlushText(false);
@@ -873,30 +903,14 @@ XULContentSinkImpl::OpenScript(const PRUnichar** aAttributes,
           }
 
           if (langID != nsIProgrammingLanguage::UNKNOWN) {
-            // Get the version string, and ensure the language supports it.
-            nsAutoString versionName;
-            rv = parser.GetParameter("version", versionName);
+              // Get the version string, and ensure the language supports it.
+              nsAutoString versionName;
+              rv = parser.GetParameter("version", versionName);
 
-            if (NS_SUCCEEDED(rv)) {
-              version = nsContentUtils::ParseJavascriptVersion(versionName);
-            } else if (rv != NS_ERROR_INVALID_ARG) {
-              return rv;
-            }
-          }
-          // Some js specifics yet to be abstracted.
-          if (langID == nsIProgrammingLanguage::JAVASCRIPT) {
-              // By default scripts in XUL documents have E4X turned on. This
-              // is still OK if version is JSVERSION_UNKNOWN (-1),
-              version = js::VersionSetMoarXML(JSVersion(version), true);
-
-              nsAutoString value;
-              rv = parser.GetParameter("e4x", value);
-              if (NS_FAILED(rv)) {
-                  if (rv != NS_ERROR_INVALID_ARG)
-                      return rv;
-              } else {
-                  if (value.Length() == 1 && value[0] == '0')
-                    version = js::VersionSetMoarXML(JSVersion(version), false);
+              if (NS_SUCCEEDED(rv)) {
+                  version = nsContentUtils::ParseJavascriptVersion(versionName);
+              } else if (rv != NS_ERROR_INVALID_ARG) {
+                  return rv;
               }
           }
       }
@@ -905,12 +919,9 @@ XULContentSinkImpl::OpenScript(const PRUnichar** aAttributes,
           // various version strings anyway.  So we make no attempt to support
           // languages other than JS for language=
           nsAutoString lang(aAttributes[1]);
-          if (nsContentUtils::IsJavaScriptLanguage(lang, &version)) {
+          if (nsContentUtils::IsJavaScriptLanguage(lang)) {
+              version = JSVERSION_DEFAULT;
               langID = nsIProgrammingLanguage::JAVASCRIPT;
-
-              // Even when JS version < 1.6 is specified, E4X is
-              // turned on in XUL.
-              version = js::VersionSetMoarXML(JSVersion(version), true);
           }
       }
       aAttributes += 2;
@@ -934,9 +945,9 @@ XULContentSinkImpl::OpenScript(const PRUnichar** aAttributes,
 
   // Don't process scripts that aren't known
   if (langID != nsIProgrammingLanguage::UNKNOWN) {
-      nsIScriptGlobalObject* globalObject = nullptr; // borrowed reference
+      nsCOMPtr<nsIScriptGlobalObject> globalObject;
       if (doc)
-          globalObject = doc->GetScriptGlobalObject();
+          globalObject = do_QueryInterface(doc->GetWindow());
       nsRefPtr<nsXULPrototypeScript> script =
           new nsXULPrototypeScript(aLineNumber, version);
       if (! script)

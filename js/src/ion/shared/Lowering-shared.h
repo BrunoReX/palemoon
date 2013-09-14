@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_lowering_shared_h__
-#define jsion_lowering_shared_h__
+#ifndef ion_shared_Lowering_shared_h
+#define ion_shared_Lowering_shared_h
 
 // This file declares the structures that are used for attaching LIR to a
 // MIRGraph.
@@ -25,7 +24,7 @@ class MDefinition;
 class MInstruction;
 class LOsiPoint;
 
-class LIRGeneratorShared : public MInstructionVisitor
+class LIRGeneratorShared : public MInstructionVisitorWithDefaults
 {
   protected:
     MIRGenerator *gen;
@@ -73,11 +72,17 @@ class LIRGeneratorShared : public MInstructionVisitor
     inline LUse useRegisterAtStart(MDefinition *mir);
     inline LUse useFixed(MDefinition *mir, Register reg);
     inline LUse useFixed(MDefinition *mir, FloatRegister reg);
+    inline LUse useFixed(MDefinition *mir, AnyRegister reg);
     inline LAllocation useOrConstant(MDefinition *mir);
     // "Any" is architecture dependent, and will include registers and stack slots on X86,
     // and only registers on ARM.
     inline LAllocation useAny(MDefinition *mir);
     inline LAllocation useAnyOrConstant(MDefinition *mir);
+    // "Storable" is architecture dependend, and will include registers and constants on X86
+    // and only registers on ARM.
+    // this is a generic "things we can expect to write into memory in 1 instruction"
+    inline LAllocation useStorable(MDefinition *mir);
+    inline LAllocation useStorableAtStart(MDefinition *mir);
     inline LAllocation useKeepaliveOrConstant(MDefinition *mir);
     inline LAllocation useRegisterOrConstant(MDefinition *mir);
     inline LAllocation useRegisterOrConstantAtStart(MDefinition *mir);
@@ -112,8 +117,7 @@ class LIRGeneratorShared : public MInstructionVisitor
     inline bool defineBox(LInstructionHelper<BOX_PIECES, Ops, Temps> *lir, MDefinition *mir,
                           LDefinition::Policy policy = LDefinition::DEFAULT);
 
-    template <size_t Defs, size_t Ops, size_t Temps>
-    inline bool defineReturn(LInstructionHelper<Defs, Ops, Temps> *lir, MDefinition *mir);
+    inline bool defineReturn(LInstruction *lir, MDefinition *mir);
 
     template <size_t Ops, size_t Temps>
     inline bool define(LInstructionHelper<1, Ops, Temps> *lir, MDefinition *mir,
@@ -171,11 +175,14 @@ class LIRGeneratorShared : public MInstructionVisitor
     static bool allowTypedElementHoleCheck() {
         return false;
     }
+
+    // Whether to generate typed array accesses on statically known objects.
+    static bool allowStaticTypedArrayAccesses() {
+        return false;
+    }
 };
 
 } // namespace ion
 } // namespace js
 
-#endif // jsion_lowering_shared_h__
-
-
+#endif /* ion_shared_Lowering_shared_h */

@@ -85,9 +85,10 @@ dnl topsrcdir is the top source directory in native form, as opposed to a
 dnl form suitable for make.
 topsrcdir = '''${WIN_TOP_SRC:-$srcdir}'''
 if not os.path.isabs(topsrcdir):
-    topsrcdir = os.path.normpath(os.path.join(os.path.dirname(<<<__file__>>>), topsrcdir))
+    rel = os.path.join(os.path.dirname(<<<__file__>>>), topsrcdir)
+    topsrcdir = os.path.normpath(os.path.abspath(rel))
 
-topobjdir = os.path.dirname(<<<__file__>>>)
+topobjdir = os.path.abspath(os.path.dirname(<<<__file__>>>))
 
 dnl All defines and substs are stored with an additional space at the beginning
 dnl and at the end of the string, to avoid any problem with values starting or
@@ -111,6 +112,12 @@ dnl expected format, but lacks the final comma (see above).
 sed 's/$/,/' >> $CONFIG_STATUS <<EOF
 undivert(MOZ_DIVERSION_SUBST)dnl
 EOF
+
+dnl Add in the output from the subconfigure script
+for ac_subst_arg in $_subconfigure_ac_subst_args; do
+  variable='$'$ac_subst_arg
+  echo "    (''' $ac_subst_arg ''', r''' `eval echo $variable` ''')," >> $CONFIG_STATUS
+done
 
 cat >> $CONFIG_STATUS <<\EOF
 ] ]

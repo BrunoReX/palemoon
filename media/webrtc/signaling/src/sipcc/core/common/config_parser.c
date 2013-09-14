@@ -91,8 +91,6 @@ boolean is_cfgid_in_restart_list(int cfgid) {
         (cfgid >= CFGID_LINE_RING_SETTING_IDLE && cfgid < (CFGID_LINE_RING_SETTING_IDLE + MAX_CONFIG_LINES)) ||
         (cfgid >= CFGID_LINE_RING_SETTING_ACTIVE && cfgid < (CFGID_LINE_RING_SETTING_ACTIVE + MAX_CONFIG_LINES)) ||
         (cfgid >= CFGID_LINE_CONTACT && cfgid < (CFGID_LINE_CONTACT + MAX_CONFIG_LINES)) ||
-        (cfgid >= CFGID_LINE_MAXNUMCALLS && cfgid < (CFGID_LINE_MAXNUMCALLS + MAX_CONFIG_LINES)) ||
-        (cfgid >= CFGID_LINE_BUSY_TRIGGER && cfgid < (CFGID_LINE_BUSY_TRIGGER + MAX_CONFIG_LINES)) ||
         (cfgid >= CFGID_LINE_AUTOANSWER_ENABLED && cfgid < (CFGID_LINE_AUTOANSWER_ENABLED + MAX_CONFIG_LINES)) ||
         (cfgid >= CFGID_LINE_AUTOANSWER_MODE && cfgid < (CFGID_LINE_AUTOANSWER_MODE + MAX_CONFIG_LINES))
        )
@@ -168,7 +166,7 @@ void compare_or_set_byte_value(int cfgid, unsigned char value, const unsigned ch
                 apply_config_result = RESTART_NEEDED;
                 entry = &prot_cfg_table[cfgid];
                 print_config_value(cfgid, "changed Get Val", entry->name, &temp_value, sizeof(temp_value));
-                DEF_DEBUG(CFG_F_PREFIX "config %s[%d] changed. Old value=%d new value=%d\n", "compare_or_set_byte_value", config_name, cfgid, temp_value, value);
+                DEF_DEBUG(CFG_F_PREFIX "config %s[%d] changed. Old value=%d new value=%d", "compare_or_set_byte_value", config_name, cfgid, temp_value, value);
             }
         }
     } else {
@@ -190,7 +188,7 @@ void compare_or_set_boolean_value(int cfgid, cc_boolean value, const unsigned ch
                 apply_config_result = RESTART_NEEDED;
                 entry = &prot_cfg_table[cfgid];
                 print_config_value(cfgid, "changed Get Val", entry->name, &temp_value, sizeof(temp_value));
-                DEF_DEBUG(CFG_F_PREFIX "config %s[%d] changed. Old value=%d new value=%d\n", "compare_or_set_boolean_value", config_name, cfgid, temp_value, value);
+                DEF_DEBUG(CFG_F_PREFIX "config %s[%d] changed. Old value=%d new value=%d", "compare_or_set_boolean_value", config_name, cfgid, temp_value, value);
             }
         }
     } else {
@@ -213,7 +211,7 @@ void compare_or_set_int_value(int cfgid, int value, const unsigned char * config
                 entry = &prot_cfg_table[cfgid];
                 print_config_value(cfgid, "changed Get Val", entry->name, &temp_value, sizeof(temp_value));
 
-                DEF_DEBUG(CFG_F_PREFIX "config %s[%d] changed. new value=%d Old value=%d\n", "compare_or_set_int_value", config_name, cfgid, value, temp_value);
+                DEF_DEBUG(CFG_F_PREFIX "config %s[%d] changed. new value=%d Old value=%d", "compare_or_set_int_value", config_name, cfgid, value, temp_value);
             }
         }
     } else {
@@ -235,7 +233,7 @@ void compare_or_set_string_value (int cfgid, const char* value, const unsigned c
                 apply_config_result = RESTART_NEEDED;
                 entry = &prot_cfg_table[cfgid];
                 print_config_value(cfgid, "changed Get Val", entry->name, &temp_value, sizeof(temp_value));
-                DEF_DEBUG(CFG_F_PREFIX "config %s[%d] changed. new value=%s Old value=%s\n", "compare_or_set_string_value", config_name, cfgid, value, temp_value);
+                DEF_DEBUG(CFG_F_PREFIX "config %s[%d] changed. new value=%s Old value=%s", "compare_or_set_string_value", config_name, cfgid, value, temp_value);
             }
         }
     } else {
@@ -296,7 +294,7 @@ void update_security_mode_and_ports(void) {
        case 2:  sec_level = AUTHENTICATED; break;
        case 3:  sec_level = ENCRYPTED; break;
        default:
-          CONFIG_ERROR(CFG_F_PREFIX "unable to translate securite mode [%d]\n", "update_security_mode_and_ports", (int)security_mode);
+          CONFIG_ERROR(CFG_F_PREFIX "unable to translate securite mode [%d]", "update_security_mode_and_ports", (int)security_mode);
           break;
         }
 
@@ -355,7 +353,7 @@ void config_set_ccm_ip_mac ()
     if (apply_config == FALSE) {
         config_get_mac_addr(macaddr);
 
-        CONFIG_DEBUG(CFG_F_PREFIX ": MAC Address IS:  %x:%x:%x:%x:%x:%x  \n",
+        CONFIG_DEBUG(CFG_F_PREFIX ": MAC Address IS:  %x:%x:%x:%x:%x:%x",
                           "config_get_mac_addr", macaddr[0], macaddr[1],
                            macaddr[2], macaddr[3], macaddr[4], macaddr[5]);
 
@@ -469,8 +467,6 @@ void config_setup_elements (const char *sipUser, const char *sipPassword, const 
         compare_or_set_byte_value(CFGID_LINE_RING_SETTING_IDLE + line, gRingSettingIdle, (const unsigned char *) "ringSettingIdle");
         compare_or_set_byte_value(CFGID_LINE_RING_SETTING_ACTIVE + line, gRingSettingActive, (const unsigned char *) "ringSettingActive");
         compare_or_set_string_value(CFGID_LINE_CONTACT + line, sipUser, (const unsigned char *) "contact");
-        compare_or_set_int_value(CFGID_LINE_MAXNUMCALLS + line, gMaxNumCalls, (const unsigned char *) "maxNumCalls");
-        compare_or_set_int_value(CFGID_LINE_BUSY_TRIGGER + line, gBusyTrigger, (const unsigned char *) "busyTrigger");
         compare_or_set_byte_value(CFGID_LINE_AUTOANSWER_ENABLED + line, gAutoAnswerEnabled, (const unsigned char *) "autoAnswerEnabled");
         compare_or_set_byte_value(CFGID_LINE_CALL_WAITING + line, gCallWaiting, (const unsigned char *) "callWaiting");
         compare_or_set_string_value(CFGID_LINE_AUTHNAME + line, sipUser, (const unsigned char *)"authName");
@@ -495,7 +491,7 @@ void config_setup_elements (const char *sipUser, const char *sipPassword, const 
     if (apply_config == FALSE) {
         config_get_mac_addr(macaddr);
 
-        CONFIG_DEBUG(CFG_F_PREFIX ": MAC Address IS:  %x:%x:%x:%x:%x:%x  \n",
+        CONFIG_DEBUG(CFG_F_PREFIX ": MAC Address IS:  %x:%x:%x:%x:%x:%x",
                                   "config_get_mac_addr", macaddr[0], macaddr[1],
                                    macaddr[2], macaddr[3], macaddr[4], macaddr[5]);
 
@@ -503,25 +499,25 @@ void config_setup_elements (const char *sipUser, const char *sipPassword, const 
         CC_Config_setArrayValue(CFGID_MY_ACTIVE_MAC_ADDR, macaddr, MAC_ADDR_SIZE);
     }
 
-    CONFIG_DEBUG(CFG_F_PREFIX "%s \n", "config_parse_element", "phoneServices");
-    CONFIG_DEBUG(CFG_F_PREFIX "%s \n", "config_parse_element", "versionStamp");
-    CONFIG_ERROR(CFG_F_PREFIX "%s new=%s old=%s \n", "config_parser_element", "versionStamp",
+    CONFIG_DEBUG(CFG_F_PREFIX "%s", "config_parse_element", "phoneServices");
+    CONFIG_DEBUG(CFG_F_PREFIX "%s", "config_parse_element", "versionStamp");
+    CONFIG_ERROR(CFG_F_PREFIX "%s new=%s old=%s", "config_parser_element", "versionStamp",
         		"1284570837-bbc096ed-7392-427d-9694-5ce49d5c3acb", g_cfg_version_stamp);
 
     if (apply_config == FALSE) {
         memset(g_cfg_version_stamp, 0, sizeof(g_cfg_version_stamp));
         i = strlen("1284570837-bbc096ed-7392-427d-9694-5ce49d5c3acb");
         if (i > MAX_CFG_VERSION_STAMP_LEN) {
-            CONFIG_ERROR(CFG_F_PREFIX "config version %d, bigger than allocated space %d\n", "config_parser_element", i, MAX_CFG_VERSION_STAMP_LEN);
+            CONFIG_ERROR(CFG_F_PREFIX "config version %d, bigger than allocated space %d", "config_parser_element", i, MAX_CFG_VERSION_STAMP_LEN);
         }
 
         sstrncpy(g_cfg_version_stamp, "1284570837-bbc096ed-7392-427d-9694-5ce49d5c3acb", sizeof(g_cfg_version_stamp));
     }
     else {
-        CONFIG_ERROR(CFG_F_PREFIX "got NULL value for %s\n", "config_parser_element", "versionStamp");
+        CONFIG_ERROR(CFG_F_PREFIX "got NULL value for %s", "config_parser_element", "versionStamp");
     }
 
-    CONFIG_DEBUG(CFG_F_PREFIX "%s \n", "config_parser_element", "externalNumberMask");
+    CONFIG_DEBUG(CFG_F_PREFIX "%s", "config_parser_element", "externalNumberMask");
     compare_or_set_string_value(CFGID_CCM_EXTERNAL_NUMBER_MASK, gExternalNumberMask, (const unsigned char *) "externalNumberMask");
 
     /* Set SIP P2P boolean */

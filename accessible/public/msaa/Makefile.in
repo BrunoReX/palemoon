@@ -7,25 +7,15 @@ topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
 
-LIBRARY_NAME	= AccessibleMarshal
-MODULE    = accessibility
-XPIDL_MODULE = accessibility-msaa
-GRE_MODULE   = 1
 DEFFILE = $(win_srcdir)/AccessibleMarshal.def
 
 include $(DEPTH)/config/autoconf.mk
-
-XPIDLSRCS = \
-      nsIWinAccessNode.idl \
-      $(NULL)
 
 DEFINES += -DREGISTER_PROXY_DLL
 
 GARBAGE += $(MIDL_GENERATED_FILES) done_gen dlldata.c
 
 FORCE_SHARED_LIB = 1
-
-SRCS_IN_OBJDIR	= 1
 
 CSRCS	= \
 	dlldata.c \
@@ -63,15 +53,6 @@ done_gen: ISimpleDOMNode.idl \
 	$(MIDL) $(MIDL_FLAGS) -Oicf $(srcdir)/ISimpleDOMDocument.idl
 	$(MIDL) $(MIDL_FLAGS) -Oicf $(srcdir)/ISimpleDOMText.idl
 	touch $@
-
-EXPORTS = \
-	ISimpleDOMNode.h \
-	ISimpleDOMNode_i.c \
-	ISimpleDOMDocument.h \
-	ISimpleDOMDocument_i.c \
-	ISimpleDOMText.h \
-	ISimpleDOMText_i.c \
-	$(NULL)
 
 export:: done_gen
 

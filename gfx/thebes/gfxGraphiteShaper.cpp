@@ -40,22 +40,11 @@ using namespace mozilla; // for AutoSwap_* types
 
 gfxGraphiteShaper::gfxGraphiteShaper(gfxFont *aFont)
     : gfxFontShaper(aFont),
-      mGrFace(nullptr),
-      mGrFont(nullptr),
-      mUseFontGlyphWidths(false)
+      mGrFace(mFont->GetFontEntry()->GetGrFace()),
+      mGrFont(nullptr)
 {
-    mTables.Init();
     mCallbackData.mFont = aFont;
     mCallbackData.mShaper = this;
-}
-
-PLDHashOperator
-ReleaseTableFunc(const uint32_t& /* aKey */,
-                 gfxGraphiteShaper::TableRec& aData,
-                 void* /* aUserArg */)
-{
-    hb_blob_destroy(aData.mBlob);
-    return PL_DHASH_REMOVE;
 }
 
 gfxGraphiteShaper::~gfxGraphiteShaper()
@@ -63,47 +52,14 @@ gfxGraphiteShaper::~gfxGraphiteShaper()
     if (mGrFont) {
         gr_font_destroy(mGrFont);
     }
-    if (mGrFace) {
-        gr_face_destroy(mGrFace);
-    }
-    mTables.Enumerate(ReleaseTableFunc, nullptr);
+    mFont->GetFontEntry()->ReleaseGrFace(mGrFace);
 }
 
-static const void*
-GrGetTable(const void* appFaceHandle, unsigned int name, size_t *len)
+/*static*/ float
+gfxGraphiteShaper::GrGetAdvance(const void* appFontHandle, uint16_t glyphid)
 {
-    const gfxGraphiteShaper::CallbackData *cb =
-        static_cast<const gfxGraphiteShaper::CallbackData*>(appFaceHandle);
-    return cb->mShaper->GetTable(name, len);
-}
-
-const void*
-gfxGraphiteShaper::GetTable(uint32_t aTag, size_t *aLength)
-{
-    TableRec tableRec;
-
-    if (!mTables.Get(aTag, &tableRec)) {
-        hb_blob_t *blob = mFont->GetFontTable(aTag);
-        if (blob) {
-            // mFont->GetFontTable() gives us a reference to the blob.
-            // We will destroy (release) it in our destructor.
-            tableRec.mBlob = blob;
-            tableRec.mData = hb_blob_get_data(blob, &tableRec.mLength);
-            mTables.Put(aTag, tableRec);
-        } else {
-            return nullptr;
-        }
-    }
-
-    *aLength = tableRec.mLength;
-    return tableRec.mData;
-}
-
-static float
-GrGetAdvance(const void* appFontHandle, gr_uint16 glyphid)
-{
-    const gfxGraphiteShaper::CallbackData *cb =
-        static_cast<const gfxGraphiteShaper::CallbackData*>(appFontHandle);
+    const CallbackData *cb =
+        static_cast<const CallbackData*>(appFontHandle);
     return FixedToFloat(cb->mFont->GetGlyphWidth(cb->mContext, glyphid));
 }
 
@@ -153,18 +109,23 @@ gfxGraphiteShaper::ShapeText(gfxContext      *aContext,
     mCallbackData.mContext = aContext;
 
     if (!mGrFont) {
-        mGrFace = gr_make_face(&mCallbackData, GrGetTable, gr_face_default);
         if (!mGrFace) {
             return false;
         }
-        mGrFont = mUseFontGlyphWidths ?
-            gr_make_font_with_advance_fn(mFont->GetAdjustedSize(),
-                                         &mCallbackData, GrGetAdvance,
-                                         mGrFace) :
-            gr_make_font(mFont->GetAdjustedSize(), mGrFace);
+
+        if (mFont->ProvidesGlyphWidths()) {
+            gr_font_ops ops = {
+                sizeof(gr_font_ops),
+                &GrGetAdvance,
+                nullptr // vertical text not yet implemented
+            };
+            mGrFont = gr_make_font_with_ops(mFont->GetAdjustedSize(),
+                                            &mCallbackData, &ops, mGrFace);
+        } else {
+            mGrFont = gr_make_font(mFont->GetAdjustedSize(), mGrFace);
+        }
+
         if (!mGrFont) {
-            gr_face_destroy(mGrFace);
-            mGrFace = nullptr;
             return false;
         }
     }
@@ -185,8 +146,13 @@ gfxGraphiteShaper::ShapeText(gfxContext      *aContext,
 
     nsDataHashtable<nsUint32HashKey,uint32_t> mergedFeatures;
 
-    if (MergeFontFeatures(style->featureSettings, entry->mFeatureSettings,
-                          aShapedText->DisableLigatures(), mergedFeatures)) {
+    // if style contains font-specific features
+    if (MergeFontFeatures(style,
+                          mFont->GetFontEntry()->mFeatureSettings,
+                          aShapedText->DisableLigatures(),
+                          mFont->GetFontEntry()->FamilyName(),
+                          mergedFeatures))
+    {
         // enumerate result and insert into Graphite feature list
         GrFontFeatures f = {mGrFace, grFeatures};
         mergedFeatures.Enumerate(AddFeature, &f);
@@ -205,7 +171,7 @@ gfxGraphiteShaper::ShapeText(gfxContext      *aContext,
         return false;
     }
 
-    nsresult rv = SetGlyphsFromSegment(aShapedText, aOffset, aLength,
+    nsresult rv = SetGlyphsFromSegment(aContext, aShapedText, aOffset, aLength,
                                        aText, seg);
 
     gr_seg_destroy(seg);
@@ -225,7 +191,8 @@ struct Cluster {
 };
 
 nsresult
-gfxGraphiteShaper::SetGlyphsFromSegment(gfxShapedText   *aShapedText,
+gfxGraphiteShaper::SetGlyphsFromSegment(gfxContext      *aContext,
+                                        gfxShapedText   *aShapedText,
                                         uint32_t         aOffset,
                                         uint32_t         aLength,
                                         const PRUnichar *aText,
@@ -299,6 +266,10 @@ gfxGraphiteShaper::SetGlyphsFromSegment(gfxShapedText   *aShapedText,
         }
     }
 
+    bool roundX;
+    bool roundY;
+    aContext->GetRoundOffsetsToPixels(&roundX, &roundY);
+
     gfxShapedText::CompressedGlyph *charGlyphs =
         aShapedText->GetCharacterGlyphs() + aOffset;
 
@@ -330,10 +301,12 @@ gfxGraphiteShaper::SetGlyphsFromSegment(gfxShapedText   *aShapedText,
             continue;
         }
 
-        uint32_t appAdvance = adv * dev2appUnits;
+        uint32_t appAdvance = roundX ? NSToIntRound(adv) * dev2appUnits :
+                                       NSToIntRound(adv * dev2appUnits);
         if (c.nGlyphs == 1 &&
             gfxShapedText::CompressedGlyph::IsSimpleGlyphID(gids[c.baseGlyph]) &&
             gfxShapedText::CompressedGlyph::IsSimpleAdvance(appAdvance) &&
+            charGlyphs[offs].IsClusterStart() &&
             yLocs[c.baseGlyph] == 0)
         {
             charGlyphs[offs].SetSimpleGlyph(appAdvance, gids[c.baseGlyph]);
@@ -344,15 +317,17 @@ gfxGraphiteShaper::SetGlyphsFromSegment(gfxShapedText   *aShapedText,
             for (uint32_t j = c.baseGlyph; j < c.baseGlyph + c.nGlyphs; ++j) {
                 gfxShapedText::DetailedGlyph* d = details.AppendElement();
                 d->mGlyphID = gids[j];
-                d->mYOffset = -yLocs[j] * dev2appUnits;
+                d->mYOffset = roundY ? NSToIntRound(-yLocs[j]) * dev2appUnits :
+                              -yLocs[j] * dev2appUnits;
                 if (j == c.baseGlyph) {
                     d->mXOffset = 0;
                     d->mAdvance = appAdvance;
                     clusterLoc = xLocs[j];
                 } else {
-                    d->mXOffset = dev2appUnits *
-                        (rtl ? (xLocs[j] - clusterLoc) :
-                               (xLocs[j] - clusterLoc - adv));
+                    float dx = rtl ? (xLocs[j] - clusterLoc) :
+                                     (xLocs[j] - clusterLoc - adv);
+                    d->mXOffset = roundX ? NSToIntRound(dx) * dev2appUnits :
+                                           dx * dev2appUnits;
                     d->mAdvance = 0;
                 }
             }

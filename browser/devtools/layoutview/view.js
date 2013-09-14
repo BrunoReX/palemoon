@@ -9,8 +9,9 @@
 const Cu = Components.utils;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource:///modules/devtools/LayoutHelpers.jsm");
-Cu.import("resource:///modules/devtools/CssLogic.jsm");
-Cu.import("resource:///modules/devtools/gDevTools.jsm");
+Cu.import("resource://gre/modules/devtools/Loader.jsm");
+
+let {CssLogic} = devtools.require("devtools/styleinspector/css-logic");
 
 function LayoutView(aInspector, aWindow)
 {
@@ -104,7 +105,7 @@ LayoutView.prototype = {
       this.browser.removeEventListener("MozAfterPaint", this.update, true);
     }
     if (this.inspector.highlighter) {
-      this.inspector.highlighter.on("locked", this.onHighlighterLocked);
+      this.inspector.highlighter.off("locked", this.onHighlighterLocked);
     }
     this.sizeHeadingLabel = null;
     this.sizeLabel = null;
@@ -122,10 +123,10 @@ LayoutView.prototype = {
         this.inspector.selection.reason != "highlighter") {
       this.cssLogic.highlight(this.inspector.selection.node);
       this.undim();
-      this.update();
     } else {
       this.dim();
     }
+    this.update();
   },
 
   /**

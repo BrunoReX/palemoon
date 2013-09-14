@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_cpu_x64_assembler_h__
-#define jsion_cpu_x64_assembler_h__
+#ifndef ion_x64_Assembler_x64_h
+#define ion_x64_Assembler_x64_h
 
 #include "ion/shared/Assembler-shared.h"
 #include "ion/CompactBuffer.h"
@@ -16,39 +15,39 @@
 namespace js {
 namespace ion {
 
-static const Register rax = { JSC::X86Registers::eax };
-static const Register rbx = { JSC::X86Registers::ebx };
-static const Register rcx = { JSC::X86Registers::ecx };
-static const Register rdx = { JSC::X86Registers::edx };
-static const Register rsi = { JSC::X86Registers::esi };
-static const Register rdi = { JSC::X86Registers::edi };
-static const Register rbp = { JSC::X86Registers::ebp };
-static const Register r8  = { JSC::X86Registers::r8  };
-static const Register r9  = { JSC::X86Registers::r9  };
-static const Register r10 = { JSC::X86Registers::r10 };
-static const Register r11 = { JSC::X86Registers::r11 };
-static const Register r12 = { JSC::X86Registers::r12 };
-static const Register r13 = { JSC::X86Registers::r13 };
-static const Register r14 = { JSC::X86Registers::r14 };
-static const Register r15 = { JSC::X86Registers::r15 };
-static const Register rsp = { JSC::X86Registers::esp };
+static const MOZ_CONSTEXPR Register rax = { JSC::X86Registers::eax };
+static const MOZ_CONSTEXPR Register rbx = { JSC::X86Registers::ebx };
+static const MOZ_CONSTEXPR Register rcx = { JSC::X86Registers::ecx };
+static const MOZ_CONSTEXPR Register rdx = { JSC::X86Registers::edx };
+static const MOZ_CONSTEXPR Register rsi = { JSC::X86Registers::esi };
+static const MOZ_CONSTEXPR Register rdi = { JSC::X86Registers::edi };
+static const MOZ_CONSTEXPR Register rbp = { JSC::X86Registers::ebp };
+static const MOZ_CONSTEXPR Register r8  = { JSC::X86Registers::r8  };
+static const MOZ_CONSTEXPR Register r9  = { JSC::X86Registers::r9  };
+static const MOZ_CONSTEXPR Register r10 = { JSC::X86Registers::r10 };
+static const MOZ_CONSTEXPR Register r11 = { JSC::X86Registers::r11 };
+static const MOZ_CONSTEXPR Register r12 = { JSC::X86Registers::r12 };
+static const MOZ_CONSTEXPR Register r13 = { JSC::X86Registers::r13 };
+static const MOZ_CONSTEXPR Register r14 = { JSC::X86Registers::r14 };
+static const MOZ_CONSTEXPR Register r15 = { JSC::X86Registers::r15 };
+static const MOZ_CONSTEXPR Register rsp = { JSC::X86Registers::esp };
 
-static const FloatRegister xmm0 = { JSC::X86Registers::xmm0 };
-static const FloatRegister xmm1 = { JSC::X86Registers::xmm1 };
-static const FloatRegister xmm2 = { JSC::X86Registers::xmm2 };
-static const FloatRegister xmm3 = { JSC::X86Registers::xmm3 };
-static const FloatRegister xmm4 = { JSC::X86Registers::xmm4 };
-static const FloatRegister xmm5 = { JSC::X86Registers::xmm5 };
-static const FloatRegister xmm6 = { JSC::X86Registers::xmm6 };
-static const FloatRegister xmm7 = { JSC::X86Registers::xmm7 };
-static const FloatRegister xmm8 = { JSC::X86Registers::xmm8 };
-static const FloatRegister xmm9 = { JSC::X86Registers::xmm9 };
-static const FloatRegister xmm10 = { JSC::X86Registers::xmm10 };
-static const FloatRegister xmm11 = { JSC::X86Registers::xmm11 };
-static const FloatRegister xmm12 = { JSC::X86Registers::xmm12 };
-static const FloatRegister xmm13 = { JSC::X86Registers::xmm13 };
-static const FloatRegister xmm14 = { JSC::X86Registers::xmm14 };
-static const FloatRegister xmm15 = { JSC::X86Registers::xmm15 };
+static const MOZ_CONSTEXPR FloatRegister xmm0 = { JSC::X86Registers::xmm0 };
+static const MOZ_CONSTEXPR FloatRegister xmm1 = { JSC::X86Registers::xmm1 };
+static const MOZ_CONSTEXPR FloatRegister xmm2 = { JSC::X86Registers::xmm2 };
+static const MOZ_CONSTEXPR FloatRegister xmm3 = { JSC::X86Registers::xmm3 };
+static const MOZ_CONSTEXPR FloatRegister xmm4 = { JSC::X86Registers::xmm4 };
+static const MOZ_CONSTEXPR FloatRegister xmm5 = { JSC::X86Registers::xmm5 };
+static const MOZ_CONSTEXPR FloatRegister xmm6 = { JSC::X86Registers::xmm6 };
+static const MOZ_CONSTEXPR FloatRegister xmm7 = { JSC::X86Registers::xmm7 };
+static const MOZ_CONSTEXPR FloatRegister xmm8 = { JSC::X86Registers::xmm8 };
+static const MOZ_CONSTEXPR FloatRegister xmm9 = { JSC::X86Registers::xmm9 };
+static const MOZ_CONSTEXPR FloatRegister xmm10 = { JSC::X86Registers::xmm10 };
+static const MOZ_CONSTEXPR FloatRegister xmm11 = { JSC::X86Registers::xmm11 };
+static const MOZ_CONSTEXPR FloatRegister xmm12 = { JSC::X86Registers::xmm12 };
+static const MOZ_CONSTEXPR FloatRegister xmm13 = { JSC::X86Registers::xmm13 };
+static const MOZ_CONSTEXPR FloatRegister xmm14 = { JSC::X86Registers::xmm14 };
+static const MOZ_CONSTEXPR FloatRegister xmm15 = { JSC::X86Registers::xmm15 };
 
 // X86-common synonyms.
 static const Register eax = rax;
@@ -60,82 +59,111 @@ static const Register edi = rdi;
 static const Register ebp = rbp;
 static const Register esp = rsp;
 
-static const Register InvalidReg = { JSC::X86Registers::invalid_reg };
-static const FloatRegister InvalidFloatReg = { JSC::X86Registers::invalid_xmm };
+static const MOZ_CONSTEXPR Register InvalidReg = { JSC::X86Registers::invalid_reg };
+static const MOZ_CONSTEXPR FloatRegister InvalidFloatReg = { JSC::X86Registers::invalid_xmm };
 
 static const Register StackPointer = rsp;
 static const Register FramePointer = rbp;
-static const Register JSReturnReg = rcx;
+static const MOZ_CONSTEXPR Register JSReturnReg = rcx;
 // Avoid, except for assertions.
-static const Register JSReturnReg_Type = JSReturnReg;
-static const Register JSReturnReg_Data = JSReturnReg;
+static const MOZ_CONSTEXPR Register JSReturnReg_Type = JSReturnReg;
+static const MOZ_CONSTEXPR Register JSReturnReg_Data = JSReturnReg;
 
-static const Register ReturnReg = rax;
-static const Register ScratchReg = r11;
-static const FloatRegister ReturnFloatReg = xmm0;
-static const FloatRegister ScratchFloatReg = xmm15;
+static const MOZ_CONSTEXPR Register ReturnReg = rax;
+static const MOZ_CONSTEXPR Register ScratchReg = r11;
+static const MOZ_CONSTEXPR Register HeapReg = r15;
+static const MOZ_CONSTEXPR FloatRegister ReturnFloatReg = xmm0;
+static const MOZ_CONSTEXPR FloatRegister ScratchFloatReg = xmm15;
 
-static const Register ArgumentsRectifierReg = r8;
-static const Register CallTempReg0 = rax;
-static const Register CallTempReg1 = rdi;
-static const Register CallTempReg2 = rbx;
-static const Register CallTempReg3 = rcx;
-static const Register CallTempReg4 = rsi;
-static const Register CallTempReg5 = rdx;
+static const MOZ_CONSTEXPR Register ArgumentsRectifierReg = r8;
+static const MOZ_CONSTEXPR Register CallTempReg0 = rax;
+static const MOZ_CONSTEXPR Register CallTempReg1 = rdi;
+static const MOZ_CONSTEXPR Register CallTempReg2 = rbx;
+static const MOZ_CONSTEXPR Register CallTempReg3 = rcx;
+static const MOZ_CONSTEXPR Register CallTempReg4 = rsi;
+static const MOZ_CONSTEXPR Register CallTempReg5 = rdx;
+static const MOZ_CONSTEXPR Register CallTempReg6 = rbp;
 
 // Different argument registers for WIN64
 #if defined(_WIN64)
-static const Register IntArgReg0 = rcx;
-static const Register IntArgReg1 = rdx;
-static const Register IntArgReg2 = r8;
-static const Register IntArgReg3 = r9;
-static const uint32_t NumIntArgRegs = 4;
-static const Register IntArgRegs[NumIntArgRegs] = { rcx, rdx, r8, r9 };
+static const MOZ_CONSTEXPR Register IntArgReg0 = rcx;
+static const MOZ_CONSTEXPR Register IntArgReg1 = rdx;
+static const MOZ_CONSTEXPR Register IntArgReg2 = r8;
+static const MOZ_CONSTEXPR Register IntArgReg3 = r9;
+static const MOZ_CONSTEXPR uint32_t NumIntArgRegs = 4;
+static const MOZ_CONSTEXPR Register IntArgRegs[NumIntArgRegs] = { rcx, rdx, r8, r9 };
 
-static const Register CallTempNonArgRegs[] = { rax, rdi, rbx, rsi };
+static const MOZ_CONSTEXPR Register CallTempNonArgRegs[] = { rax, rdi, rbx, rsi };
 static const uint32_t NumCallTempNonArgRegs =
     mozilla::ArrayLength(CallTempNonArgRegs);
 
-static const FloatRegister FloatArgReg0 = xmm0;
-static const FloatRegister FloatArgReg1 = xmm1;
-static const FloatRegister FloatArgReg2 = xmm2;
-static const FloatRegister FloatArgReg3 = xmm3;
+static const MOZ_CONSTEXPR FloatRegister FloatArgReg0 = xmm0;
+static const MOZ_CONSTEXPR FloatRegister FloatArgReg1 = xmm1;
+static const MOZ_CONSTEXPR FloatRegister FloatArgReg2 = xmm2;
+static const MOZ_CONSTEXPR FloatRegister FloatArgReg3 = xmm3;
 static const uint32_t NumFloatArgRegs = 4;
 static const FloatRegister FloatArgRegs[NumFloatArgRegs] = { xmm0, xmm1, xmm2, xmm3 };
 #else
-static const Register IntArgReg0 = rdi;
-static const Register IntArgReg1 = rsi;
-static const Register IntArgReg2 = rdx;
-static const Register IntArgReg3 = rcx;
-static const Register IntArgReg4 = r8;
-static const Register IntArgReg5 = r9;
-static const uint32_t NumIntArgRegs = 6;
-static const Register IntArgRegs[NumIntArgRegs] = { rdi, rsi, rdx, rcx, r8, r9 };
+static const MOZ_CONSTEXPR Register IntArgReg0 = rdi;
+static const MOZ_CONSTEXPR Register IntArgReg1 = rsi;
+static const MOZ_CONSTEXPR Register IntArgReg2 = rdx;
+static const MOZ_CONSTEXPR Register IntArgReg3 = rcx;
+static const MOZ_CONSTEXPR Register IntArgReg4 = r8;
+static const MOZ_CONSTEXPR Register IntArgReg5 = r9;
+static const MOZ_CONSTEXPR uint32_t NumIntArgRegs = 6;
+static const MOZ_CONSTEXPR Register IntArgRegs[NumIntArgRegs] = { rdi, rsi, rdx, rcx, r8, r9 };
 
-static const Register CallTempNonArgRegs[] = { rax, rbx };
+static const MOZ_CONSTEXPR Register CallTempNonArgRegs[] = { rax, rbx };
 static const uint32_t NumCallTempNonArgRegs =
     mozilla::ArrayLength(CallTempNonArgRegs);
 
-static const FloatRegister FloatArgReg0 = xmm0;
-static const FloatRegister FloatArgReg1 = xmm1;
-static const FloatRegister FloatArgReg2 = xmm2;
-static const FloatRegister FloatArgReg3 = xmm3;
-static const FloatRegister FloatArgReg4 = xmm4;
-static const FloatRegister FloatArgReg5 = xmm5;
-static const FloatRegister FloatArgReg6 = xmm6;
-static const FloatRegister FloatArgReg7 = xmm7;
-static const uint32_t NumFloatArgRegs = 8;
-static const FloatRegister FloatArgRegs[NumFloatArgRegs] = { xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7 };
+static const MOZ_CONSTEXPR FloatRegister FloatArgReg0 = xmm0;
+static const MOZ_CONSTEXPR FloatRegister FloatArgReg1 = xmm1;
+static const MOZ_CONSTEXPR FloatRegister FloatArgReg2 = xmm2;
+static const MOZ_CONSTEXPR FloatRegister FloatArgReg3 = xmm3;
+static const MOZ_CONSTEXPR FloatRegister FloatArgReg4 = xmm4;
+static const MOZ_CONSTEXPR FloatRegister FloatArgReg5 = xmm5;
+static const MOZ_CONSTEXPR FloatRegister FloatArgReg6 = xmm6;
+static const MOZ_CONSTEXPR FloatRegister FloatArgReg7 = xmm7;
+static const MOZ_CONSTEXPR uint32_t NumFloatArgRegs = 8;
+static const MOZ_CONSTEXPR FloatRegister FloatArgRegs[NumFloatArgRegs] = { xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7 };
 #endif
 
-static const Register OsrFrameReg = IntArgReg3;
+class ABIArgGenerator
+{
+#if defined(XP_WIN)
+    unsigned regIndex_;
+#else
+    unsigned intRegIndex_;
+    unsigned floatRegIndex_;
+#endif
+    uint32_t stackOffset_;
+    ABIArg current_;
 
-static const Register PreBarrierReg = rdx;
+  public:
+    ABIArgGenerator();
+    ABIArg next(MIRType argType);
+    ABIArg &current() { return current_; }
+    uint32_t stackBytesConsumedSoFar() const { return stackOffset_; }
+
+    // Note: these registers are all guaranteed to be different
+    static const Register NonArgReturnVolatileReg0;
+    static const Register NonArgReturnVolatileReg1;
+    static const Register NonVolatileReg;
+};
+
+static const MOZ_CONSTEXPR Register OsrFrameReg = IntArgReg3;
+
+static const MOZ_CONSTEXPR Register PreBarrierReg = rdx;
 
 // GCC stack is aligned on 16 bytes, but we don't maintain the invariant in
 // jitted code.
 static const uint32_t StackAlignment = 16;
 static const bool StackKeptAligned = false;
+static const uint32_t CodeAlignment = 8;
+static const uint32_t NativeFrameSize = sizeof(void*);
+static const uint32_t AlignmentAtPrologue = sizeof(void*);
+static const uint32_t AlignmentMidPrologue = AlignmentAtPrologue;
 
 static const Scale ScalePointer = TimesEight;
 
@@ -152,8 +180,8 @@ class Operand
     Kind kind_ : 3;
     int32_t base_ : 5;
     Scale scale_ : 3;
-    int32_t disp_;
     int32_t index_ : 5;
+    int32_t disp_;
 
   public:
     explicit Operand(Register reg)
@@ -173,21 +201,31 @@ class Operand
       : kind_(SCALE),
         base_(address.base.code()),
         scale_(address.scale),
-        disp_(address.offset),
-        index_(address.index.code())
+        index_(address.index.code()),
+        disp_(address.offset)
     { }
     Operand(Register base, Register index, Scale scale, int32_t disp = 0)
       : kind_(SCALE),
         base_(base.code()),
         scale_(scale),
-        disp_(disp),
-        index_(index.code())
+        index_(index.code()),
+        disp_(disp)
     { }
     Operand(Register reg, int32_t disp)
       : kind_(REG_DISP),
         base_(reg.code()),
         disp_(disp)
     { }
+
+    Address toAddress() const {
+        JS_ASSERT(kind() == REG_DISP);
+        return Address(Register::FromCode(base()), disp());
+    }
+
+    BaseIndex toBaseIndex() const {
+        JS_ASSERT(kind() == SCALE);
+        return BaseIndex(Register::FromCode(base()), Register::FromCode(index()), scale(), disp());
+    }
 
     Kind kind() const {
         return kind_;
@@ -227,7 +265,7 @@ namespace js {
 namespace ion {
 
 // Return operand from a JS -> JS call.
-static const ValueOperand JSReturnOperand = ValueOperand(JSReturnReg);
+static const MOZ_CONSTEXPR ValueOperand JSReturnOperand = ValueOperand(JSReturnReg);
 
 class Assembler : public AssemblerX86Shared
 {
@@ -285,7 +323,7 @@ class Assembler : public AssemblerX86Shared
 
     // The buffer is about to be linked, make sure any constant pools or excess
     // bookkeeping has been flushed to the instruction stream.
-    void flush();
+    void finish();
 
     // Copy the assembly code to the given buffer, and perform any pending
     // relocations relying on the target address.
@@ -312,10 +350,14 @@ class Assembler : public AssemblerX86Shared
         movsd(src, Operand(StackPointer, 0));
     }
     CodeOffsetLabel pushWithPatch(const ImmWord &word) {
-        movq(word, ScratchReg);
-        CodeOffsetLabel label = masm.currentOffset();
+        CodeOffsetLabel label = movWithPatch(word, ScratchReg);
         push(ScratchReg);
         return label;
+    }
+
+    CodeOffsetLabel movWithPatch(const ImmWord &word, const Register &dest) {
+        movq(word, dest);
+        return masm.currentOffset();
     }
 
     void movq(ImmWord word, const Register &dest) {
@@ -350,6 +392,21 @@ class Assembler : public AssemblerX86Shared
             break;
           case Operand::SCALE:
             masm.movq_rm(src.code(), dest.disp(), dest.base(), dest.index(), dest.scale());
+            break;
+          default:
+            JS_NOT_REACHED("unexpected operand kind");
+        }
+    }
+    void movq(Imm32 imm32, const Operand &dest) {
+        switch (dest.kind()) {
+          case Operand::REG:
+            masm.movl_i32r(imm32.value, dest.reg());
+            break;
+          case Operand::REG_DISP:
+            masm.movq_i32m(imm32.value, dest.disp(), dest.base());
+            break;
+          case Operand::SCALE:
+            masm.movq_i32m(imm32.value, dest.disp(), dest.base(), dest.index(), dest.scale());
             break;
           default:
             JS_NOT_REACHED("unexpected operand kind");
@@ -390,6 +447,18 @@ class Assembler : public AssemblerX86Shared
     void addq(const Register &src, const Register &dest) {
         masm.addq_rr(src.code(), dest.code());
     }
+    void addq(const Operand &src, const Register &dest) {
+        switch (src.kind()) {
+          case Operand::REG:
+            masm.addq_rr(src.reg(), dest.code());
+            break;
+          case Operand::REG_DISP:
+            masm.addq_mr(src.disp(), src.base(), dest.code());
+            break;
+          default:
+            JS_NOT_REACHED("unexpected operand kind");
+        }
+    }
 
     void subq(Imm32 imm, const Register &dest) {
         masm.subq_ir(imm.value, dest.code());
@@ -397,11 +466,26 @@ class Assembler : public AssemblerX86Shared
     void subq(const Register &src, const Register &dest) {
         masm.subq_rr(src.code(), dest.code());
     }
+    void subq(const Operand &src, const Register &dest) {
+        switch (src.kind()) {
+          case Operand::REG:
+            masm.subq_rr(src.reg(), dest.code());
+            break;
+          case Operand::REG_DISP:
+            masm.subq_mr(src.disp(), src.base(), dest.code());
+            break;
+          default:
+            JS_NOT_REACHED("unexpected operand kind");
+        }
+    }
     void shlq(Imm32 imm, const Register &dest) {
         masm.shlq_i8r(imm.value, dest.code());
     }
     void shrq(Imm32 imm, const Register &dest) {
         masm.shrq_i8r(imm.value, dest.code());
+    }
+    void sarq(Imm32 imm, const Register &dest) {
+        masm.sarq_i8r(imm.value, dest.code());
     }
     void orq(Imm32 imm, const Register &dest) {
         masm.orq_ir(imm.value, dest.code());
@@ -424,9 +508,21 @@ class Assembler : public AssemblerX86Shared
     void xorq(const Register &src, const Register &dest) {
         masm.xorq_rr(src.code(), dest.code());
     }
+    void xorq(Imm32 imm, const Register &dest) {
+        masm.xorq_ir(imm.value, dest.code());
+    }
 
     void mov(ImmWord word, const Register &dest) {
-        movq(word, dest);
+        // If the word value is in [0,UINT32_MAX], we can use the more compact
+        // movl instruction, which has a 32-bit immediate field which it
+        // zero-extends into the 64-bit register.
+        if (word.value <= UINT32_MAX) {
+            uint32_t value32 = static_cast<uint32_t>(word.value);
+            Imm32 imm32(static_cast<int32_t>(value32));
+            movl(imm32, dest);
+        } else {
+            movq(word, dest);
+        }
     }
     void mov(const Imm32 &imm32, const Register &dest) {
         movl(imm32, dest);
@@ -436,6 +532,9 @@ class Assembler : public AssemblerX86Shared
     }
     void mov(const Register &src, const Operand &dest) {
         movq(src, dest);
+    }
+    void mov(const Imm32 &imm32, const Operand &dest) {
+        movq(imm32, dest);
     }
     void mov(const Register &src, const Register &dest) {
         movq(src, dest);
@@ -460,6 +559,25 @@ class Assembler : public AssemblerX86Shared
         }
     }
 
+    CodeOffsetLabel loadRipRelativeInt32(const Register &dest) {
+        return CodeOffsetLabel(masm.movl_ripr(dest.code()).offset());
+    }
+    CodeOffsetLabel loadRipRelativeInt64(const Register &dest) {
+        return CodeOffsetLabel(masm.movq_ripr(dest.code()).offset());
+    }
+    CodeOffsetLabel loadRipRelativeDouble(const FloatRegister &dest) {
+        return CodeOffsetLabel(masm.movsd_ripr(dest.code()).offset());
+    }
+    CodeOffsetLabel storeRipRelativeInt32(const Register &dest) {
+        return CodeOffsetLabel(masm.movl_rrip(dest.code()).offset());
+    }
+    CodeOffsetLabel storeRipRelativeDouble(const FloatRegister &dest) {
+        return CodeOffsetLabel(masm.movsd_rrip(dest.code()).offset());
+    }
+    CodeOffsetLabel leaRipRelative(const Register &dest) {
+        return CodeOffsetLabel(masm.leaq_rip(dest.code()).offset());
+    }
+
     // The below cmpq methods switch the lhs and rhs when it invokes the
     // macroassembler to conform with intel standard.  When calling this
     // function put the left operand on the left as you would expect.
@@ -477,6 +595,9 @@ class Assembler : public AssemblerX86Shared
     }
     void cmpq(const Operand &lhs, Imm32 rhs) {
         switch (lhs.kind()) {
+          case Operand::REG:
+            masm.cmpq_ir(rhs.value, lhs.reg());
+            break;
           case Operand::REG_DISP:
             masm.cmpq_im(rhs.value, lhs.disp(), lhs.base());
             break;
@@ -499,15 +620,28 @@ class Assembler : public AssemblerX86Shared
     void cmpq(const Register &lhs, const Register &rhs) {
         masm.cmpq_rr(rhs.code(), lhs.code());
     }
-    void cmpq(Imm32 lhs, const Register &rhs) {
-        masm.cmpq_ir(lhs.value, rhs.code());
+    void cmpq(const Register &lhs, Imm32 rhs) {
+        masm.cmpq_ir(rhs.value, lhs.code());
     }
-    
+
     void testq(const Register &lhs, Imm32 rhs) {
         masm.testq_i32r(rhs.value, lhs.code());
     }
     void testq(const Register &lhs, const Register &rhs) {
         masm.testq_rr(rhs.code(), lhs.code());
+    }
+    void testq(const Operand &lhs, Imm32 rhs) {
+        switch (lhs.kind()) {
+          case Operand::REG:
+            masm.testq_i32r(rhs.value, lhs.reg());
+            break;
+          case Operand::REG_DISP:
+            masm.testq_i32m(rhs.value, lhs.disp(), lhs.base());
+            break;
+          default:
+            JS_NOT_REACHED("unexpected operand kind");
+            break;
+        }
     }
 
     void jmp(void *target, Relocation::Kind reloc = Relocation::HARDCODED) {
@@ -531,14 +665,26 @@ class Assembler : public AssemblerX86Shared
         addPendingJump(src, target->raw(), Relocation::IONCODE);
     }
 
+    // Emit a CALL or CMP (nop) instruction. ToggleCall can be used to patch
+    // this instruction.
+    CodeOffsetLabel toggledCall(IonCode *target, bool enabled) {
+        CodeOffsetLabel offset(size());
+        JmpSrc src = enabled ? masm.call() : masm.cmp_eax();
+        addPendingJump(src, target->raw(), Relocation::IONCODE);
+        JS_ASSERT(size() - offset.offset() == ToggledCallSize());
+        return offset;
+    }
+
+    static size_t ToggledCallSize() {
+        // Size of a call instruction.
+        return 5;
+    }
+
     // Do not mask shared implementations.
     using AssemblerX86Shared::call;
 
     void cvttsd2sq(const FloatRegister &src, const Register &dest) {
         masm.cvttsd2sq_rr(src.code(), dest.code());
-    }
-    void cvttsd2s(const FloatRegister &src, const Register &dest) {
-        cvttsd2sq(src, dest);
     }
     void cvtsq2sd(const Register &src, const FloatRegister &dest) {
         masm.cvtsq2sd_rr(src.code(), dest.code());
@@ -612,4 +758,4 @@ GetFloatArgReg(uint32_t intArg, uint32_t floatArg, FloatRegister *out)
 } // namespace ion
 } // namespace js
 
-#endif // jsion_cpu_x64_assembler_h__
+#endif /* ion_x64_Assembler_x64_h */

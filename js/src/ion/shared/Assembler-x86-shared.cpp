@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,6 +24,13 @@ AssemblerX86Shared::copyDataRelocationTable(uint8_t *dest)
 {
     if (dataRelocations_.length())
         memcpy(dest, dataRelocations_.buffer(), dataRelocations_.length());
+}
+
+void
+AssemblerX86Shared::copyPreBarrierTable(uint8_t *dest)
+{
+    if (preBarriers_.length())
+        memcpy(dest, preBarriers_.buffer(), preBarriers_.length());
 }
 
 static void
@@ -52,6 +58,7 @@ TraceDataRelocations(JSTracer *trc, uint8_t *buffer, CompactBufferReader &reader
         gc::MarkGCThingUnbarriered(trc, reinterpret_cast<void **>(ptr), "ion-masm-ptr");
     }
 }
+
 
 void
 AssemblerX86Shared::TraceDataRelocations(JSTracer *trc, IonCode *code, CompactBufferReader &reader)
@@ -83,21 +90,11 @@ AssemblerX86Shared::executableCopy(void *buffer)
 }
 
 void
-AssemblerX86Shared::processDeferredData(IonCode *code, uint8_t *data)
-{
-    for (size_t i = 0; i < data_.length(); i++) {
-        DeferredData *deferred = data_[i];
-        Bind(code, deferred->label(), data + deferred->offset());
-        deferred->copy(code, data + deferred->offset());
-    }
-}
-
-void
-AssemblerX86Shared::processCodeLabels(IonCode *code)
+AssemblerX86Shared::processCodeLabels(uint8_t *rawCode)
 {
     for (size_t i = 0; i < codeLabels_.length(); i++) {
-        CodeLabel *label = codeLabels_[i];
-        Bind(code, label->dest(), code->raw() + label->src()->offset());
+        CodeLabel label = codeLabels_[i];
+        Bind(rawCode, label.dest(), rawCode + label.src()->offset());
     }
 }
 
@@ -143,9 +140,9 @@ AutoFlushCache::flushAnyway()
 
 AutoFlushCache::~AutoFlushCache()
 {
-    if (!myCompartment_)
+    if (!runtime_)
         return;
 
-    if (myCompartment_->flusher() == this)
-        myCompartment_->setFlusher(NULL);
+    if (runtime_->flusher() == this)
+        runtime_->setFlusher(NULL);
 }

@@ -19,12 +19,12 @@
 #include "nsMenuParent.h"
 #include "nsXULPopupManager.h"
 #include "nsITimer.h"
-#include "nsIContent.h"
 #include "mozilla/Attributes.h"
 
 nsIFrame* NS_NewMenuFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 nsIFrame* NS_NewMenuItemFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 
+class nsIContent;
 class nsMenuBarFrame;
 
 #define NS_STATE_ACCELTEXT_IS_DERIVED  NS_STATE_BOX_CHILD_RESERVED
@@ -85,9 +85,9 @@ public:
   virtual nsSize GetMinSize(nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
   virtual nsSize GetPrefSize(nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
 
-  NS_IMETHOD Init(nsIContent*      aContent,
-                  nsIFrame*        aParent,
-                  nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
 
 #ifdef DEBUG_LAYOUT
   NS_IMETHOD SetDebug(nsBoxLayoutState& aState, bool aDebug) MOZ_OVERRIDE;
@@ -99,13 +99,13 @@ public:
   virtual const nsFrameList& GetChildList(ChildListID aList) const MOZ_OVERRIDE;
   virtual void GetChildLists(nsTArray<ChildList>* aLists) const MOZ_OVERRIDE;
   NS_IMETHOD SetInitialChildList(ChildListID     aListID,
-                                 nsFrameList&    aChildList);
-  virtual void DestroyFrom(nsIFrame* aDestructRoot);
+                                 nsFrameList&    aChildList) MOZ_OVERRIDE;
+  virtual void DestroyFrom(nsIFrame* aDestructRoot) MOZ_OVERRIDE;
 
   // Overridden to prevent events from going to children of the menu.
-  NS_IMETHOD BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
-                                         const nsRect&           aDirtyRect,
-                                         const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+  virtual void BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
+                                           const nsRect&           aDirtyRect,
+                                           const nsDisplayListSet& aLists) MOZ_OVERRIDE;
                                          
   // this method can destroy the frame
   NS_IMETHOD HandleEvent(nsPresContext* aPresContext, 
@@ -126,7 +126,7 @@ public:
 
   NS_IMETHOD SelectMenu(bool aActivateFlag);
 
-  virtual nsIScrollableFrame* GetScrollTargetFrame();
+  virtual nsIScrollableFrame* GetScrollTargetFrame() MOZ_OVERRIDE;
 
   /**
    * NOTE: OpenMenu will open the menu asynchronously.
@@ -146,7 +146,7 @@ public:
   // otherwise null will be returned.
   nsMenuFrame* Enter(nsGUIEvent* aEvent);
 
-  virtual void SetParent(nsIFrame* aParent);
+  virtual void SetParent(nsIFrame* aParent) MOZ_OVERRIDE;
 
   virtual nsMenuParent *GetMenuParent() { return mMenuParent; }
   const nsAString& GetRadioGroupName() { return mGroupName; }

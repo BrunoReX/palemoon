@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +8,6 @@
 
 #include "JSONSpewer.h"
 #include "LIR.h"
-#include "TypeOracle.h"
 #include "MIR.h"
 #include "MIRGraph.h"
 #include "LinearScan.h"
@@ -178,13 +176,16 @@ JSONSpewer::init(const char *path)
 }
 
 void
-JSONSpewer::beginFunction(UnrootedScript script)
+JSONSpewer::beginFunction(JSScript *script)
 {
     if (inFunction_)
         endFunction();
 
     beginObject();
-    stringProperty("name", "%s:%d", script->filename, script->lineno);
+    if (script)
+        stringProperty("name", "%s:%d", script->filename(), script->lineno);
+    else
+        stringProperty("name", "asm.js compilation");
     beginListProperty("passes");
 
     inFunction_ = true;
@@ -200,6 +201,9 @@ JSONSpewer::beginPass(const char *pass)
 void
 JSONSpewer::spewMResumePoint(MResumePoint *rp)
 {
+    if (!rp)
+        return;
+
     beginObjectProperty("resumePoint");
 
     if (rp->caller())
@@ -256,13 +260,17 @@ JSONSpewer::spewMDef(MDefinition *def)
         integerValue(use.def()->id());
     endList();
 
+    bool isTruncated = false;
+    if (def->isAdd() || def->isSub() || def->isMod() || def->isMul() || def->isDiv())
+        isTruncated = static_cast<MBinaryArithInstruction*>(def)->isTruncated();
+
     if (def->range()) {
         Sprinter sp(GetIonContext()->cx);
         sp.init();
         def->range()->print(sp);
-        stringProperty("type", "%s : %s", sp.string(), StringFromMIRType(def->type()));
+        stringProperty("type", "%s : %s%s", sp.string(), StringFromMIRType(def->type()), (isTruncated ? " (t)" : ""));
     } else {
-        stringProperty("type", "%s", StringFromMIRType(def->type()));
+        stringProperty("type", "%s%s", StringFromMIRType(def->type()), (isTruncated ? " (t)" : ""));
     }
 
     if (def->isInstruction()) {

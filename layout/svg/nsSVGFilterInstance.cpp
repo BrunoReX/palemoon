@@ -9,10 +9,9 @@
 // Keep others in (case-insensitive) order:
 #include "gfxPlatform.h"
 #include "gfxUtils.h"
-#include "nsIDOMSVGUnitTypes.h"
 #include "nsISVGChildFrame.h"
 #include "nsRenderingContext.h"
-#include "nsSVGFilterElement.h"
+#include "mozilla/dom/SVGFilterElement.h"
 #include "nsSVGFilterPaintCallback.h"
 #include "nsSVGUtils.h"
 #include "SVGContentUtils.h"
@@ -25,7 +24,7 @@ nsSVGFilterInstance::GetPrimitiveNumber(uint8_t aCtxType, float aValue) const
            nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER);
 
   float value;
-  if (mPrimitiveUnits == nsIDOMSVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
+  if (mPrimitiveUnits == mozilla::dom::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
     value = nsSVGUtils::ObjectSpace(mTargetBBox, &val);
   } else {
     value = nsSVGUtils::UserSpace(mTargetFrame, &val);
@@ -77,9 +76,7 @@ nsSVGFilterInstance::CreateImage()
 
   surface->SetDeviceOffset(gfxPoint(-mSurfaceRect.x, -mSurfaceRect.y));
 
-  gfxImageSurface *retval = nullptr;
-  surface.swap(retval);
-  return retval;
+  return surface.forget();
 }
 
 gfxRect
@@ -126,16 +123,16 @@ nsSVGFilterInstance::ComputeFilterPrimitiveSubregion(PrimitiveInfo* aPrimitive)
   }
 
   gfxRect feArea = nsSVGUtils::GetRelativeRect(mPrimitiveUnits,
-    &fE->mLengthAttributes[nsSVGFE::X], mTargetBBox, mTargetFrame);
+    &fE->mLengthAttributes[nsSVGFE::ATTR_X], mTargetBBox, mTargetFrame);
   gfxRect region = UserSpaceToFilterSpace(feArea);
 
-  if (!fE->mLengthAttributes[nsSVGFE::X].IsExplicitlySet())
+  if (!fE->mLengthAttributes[nsSVGFE::ATTR_X].IsExplicitlySet())
     region.x = defaultFilterSubregion.X();
-  if (!fE->mLengthAttributes[nsSVGFE::Y].IsExplicitlySet())
+  if (!fE->mLengthAttributes[nsSVGFE::ATTR_Y].IsExplicitlySet())
     region.y = defaultFilterSubregion.Y();
-  if (!fE->mLengthAttributes[nsSVGFE::WIDTH].IsExplicitlySet())
+  if (!fE->mLengthAttributes[nsSVGFE::ATTR_WIDTH].IsExplicitlySet())
     region.width = defaultFilterSubregion.Width();
-  if (!fE->mLengthAttributes[nsSVGFE::HEIGHT].IsExplicitlySet())
+  if (!fE->mLengthAttributes[nsSVGFE::ATTR_HEIGHT].IsExplicitlySet())
     region.height = defaultFilterSubregion.Height();
 
   // We currently require filter primitive subregions to be pixel-aligned.

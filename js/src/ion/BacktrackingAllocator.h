@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef js_ion_backtrackingallocator_h__
-#define js_ion_backtrackingallocator_h__
+#ifndef ion_BacktrackingAllocator_h
+#define ion_BacktrackingAllocator_h
 
 #include "LiveRangeAllocator.h"
 
@@ -187,15 +186,18 @@ class BacktrackingAllocator : public LiveRangeAllocator<BacktrackingVirtualRegis
     bool processGroup(VirtualRegisterGroup *group);
     bool setIntervalRequirement(LiveInterval *interval);
     bool tryAllocateRegister(PhysicalRegister &r, LiveInterval *interval,
-                             bool *success, LiveInterval **pconflicting);
+                             bool *success, bool *pfixed, LiveInterval **pconflicting);
     bool tryAllocateGroupRegister(PhysicalRegister &r, VirtualRegisterGroup *group,
-                                  bool *psuccess, LiveInterval **pconflicting);
+                                  bool *psuccess, bool *pfixed, LiveInterval **pconflicting);
     bool evictInterval(LiveInterval *interval);
+    bool distributeUses(LiveInterval *interval, const LiveIntervalVector &newIntervals);
     bool split(LiveInterval *interval, const LiveIntervalVector &newIntervals);
     bool requeueIntervals(const LiveIntervalVector &newIntervals);
     void spill(LiveInterval *interval);
 
     bool isReusedInput(LUse *use, LInstruction *ins, bool considerCopy = false);
+    bool isRegisterUse(LUse *use, LInstruction *ins);
+    bool isRegisterDefinition(LiveInterval *interval);
     bool addLiveInterval(LiveIntervalVector &intervals, uint32_t vreg,
                          CodePosition from, CodePosition to);
 
@@ -226,9 +228,10 @@ class BacktrackingAllocator : public LiveRangeAllocator<BacktrackingVirtualRegis
     bool trySplitAcrossHotcode(LiveInterval *interval, bool *success);
     bool trySplitAfterLastRegisterUse(LiveInterval *interval, bool *success);
     bool splitAtAllRegisterUses(LiveInterval *interval);
+    bool splitAcrossCalls(LiveInterval *interval);
 };
 
 } // namespace ion
 } // namespace js
 
-#endif
+#endif /* ion_BacktrackingAllocator_h */

@@ -4,8 +4,8 @@
 "use strict";
 
 const modules = [
-  "collector.jsm",
   "dataprovider.jsm",
+  "providermanager.jsm",
   "storage.jsm",
 ];
 
@@ -18,6 +18,8 @@ function run_test() {
     let resource = "resource://gre/modules/services/metrics/" + m;
     Components.utils.import(resource, {});
   }
+
+  Components.utils.import("resource://gre/modules/Metrics.jsm", {});
 
   for (let m of test_modules) {
     let resource = "resource://testing-common/services/metrics/" + m;

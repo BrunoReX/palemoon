@@ -6,8 +6,8 @@
 const {utils: Cu} = Components;
 
 Cu.import("resource://gre/modules/Metrics.jsm");
+Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://services-common/preferences.js");
 Cu.import("resource://testing-common/services/metrics/mocks.jsm");
 
 
@@ -54,23 +54,11 @@ add_task(function test_init() {
   let m = provider.getMeasurement("DummyMeasurement", 1);
   do_check_true(m instanceof Metrics.Measurement);
   do_check_eq(m.id, 1);
-  do_check_eq(m._fieldsByName.size, 7);
+  do_check_eq(Object.keys(m._fields).length, 7);
   do_check_true(m.hasField("daily-counter"));
   do_check_false(m.hasField("does-not-exist"));
 
   yield storage.close();
-});
-
-add_test(function test_prefs_integration() {
-  let branch = "testing.prefs_integration.";
-  let provider = new DummyProvider();
-  provider.initPreferences(branch);
-  let prefs = new Preferences(branch);
-
-  prefs.set("DummyProvider.foo", "bar");
-  do_check_eq(provider._prefs.get("foo"), "bar");
-
-  run_next_test();
 });
 
 add_task(function test_default_collectors() {
@@ -108,6 +96,10 @@ add_task(function test_measurement_storage_basic() {
 
   count = yield provider.storage.getDailyCounterCountFromFieldID(counterID, yesterday);
   do_check_eq(count, 1);
+
+  yield m.incrementDailyCounter("daily-counter", now, 4);
+  count = yield provider.storage.getDailyCounterCountFromFieldID(counterID, now);
+  do_check_eq(count, 6);
 
   // Daily discrete numeric.
   let dailyDiscreteNumericID = m.fieldID("daily-discrete-numeric");
@@ -256,15 +248,17 @@ add_task(function test_serialize_json_default() {
   let serializer = m.serializer(m.SERIALIZE_JSON);
   let formatted = serializer.singular(data.singular);
 
-  do_check_eq(Object.keys(formatted).length, 2);
+  do_check_eq(Object.keys(formatted).length, 3);  // Our keys + _v.
   do_check_true("last-numeric" in formatted);
   do_check_true("last-text" in formatted);
   do_check_eq(formatted["last-numeric"], 6);
   do_check_eq(formatted["last-text"], "hello");
+  do_check_eq(formatted["_v"], 1);
 
   formatted = serializer.daily(data.days.getDay(now));
-  do_check_eq(Object.keys(formatted).length, 5);
+  do_check_eq(Object.keys(formatted).length, 6);  // Our keys + _v.
   do_check_eq(formatted["daily-counter"], 2);
+  do_check_eq(formatted["_v"], 1);
 
   do_check_true(Array.isArray(formatted["daily-discrete-numeric"]));
   do_check_eq(formatted["daily-discrete-numeric"].length, 2);
@@ -281,6 +275,22 @@ add_task(function test_serialize_json_default() {
 
   formatted = serializer.daily(data.days.getDay(yesterday));
   do_check_eq(formatted["daily-last-numeric"], 5);
+  do_check_eq(formatted["daily-last-text"], "orange");
+
+  // Now let's turn off a field so that it's present in the DB
+  // but not present in the output.
+  let called = false;
+  let excluded = "daily-last-numeric";
+  Object.defineProperty(m, "shouldIncludeField", {
+    value: function fakeShouldIncludeField(field) {
+      called = true;
+      return field != excluded;
+    },
+  });
+
+  let limited = serializer.daily(data.days.getDay(yesterday));
+  do_check_true(called);
+  do_check_false(excluded in limited);
   do_check_eq(formatted["daily-last-text"], "orange");
 
   yield provider.storage.close();

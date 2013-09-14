@@ -11,6 +11,7 @@
 #include "nsGUIEvent.h"
 #include "nsIRollupListener.h"
 #include "nsChildView.h"
+#include "TextInputHandler.h"
 #include "nsWindowMap.h"
 #include "nsAppShell.h"
 #include "nsIAppShellService.h"
@@ -36,6 +37,7 @@
 #include "qcms.h"
 
 #include "mozilla/Preferences.h"
+#include <algorithm>
 
 namespace mozilla {
 namespace layers {
@@ -43,6 +45,7 @@ class LayerManager;
 }
 }
 using namespace mozilla::layers;
+using namespace mozilla::widget;
 using namespace mozilla;
 
 // defined in nsAppShell.mm
@@ -91,7 +94,8 @@ static void RollUpPopups()
   nsIRollupListener* rollupListener = nsBaseWidget::GetActiveRollupListener();
   NS_ENSURE_TRUE_VOID(rollupListener);
   nsCOMPtr<nsIWidget> rollupWidget = rollupListener->GetRollupWidget();
-  NS_ENSURE_TRUE_VOID(rollupWidget);
+  if (!rollupWidget)
+    return;
   rollupListener->Rollup(0, nullptr);
 }
 
@@ -166,8 +170,8 @@ nsCocoaWindow::~nsCocoaWindow()
   NS_IF_RELEASE(mPopupContentView);
 
   // Deal with the possiblity that we're being destroyed while running modal.
-  NS_ASSERTION(!mModal, "Widget destroyed while running modal!");
   if (mModal) {
+    NS_WARNING("Widget destroyed while running modal!");
     --gXULModalLevel;
     NS_ASSERTION(gXULModalLevel >= 0, "Wierdness setting modality!");
   }
@@ -471,6 +475,10 @@ nsresult nsCocoaWindow::CreateNativeWindow(const NSRect &aRect,
   [mWindow setContentMinSize:NSMakeSize(60, 60)];
   [mWindow disableCursorRects];
 
+  // Make sure the window starts out not draggable by the background.
+  // We will turn it on as necessary.
+  [mWindow setMovableByWindowBackground:NO];
+
   [[WindowDataMap sharedWindowDataMap] ensureDataForWindow:mWindow];
   mWindowMadeHere = true;
 
@@ -504,6 +512,12 @@ NS_IMETHODIMP nsCocoaWindow::CreatePopupContentView(const nsIntRect &aRect,
 
 NS_IMETHODIMP nsCocoaWindow::Destroy()
 {
+  // The reference from a possible sibling widget will never get cleared because
+  // we don't implement GetParent so RemoveChild never removes us from the
+  // sibling widget list. So if we don't hide ourselves here we may stay on
+  // screen. This is gross. (Bug 891424)
+  Show(false);
+
   if (mPopupContentView)
     mPopupContentView->Destroy();
 
@@ -987,7 +1001,7 @@ nsCocoaWindow::ConfigureChildren(const nsTArray<Configuration>& aConfigurations)
 }
 
 LayerManager*
-nsCocoaWindow::GetLayerManager(PLayersChild* aShadowManager,
+nsCocoaWindow::GetLayerManager(PLayerTransactionChild* aShadowManager,
                                LayersBackend aBackendHint,
                                LayerManagerPersistence aPersistence,
                                bool* aAllowRetaining)
@@ -1055,8 +1069,8 @@ NS_IMETHODIMP nsCocoaWindow::ConstrainPosition(bool aAllowSlop,
   NSRect frame = [mWindow frame];
 
   // zero size rects confuse the screen manager
-  width = NS_MAX<int32_t>(frame.size.width, 1);
-  height = NS_MAX<int32_t>(frame.size.height, 1);
+  width = std::max<int32_t>(frame.size.width, 1);
+  height = std::max<int32_t>(frame.size.height, 1);
 
   nsCOMPtr<nsIScreenManager> screenMgr = do_GetService("@mozilla.org/gfx/screenmanager;1");
   if (screenMgr) {
@@ -1111,10 +1125,10 @@ void nsCocoaWindow::SetSizeConstraints(const SizeConstraints& aConstraints)
 
   SizeConstraints c = aConstraints;
   c.mMinSize.width =
-    NS_MAX(nsCocoaUtils::CocoaPointsToDevPixels(rect.size.width, scaleFactor),
+    std::max(nsCocoaUtils::CocoaPointsToDevPixels(rect.size.width, scaleFactor),
            c.mMinSize.width);
   c.mMinSize.height =
-    NS_MAX(nsCocoaUtils::CocoaPointsToDevPixels(rect.size.height, scaleFactor),
+    std::max(nsCocoaUtils::CocoaPointsToDevPixels(rect.size.height, scaleFactor),
            c.mMinSize.height);
 
   NSSize minSize = {
@@ -1338,7 +1352,7 @@ nsresult nsCocoaWindow::DoResize(double aX, double aY,
   int32_t height = NSToIntRound(aHeight * scale);
   ConstrainSize(&width, &height);
 
-  nsIntRect newBounds(aX, aY,
+  nsIntRect newBounds(NSToIntRound(aX), NSToIntRound(aY),
                       NSToIntRound(width / scale),
                       NSToIntRound(height / scale));
 
@@ -1470,6 +1484,9 @@ GetBackingScaleFactor(NSWindow* aWindow)
   // Workaround: instead of asking the window, we'll find the screen it is on
   // and ask that for *its* backing scale factor.
 
+  // (See bug 853252 and additional comments in windowDidChangeScreen: below
+  // for further complications this causes.)
+
   // First, expand the rect so that it actually has a measurable area,
   // for FindTargetScreenForRect to use.
   if (frame.size.width == 0) {
@@ -1518,12 +1535,12 @@ nsCocoaWindow::BackingScaleFactorChanged()
       NSToIntRound(mSizeConstraints.mMinSize.height * scaleFactor);
     if (mSizeConstraints.mMaxSize.width < NS_MAXSIZE) {
       mSizeConstraints.mMaxSize.width =
-        NS_MIN(NS_MAXSIZE,
+        std::min(NS_MAXSIZE,
                NSToIntRound(mSizeConstraints.mMaxSize.width * scaleFactor));
     }
     if (mSizeConstraints.mMaxSize.height < NS_MAXSIZE) {
       mSizeConstraints.mMaxSize.height =
-        NS_MIN(NS_MAXSIZE,
+        std::min(NS_MAXSIZE,
                NSToIntRound(mSizeConstraints.mMaxSize.height * scaleFactor));
     }
   }
@@ -1642,11 +1659,6 @@ NS_IMETHODIMP nsCocoaWindow::GetIsSheet(bool* isSheet)
 NS_IMETHODIMP nsCocoaWindow::GetSheetWindowParent(NSWindow** sheetWindowParent)
 {
   *sheetWindowParent = mSheetWindowParent;
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsCocoaWindow::ResetInputState()
-{
   return NS_OK;
 }
 
@@ -2020,32 +2032,6 @@ gfxASurface* nsCocoaWindow::GetThebesSurface()
   return nullptr;
 }
 
-NS_IMETHODIMP nsCocoaWindow::BeginSecureKeyboardInput()
-{
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
-
-  nsresult rv = nsBaseWidget::BeginSecureKeyboardInput();
-  if (NS_SUCCEEDED(rv)) {
-    ::EnableSecureEventInput();
-  }
-  return rv;
-
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
-}
-
-NS_IMETHODIMP nsCocoaWindow::EndSecureKeyboardInput()
-{
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
-
-  nsresult rv = nsBaseWidget::EndSecureKeyboardInput();
-  if (NS_SUCCEEDED(rv)) {
-    ::DisableSecureEventInput();
-  }
-  return rv;
-
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
-}
-
 void nsCocoaWindow::SetPopupWindowLevel()
 {
   if (!mWindow)
@@ -2093,6 +2079,40 @@ bool nsCocoaWindow::ShouldFocusPlugin()
     return false;
 
   return true;
+}
+
+NS_IMETHODIMP
+nsCocoaWindow::NotifyIME(NotificationToIME aNotification)
+{
+  switch (aNotification) {
+    case NOTIFY_IME_OF_FOCUS:
+      if (mInputContext.IsPasswordEditor()) {
+        TextInputHandler::EnableSecureEventInput();
+      }
+      return NS_OK;
+    case NOTIFY_IME_OF_BLUR:
+      // When we're going to be deactive, we must disable the secure event input
+      // mode, see the Carbon Event Manager Reference.
+      TextInputHandler::EnsureSecureEventInputDisabled();
+      return NS_OK;
+    default:
+      return NS_ERROR_NOT_IMPLEMENTED;
+  }
+}
+
+NS_IMETHODIMP_(void)
+nsCocoaWindow::SetInputContext(const InputContext& aContext,
+                               const InputContextAction& aAction)
+{
+  // XXX Ideally, we should check if this instance has focus or not.
+  //     However, this is called only when this widget has focus, so,
+  //     it's not problem at least for now.
+  if (aContext.IsPasswordEditor()) {
+    TextInputHandler::EnableSecureEventInput();
+  } else {
+    TextInputHandler::EnsureSecureEventInputDisabled();
+  }
+  mInputContext = aContext;
 }
 
 @implementation WindowDelegate
@@ -2181,6 +2201,30 @@ bool nsCocoaWindow::ShouldFocusPlugin()
 {
   if (!mGeckoWindow)
     return;
+
+  // Because of Cocoa's peculiar treatment of zero-size windows (see comments
+  // at GetBackingScaleFactor() above), we sometimes have a situation where
+  // our concept of backing scale (based on the screen where the zero-sized
+  // window is positioned) differs from Cocoa's idea (always based on the
+  // Retina screen, AFAICT, even when an external non-Retina screen is the
+  // primary display).
+  //
+  // As a result, if the window was created with zero size on an external
+  // display, but then made visible on the (secondary) Retina screen, we
+  // will *not* get a windowDidChangeBackingProperties notification for it.
+  // This leads to an incorrect GetDefaultScale(), and widget coordinate
+  // confusion, as per bug 853252.
+  //
+  // To work around this, we check for a backing scale mismatch when we
+  // receive a windowDidChangeScreen notification, as we will receive this
+  // even if Cocoa was already treating the zero-size window as having
+  // Retina backing scale.
+  NSWindow *window = (NSWindow *)[aNotification object];
+  if ([window respondsToSelector:@selector(backingScaleFactor)]) {
+    if (GetBackingScaleFactor(window) != mGeckoWindow->BackingScaleFactor()) {
+      mGeckoWindow->BackingScaleFactorChanged();
+    }
+  }
 
   mGeckoWindow->ReportMoveEvent();
 }
@@ -2441,15 +2485,16 @@ GetDPI(NSWindow* aWindow)
 @interface BaseWindow(Private)
 - (void)removeTrackingArea;
 - (void)cursorUpdated:(NSEvent*)aEvent;
+- (void)updateContentViewSize;
 @end
 
 @implementation BaseWindow
 
 - (id)initWithContentRect:(NSRect)aContentRect styleMask:(NSUInteger)aStyle backing:(NSBackingStoreType)aBufferingType defer:(BOOL)aFlag
 {
+  mDrawsIntoWindowFrame = NO;
   [super initWithContentRect:aContentRect styleMask:aStyle backing:aBufferingType defer:aFlag];
   mState = nil;
-  mDrawsIntoWindowFrame = NO;
   mActiveTitlebarColor = nil;
   mInactiveTitlebarColor = nil;
   mScheduledShadowInvalidation = NO;
@@ -2506,6 +2551,7 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
 - (void)setDrawsContentsIntoWindowFrame:(BOOL)aState
 {
   mDrawsIntoWindowFrame = aState;
+  [self updateContentViewSize];
 }
 
 - (BOOL)drawsContentsIntoWindowFrame
@@ -2557,6 +2603,20 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
   return [contentView superview] ? [contentView superview] : contentView;
 }
 
+- (ChildView*)mainChildView
+{
+  NSView *contentView = [self contentView];
+  // A PopupWindow's contentView is a ChildView object.
+  if ([contentView isKindOfClass:[ChildView class]]) {
+    return (ChildView*)contentView;
+  }
+  NSView* lastView = [[contentView subviews] lastObject];
+  if ([lastView isKindOfClass:[ChildView class]]) {
+    return (ChildView*)lastView;
+  }
+  return nil;
+}
+
 - (void)removeTrackingArea
 {
   if (mTrackingArea) {
@@ -2598,6 +2658,73 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
 - (void)cursorUpdated:(NSEvent*)aEvent
 {
   // Nothing to do here, but NSTrackingArea wants us to implement this method.
+}
+
+- (void)updateContentViewSize
+{
+  NSRect rect = [self contentRectForFrameRect:[self frame]];
+  [[self contentView] setFrameSize:rect.size];
+}
+
+// Override methods that translate between content rect and frame rect.
+- (NSRect)contentRectForFrameRect:(NSRect)aRect
+{
+  if ([self drawsContentsIntoWindowFrame]) {
+    return aRect;
+  }
+  return [super contentRectForFrameRect:aRect];
+}
+
+- (NSRect)contentRectForFrameRect:(NSRect)aRect styleMask:(NSUInteger)aMask
+{
+  if ([self drawsContentsIntoWindowFrame]) {
+    return aRect;
+  }
+  if ([super respondsToSelector:@selector(contentRectForFrameRect:styleMask:)]) {
+    return [super contentRectForFrameRect:aRect styleMask:aMask];
+  } else {
+    return [NSWindow contentRectForFrameRect:aRect styleMask:aMask];
+  }
+}
+
+- (NSRect)frameRectForContentRect:(NSRect)aRect
+{
+  if ([self drawsContentsIntoWindowFrame]) {
+    return aRect;
+  }
+  return [super frameRectForContentRect:aRect];
+}
+
+- (NSRect)frameRectForContentRect:(NSRect)aRect styleMask:(NSUInteger)aMask
+{
+  if ([self drawsContentsIntoWindowFrame]) {
+    return aRect;
+  }
+  if ([super respondsToSelector:@selector(frameRectForContentRect:styleMask:)]) {
+    return [super frameRectForContentRect:aRect styleMask:aMask];
+  } else {
+    return [NSWindow frameRectForContentRect:aRect styleMask:aMask];
+  }
+}
+
+- (void)setContentView:(NSView*)aView
+{
+  [super setContentView:aView];
+
+  // Now move the contentView to the bottommost layer so that it's guaranteed
+  // to be under the window buttons.
+  NSView* frameView = [aView superview];
+  [aView removeFromSuperview];
+  [frameView addSubview:aView positioned:NSWindowBelow relativeTo:nil];
+}
+
+- (NSArray*)titlebarControls
+{
+  // Return all subviews of the frameView which are not the content view.
+  NSView* frameView = [[self contentView] superview];
+  NSMutableArray* array = [[[frameView subviews] mutableCopy] autorelease];
+  [array removeObject:[self contentView]];
+  return array;
 }
 
 - (BOOL)respondsToSelector:(SEL)aSelector
@@ -2666,9 +2793,27 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
   return retval;
 }
 
+// If we were built on OS X 10.6 or with the 10.6 SDK and are running on Lion,
+// the OS (specifically -[NSWindow sendEvent:]) won't send NSEventTypeGesture
+// events to -[ChildView magnifyWithEvent:] as it should.  The following code
+// gets around this.  See bug 863841.
+#if !defined( MAC_OS_X_VERSION_10_7 ) || \
+    ( MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7 )
+- (void)sendEvent:(NSEvent *)anEvent
+{
+  if ([ChildView isLionSmartMagnifyEvent: anEvent]) {
+    [[self mainChildView] magnifyWithEvent:anEvent];
+    return;
+  }
+  [super sendEvent:anEvent];
+}
+#endif
+
 @end
 
-// This class allows us to have a "unified toolbar" style window. It works like this:
+// This class allows us to exercise control over the window's title bar. This
+// allows for a "unified toolbar" look without having to extend the content
+// area into the title bar. It works like this:
 // 1) We set the window's style to textured.
 // 2) Because of this, the background color applies to the entire window, including
 //     the titlebar area. For normal textured windows, the default pattern is a 
@@ -2680,10 +2825,11 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
 // 4) Whenever the window's main state changes and when [window display] is called,
 //    Cocoa redraws the titlebar using the patternDraw callback function.
 //
-// This class also provides us with a pill button to show/hide the toolbar.
+// This class also provides us with a pill button to show/hide the toolbar up to 10.6.
 //
 // Drawing the unified gradient in the titlebar and the toolbar works like this:
-// 1) In the style sheet we set the toolbar's -moz-appearance to -moz-mac-unified-toolbar.
+// 1) In the style sheet we set the toolbar's -moz-appearance to toolbar or
+//    -moz-mac-unified-toolbar.
 // 2) When the toolbar is visible and we paint the application chrome
 //    window, the array that Gecko passes nsChildView::UpdateThemeGeometries
 //    will contain an entry for the widget type NS_THEME_TOOLBAR or
@@ -2697,11 +2843,15 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
 //
 // Whenever the unified gradient is drawn in the titlebar or the toolbar, both
 // titlebar height and toolbar height must be known in order to construct the
-// correct gradient (which is a linear gradient with the length
-// titlebarHeight + toolbarHeight - 1). But you can only get from the toolbar frame
+// correct gradient. But you can only get from the toolbar frame
 // to the containing window - the other direction doesn't work. That's why the
 // toolbar height is cached in the ToolbarWindow but nsNativeThemeCocoa can simply
 // query the window for its titlebar height when drawing the toolbar.
+//
+// Note that in drawsContentsIntoWindowFrame mode, titlebar drawing works in a
+// completely different way: In that mode, the window's mainChildView will
+// cover the titlebar completely and nothing that happens in the window
+// background will reach the screen.
 @implementation ToolbarWindow
 
 - (id)initWithContentRect:(NSRect)aContentRect styleMask:(NSUInteger)aStyle backing:(NSBackingStoreType)aBufferingType defer:(BOOL)aFlag
@@ -2715,12 +2865,12 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
     [super setBackgroundColor:mColor];
     mBackgroundColor = [[NSColor whiteColor] retain];
 
-    mUnifiedToolbarHeight = 0.0f;
+    mUnifiedToolbarHeight = 22.0f;
 
     // setBottomCornerRounded: is a private API call, so we check to make sure
     // we respond to it just in case.
     if ([self respondsToSelector:@selector(setBottomCornerRounded:)])
-      [self setBottomCornerRounded:NO];
+      [self setBottomCornerRounded:nsCocoaFeatures::OnLionOrLater()];
 
     [self setAutorecalculatesContentBorderThickness:NO forEdge:NSMaxYEdge];
     [self setContentBorderThickness:0.0f forEdge:NSMaxYEdge];
@@ -2736,6 +2886,7 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
 
   [mColor release];
   [mBackgroundColor release];
+  [mTitlebarView release];
   [super dealloc];
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
@@ -2788,26 +2939,33 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
                     [self frame].size.width, [self titlebarHeight]);
 }
 
-- (float)unifiedToolbarHeight
+// Returns the unified height of titlebar + toolbar.
+- (CGFloat)unifiedToolbarHeight
 {
   return mUnifiedToolbarHeight;
 }
 
-- (float)titlebarHeight
+- (CGFloat)titlebarHeight
 {
+  // We use the original content rect here, not what we return from
+  // [self contentRectForFrameRect:], because that would give us a
+  // titlebarHeight of zero in drawsContentsIntoWindowFrame mode.
   NSRect frameRect = [self frame];
-  return frameRect.size.height - [self contentRectForFrameRect:frameRect].size.height;
+  NSRect originalContentRect = [NSWindow contentRectForFrameRect:frameRect styleMask:[self styleMask]];
+  return NSMaxY(frameRect) - NSMaxY(originalContentRect);
 }
 
-- (void)setUnifiedToolbarHeight:(float)aHeight
+// Stores the complete height of titlebar + toolbar.
+- (void)setUnifiedToolbarHeight:(CGFloat)aHeight
 {
-  if ([self drawsContentsIntoWindowFrame] || aHeight == mUnifiedToolbarHeight)
+  if (aHeight == mUnifiedToolbarHeight)
     return;
 
   mUnifiedToolbarHeight = aHeight;
 
-  // Update sheet positioning hint.
-  [self setContentBorderThickness:mUnifiedToolbarHeight forEdge:NSMaxYEdge];
+  // Update sheet positioning hint
+  CGFloat topMargin = mUnifiedToolbarHeight - [self titlebarHeight];
+  [self setContentBorderThickness:topMargin forEdge:NSMaxYEdge];
 
   // Redraw the title bar. If we're inside painting, we'll do it right now,
   // otherwise we'll just invalidate it.
@@ -2815,11 +2973,17 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
   [self setTitlebarNeedsDisplayInRect:[self titlebarRect] sync:needSyncRedraw];
 }
 
+// Extending the content area into the title bar works by resizing the
+// mainChildView so that it covers the titlebar.
 - (void)setDrawsContentsIntoWindowFrame:(BOOL)aState
 {
   BOOL stateChanged = ([self drawsContentsIntoWindowFrame] != aState);
   [super setDrawsContentsIntoWindowFrame:aState];
   if (stateChanged && [[self delegate] isKindOfClass:[WindowDelegate class]]) {
+    // Here we extend / shrink our mainChildView. We do that by firing a resize
+    // event which will cause the ChildView to be resized to the rect returned
+    // by nsCocoaWindow::GetClientBounds. GetClientBounds bases its return
+    // value on what we return from drawsContentsIntoWindowFrame.
     WindowDelegate *windowDelegate = (WindowDelegate *)[self delegate];
     nsCocoaWindow *geckoWindow = [windowDelegate geckoWidget];
     if (geckoWindow) {
@@ -2833,8 +2997,6 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
     // content area, so that event would have wrong position information. So
     // we'll send a mouse move event with the correct new position.
     ChildViewMouseTracker::ResendLastMouseMoveEvent();
-
-    [self setTitlebarNeedsDisplayInRect:[self titlebarRect]];
   }
 }
 
@@ -2906,6 +3068,9 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
       if (delegate && [delegate isKindOfClass:[WindowDelegate class]]) {
         nsCocoaWindow *widget = [(WindowDelegate *)delegate geckoWidget];
         if (widget) {
+          if (type == NSMouseMoved) {
+            [[self mainChildView] updateWindowDraggableStateOnMouseMove:anEvent];
+          }
           if (gGeckoAppModalWindowList && (widget != gGeckoAppModalWindowList->window))
             return;
           if (widget->HasModalDescendents())
@@ -2924,7 +3089,7 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
 @end
 
 // Custom NSColor subclass where most of the work takes place for drawing in
-// the titlebar area.
+// the titlebar area. Not used in drawsContentsIntoWindowFrame mode.
 @implementation TitlebarAndBackgroundColor
 
 - (id)initWithWindow:(ToolbarWindow*)aWindow
@@ -2937,18 +3102,18 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
 
 static void
 DrawNativeTitlebar(CGContextRef aContext, CGRect aTitlebarRect,
-                   float aToolbarHeight, BOOL aIsMain)
+                   CGFloat aUnifiedToolbarHeight, BOOL aIsMain)
 {
   if (aTitlebarRect.size.width * aTitlebarRect.size.height > CUIDRAW_MAX_AREA) {
     return;
   }
-  int unifiedHeight = aTitlebarRect.size.height + aToolbarHeight;
+
   CUIDraw([NSWindow coreUIRenderer], aTitlebarRect, aContext,
           (CFDictionaryRef)[NSDictionary dictionaryWithObjectsAndKeys:
             @"kCUIWidgetWindowFrame", @"widget",
             @"regularwin", @"windowtype",
             (aIsMain ? @"normal" : @"inactive"), @"state",
-            [NSNumber numberWithInt:unifiedHeight], @"kCUIWindowFrameUnifiedTitleBarHeightKey",
+            [NSNumber numberWithDouble:aUnifiedToolbarHeight], @"kCUIWindowFrameUnifiedTitleBarHeightKey",
             [NSNumber numberWithBool:YES], @"kCUIWindowFrameDrawTitleSeparatorKey",
             nil],
           nil);
@@ -2968,23 +3133,8 @@ static void
 TitlebarDrawCallback(void* aInfo, CGContextRef aContext)
 {
   ToolbarWindow *window = (ToolbarWindow*)aInfo;
-  NSRect titlebarRect = [window titlebarRect];
-
-  if ([window drawsContentsIntoWindowFrame]) {
-    NSView* view = [[[window contentView] subviews] lastObject];
-    if (!view || ![view isKindOfClass:[ChildView class]])
-      return;
-
-    // Gecko drawing assumes flippedness, but the current context isn't flipped
-    // (because we're painting into the window's border view, which is not a
-    // ChildView, so it isn't flipped).
-    // So we need to set a flip transform.
-    CGContextScaleCTM(aContext, 1.0f, -1.0f);
-    CGContextTranslateCTM(aContext, 0.0f, -[window frame].size.height);
-
-    NSRect flippedTitlebarRect = { NSZeroPoint, titlebarRect.size };
-    [(ChildView*)view drawRect:flippedTitlebarRect inTitlebarContext:aContext];
-  } else {
+  if (![window drawsContentsIntoWindowFrame]) {
+    NSRect titlebarRect = [window titlebarRect];
     BOOL isMain = [window isMainWindow];
     NSColor *titlebarColor = [window titlebarColorForActiveWindow:isMain];
     if (!titlebarColor) {

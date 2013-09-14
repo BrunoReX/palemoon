@@ -1,4 +1,4 @@
-opensearch.ssl
+duckduckgo-palemoon
 bing
 google
 twitter

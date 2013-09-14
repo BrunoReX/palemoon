@@ -24,6 +24,8 @@
 #include "nsThreadUtils.h"
 #include "nsIXULAppInfo.h"
 #include "mozilla/Preferences.h"
+#include "nsPrintfCString.h"
+#include "mozilla/DebugOnly.h"
 
 #ifdef XP_MACOSX
 #include "nsILocalFileMac.h"
@@ -36,6 +38,7 @@
 # include <process.h>
 # include <windows.h>
 # include <shlwapi.h>
+# include "nsWindowsHelpers.h"
 # define getcwd(path, size) _getcwd(path, size)
 # define getpid() GetCurrentProcessId()
 #elif defined(XP_OS2)
@@ -45,6 +48,8 @@
 #elif defined(XP_UNIX)
 # include <unistd.h>
 #endif
+
+using namespace mozilla;
 
 //
 // We use execv to spawn the updater process on all UNIX systems except Mac OSX
@@ -96,8 +101,20 @@ static const char kUpdaterPNG[] = "updater.png";
 #endif
 
 #if defined(MOZ_WIDGET_GONK)
+#include <linux/ioprio.h>
+
 static const int kB2GServiceArgc = 2;
 static const char *kB2GServiceArgv[] = { "/system/bin/start", "b2g" };
+
+static const char kAppUpdaterPrio[]        = "app.update.updater.prio";
+static const char kAppUpdaterOomScoreAdj[] = "app.update.updater.oom_score_adj";
+static const char kAppUpdaterIOPrioClass[] = "app.update.updater.ioprio.class";
+static const char kAppUpdaterIOPrioLevel[] = "app.update.updater.ioprio.level";
+
+static const int  kAppUpdaterPrioDefault        = 19;     // -20..19 where 19 = lowest priority
+static const int  kAppUpdaterOomScoreAdjDefault = -1000;  // -1000 = Never kill
+static const int  kAppUpdaterIOPrioClassDefault = IOPRIO_CLASS_IDLE;
+static const int  kAppUpdaterIOPrioLevelDefault = 0;      // Doesn't matter for CLASS IDLE
 #endif
 
 static nsresult
@@ -515,9 +532,15 @@ SwitchToUpdatedApp(nsIFile *greDir, nsIFile *updateDir, nsIFile *statusFile,
 
   // Append a special token to the PID in order to let the updater know that it
   // just needs to replace the update directory.
-  pid.AppendASCII("/replace");
+  pid.AppendLiteral("/replace");
 
-  int argc = appArgc + 5;
+  int immersiveArgc = 0;
+#ifdef XP_WIN
+  if (IsRunningInWindowsMetro()) {
+    immersiveArgc = 1;
+  }
+#endif
+  int argc = appArgc + 5 + immersiveArgc;
   char **argv = new char*[argc + 1];
   if (!argv)
     return;
@@ -530,7 +553,11 @@ SwitchToUpdatedApp(nsIFile *greDir, nsIFile *updateDir, nsIFile *statusFile,
     argv[5] = (char*) appFilePath.get();
     for (int i = 1; i < appArgc; ++i)
       argv[5 + i] = appArgv[i];
-    argc = 5 + appArgc;
+#ifdef XP_WIN
+    if (immersiveArgc) {
+      argv[argc - 1] = "-ServerName:DefaultBrowserServer";
+    }
+#endif
     argv[argc] = NULL;
   } else {
     argc = 4;
@@ -579,8 +606,8 @@ GetOSApplyToDir(nsACString& applyToDir)
   NS_ASSERTION(ds, "Can't get directory service");
 
   nsCOMPtr<nsIFile> osApplyToDir;
-  nsresult rv = ds->Get(XRE_OS_UPDATE_APPLY_TO_DIR, NS_GET_IID(nsIFile),
-                        getter_AddRefs(osApplyToDir));
+  DebugOnly<nsresult> rv = ds->Get(XRE_OS_UPDATE_APPLY_TO_DIR, NS_GET_IID(nsIFile),
+                                   getter_AddRefs(osApplyToDir));
   NS_ASSERTION(NS_SUCCEEDED(rv), "Can't get the OS applyTo dir");
 
   return osApplyToDir->GetNativePath(applyToDir);
@@ -791,8 +818,14 @@ ApplyUpdate(nsIFile *greDir, nsIFile *updateDir, nsIFile *statusFile,
 #endif
   }
 
-  int argc = appArgc + 5;
-  char **argv = new char*[argc + 1];
+  int immersiveArgc = 0;
+#ifdef XP_WIN
+  if (IsRunningInWindowsMetro()) {
+    immersiveArgc = 1;
+  }
+#endif
+  int argc = appArgc + 5 + immersiveArgc;
+  char **argv = new char*[argc + 1 ];
   if (!argv)
     return;
   argv[0] = (char*) updaterPath.get();
@@ -804,7 +837,11 @@ ApplyUpdate(nsIFile *greDir, nsIFile *updateDir, nsIFile *statusFile,
     argv[5] = (char*) appFilePath.get();
     for (int i = 1; i < appArgc; ++i)
       argv[5 + i] = appArgv[i];
-    argc = 5 + appArgc;
+#ifdef XP_WIN
+    if (immersiveArgc) {
+      argv[argc - 1] = "-ServerName:DefaultBrowserServer";
+    }
+#endif
     argv[argc] = NULL;
   } else {
     argc = 4;
@@ -818,6 +855,23 @@ ApplyUpdate(nsIFile *greDir, nsIFile *updateDir, nsIFile *statusFile,
   if (isOSUpdate) {
     PR_SetEnv("MOZ_OS_UPDATE=1");
   }
+#if defined(MOZ_WIDGET_GONK)
+  // We want the updater to be CPU friendly and not subject to being killed by
+  // the low memory killer, so we pass in some preferences to allow it to
+  // adjust its priority.
+
+  int32_t prioVal = Preferences::GetInt(kAppUpdaterPrio,
+                                        kAppUpdaterPrioDefault);
+  int32_t oomScoreAdj = Preferences::GetInt(kAppUpdaterOomScoreAdj,
+                                            kAppUpdaterOomScoreAdjDefault);
+  int32_t ioprioClass = Preferences::GetInt(kAppUpdaterIOPrioClass,
+                                            kAppUpdaterIOPrioClassDefault);
+  int32_t ioprioLevel = Preferences::GetInt(kAppUpdaterIOPrioLevel,
+                                            kAppUpdaterIOPrioLevelDefault);
+  nsPrintfCString prioEnv("MOZ_UPDATER_PRIO=%d/%d/%d/%d",
+                          prioVal, oomScoreAdj, ioprioClass, ioprioLevel);
+  PR_SetEnv(prioEnv.get());
+#endif
 
   LOG(("spawning updater process [%s]\n", updaterPath.get()));
 
@@ -980,21 +1034,36 @@ nsUpdateProcessor::ProcessUpdate(nsIUpdate* aUpdate)
   int argc;
   char **argv;
 
-  NS_ENSURE_ARG_POINTER(aUpdate);
-
   nsAutoCString binPath;
   nsXREDirProvider* dirProvider = nsXREDirProvider::GetSingleton();
   if (dirProvider) { // Normal code path
     // Check for and process any available updates
     bool persistent;
-    nsresult rv = dirProvider->GetFile(XRE_UPDATE_ROOT_DIR, &persistent,
-                                       getter_AddRefs(updRoot));
+    nsresult rv = NS_ERROR_FAILURE; // Take the NS_FAILED path when non-GONK
+#ifdef MOZ_WIDGET_GONK
+    // Check in the sdcard for updates first, since that's our preferred
+    // download location.
+    rv = dirProvider->GetFile(XRE_UPDATE_ARCHIVE_DIR, &persistent,
+                              getter_AddRefs(updRoot));
+#endif
+    if (NS_FAILED(rv)) {
+      rv = dirProvider->GetFile(XRE_UPDATE_ROOT_DIR, &persistent,
+                                getter_AddRefs(updRoot));
+    }
     // XRE_UPDATE_ROOT_DIR may fail. Fallback to appDir if failed
     if (NS_FAILED(rv))
       updRoot = dirProvider->GetAppDir();
 
     greDir = dirProvider->GetGREDir();
-    appDir = dirProvider->GetAppDir();
+    nsCOMPtr<nsIFile> exeFile;
+    rv = dirProvider->GetFile(XRE_EXECUTABLE_FILE, &persistent,
+                              getter_AddRefs(exeFile));
+    if (NS_SUCCEEDED(rv))
+      rv = exeFile->GetParent(getter_AddRefs(appDir));
+
+    if (NS_FAILED(rv))
+      appDir = dirProvider->GetAppDir();
+
     appVersion = gAppData->version;
     argc = gRestartArgc;
     argv = gRestartArgv;
@@ -1061,6 +1130,8 @@ nsUpdateProcessor::ProcessUpdate(nsIUpdate* aUpdate)
   mInfo.mAppVersion = appVersion;
 
 #if defined(MOZ_WIDGET_GONK)
+  NS_ENSURE_ARG_POINTER(aUpdate);
+
   bool isOSUpdate;
   if (NS_SUCCEEDED(aUpdate->GetIsOSUpdate(&isOSUpdate)) &&
       isOSUpdate) {
@@ -1143,7 +1214,7 @@ nsUpdateProcessor::UpdateDone()
 
   nsCOMPtr<nsIUpdateManager> um =
     do_GetService("@mozilla.org/updates/update-manager;1");
-  if (um) {
+  if (um && mUpdate) {
     um->RefreshUpdateStatus(mUpdate);
   }
 

@@ -26,9 +26,9 @@ public:
     */
   nsFormControlFrame(nsStyleContext*);
 
-  virtual nsIAtom* GetType() const;
+  virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const MOZ_OVERRIDE
   {
     return nsLeafFrame::IsFrameOfType(aFlags &
       ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
@@ -45,7 +45,7 @@ public:
                          nsGUIEvent* aEvent,
                          nsEventStatus* aEventStatus) MOZ_OVERRIDE;
 
-  virtual nscoord GetBaseline() const;
+  virtual nscoord GetBaseline() const MOZ_OVERRIDE;
 
   /**
     * Respond to the request to resize and/or reflow
@@ -56,17 +56,15 @@ public:
                     const nsHTMLReflowState& aReflowState,
                     nsReflowStatus&      aStatus) MOZ_OVERRIDE;
 
-  virtual void DestroyFrom(nsIFrame* aDestructRoot);
+  virtual void DestroyFrom(nsIFrame* aDestructRoot) MOZ_OVERRIDE;
 
   // new behavior
 
-  virtual void SetFocus(bool aOn = true, bool aRepaint = false);
+  virtual void SetFocus(bool aOn = true, bool aRepaint = false) MOZ_OVERRIDE;
 
   // nsIFormControlFrame
   virtual nsresult SetFormProperty(nsIAtom* aName, const nsAString& aValue) MOZ_OVERRIDE;
 
-  virtual nsresult GetFormProperty(nsIAtom* aName, nsAString& aValue) const MOZ_OVERRIDE; 
-  
   // AccessKey Helper function
   static nsresult RegUnRegAccessKey(nsIFrame * aFrame, bool aDoReg);
 

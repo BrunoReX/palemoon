@@ -15,22 +15,7 @@ VPATH      := @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE         := content
-LIBRARY_NAME   := gkcondash_s
 LIBXUL_LIBRARY := 1
-
-EXPORTS := \
-  DASHDecoder.h \
-  DASHRepDecoder.h \
-  DASHReader.h \
-  DASHRepReader.h \
-  $(NULL)
-
-CPPSRCS := \
-  DASHDecoder.cpp \
-  DASHRepDecoder.cpp \
-  DASHReader.cpp \
-  $(NULL)
 
 FORCE_STATIC_LIB := 1
 

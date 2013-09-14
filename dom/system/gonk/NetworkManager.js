@@ -8,6 +8,7 @@ const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/FileUtils.jsm");
 
 const NETWORKMANAGER_CONTRACTID = "@mozilla.org/network/manager;1";
 const NETWORKMANAGER_CID =
@@ -21,26 +22,34 @@ const DEFAULT_PREFERRED_NETWORK_TYPE = Ci.nsINetworkInterface.NETWORK_TYPE_WIFI;
 XPCOMUtils.defineLazyServiceGetter(this, "gSettingsService",
                                    "@mozilla.org/settingsService;1",
                                    "nsISettingsService");
+XPCOMUtils.defineLazyGetter(this, "ppmm", function() {
+  return Cc["@mozilla.org/parentprocessmessagemanager;1"]
+         .getService(Ci.nsIMessageBroadcaster);
+});
+
+XPCOMUtils.defineLazyServiceGetter(this, "gDNSService",
+                                   "@mozilla.org/network/dns-service;1",
+                                   "nsIDNSService");
 
 const TOPIC_INTERFACE_STATE_CHANGED  = "network-interface-state-changed";
 const TOPIC_INTERFACE_REGISTERED     = "network-interface-registered";
 const TOPIC_INTERFACE_UNREGISTERED   = "network-interface-unregistered";
-const TOPIC_DEFAULT_ROUTE_CHANGED    = "network-default-route-changed";
+const TOPIC_ACTIVE_CHANGED           = "network-active-changed";
 const TOPIC_MOZSETTINGS_CHANGED      = "mozsettings-changed";
 const TOPIC_PREF_CHANGED             = "nsPref:changed";
 const TOPIC_XPCOM_SHUTDOWN           = "xpcom-shutdown";
 const PREF_MANAGE_OFFLINE_STATUS     = "network.gonk.manage-offline-status";
 
-// TODO, get USB RNDIS interface name automatically.(see Bug 776212)
+const POSSIBLE_USB_INTERFACE_NAME = "rndis0,usb0";
 const DEFAULT_USB_INTERFACE_NAME  = "rndis0";
 const DEFAULT_3G_INTERFACE_NAME   = "rmnet0";
 const DEFAULT_WIFI_INTERFACE_NAME = "wlan0";
 
+// The kernel's proc entry for network lists.
+const KERNEL_NETWORK_ENTRY = "/sys/class/net";
+
 const TETHERING_TYPE_WIFI = "WiFi";
 const TETHERING_TYPE_USB  = "USB";
-
-const USB_FUNCTION_RNDIS = "rndis,adb";
-const USB_FUNCTION_ADB   = "adb";
 
 // 1xx - Requested action is proceeding
 const NETD_COMMAND_PROCEEDING   = 100;
@@ -64,15 +73,8 @@ const WIFI_CTRL_INTERFACE         = "wl0.1";
 const NETWORK_INTERFACE_UP   = "up";
 const NETWORK_INTERFACE_DOWN = "down";
 
-// Settings DB path for Wifi tethering.
-const SETTINGS_WIFI_ENABLED            = "tethering.wifi.enabled";
-const SETTINGS_WIFI_SSID               = "tethering.wifi.ssid";
-const SETTINGS_WIFI_SECURITY_TYPE      = "tethering.wifi.security.type";
-const SETTINGS_WIFI_SECURITY_PASSWORD  = "tethering.wifi.security.password";
-const SETTINGS_WIFI_IP                 = "tethering.wifi.ip";
-const SETTINGS_WIFI_PREFIX             = "tethering.wifi.prefix";
-const SETTINGS_WIFI_DHCPSERVER_STARTIP = "tethering.wifi.dhcpserver.startip";
-const SETTINGS_WIFI_DHCPSERVER_ENDIP   = "tethering.wifi.dhcpserver.endip";
+const TETHERING_STATE_ONGOING = "ongoing";
+const TETHERING_STATE_IDLE    = "idle";
 
 // Settings DB path for USB tethering.
 const SETTINGS_USB_ENABLED             = "tethering.usb.enabled";
@@ -80,6 +82,17 @@ const SETTINGS_USB_IP                  = "tethering.usb.ip";
 const SETTINGS_USB_PREFIX              = "tethering.usb.prefix";
 const SETTINGS_USB_DHCPSERVER_STARTIP  = "tethering.usb.dhcpserver.startip";
 const SETTINGS_USB_DHCPSERVER_ENDIP    = "tethering.usb.dhcpserver.endip";
+const SETTINGS_USB_DNS1                = "tethering.usb.dns1";
+const SETTINGS_USB_DNS2                = "tethering.usb.dns2";
+
+// Default value for USB tethering.
+const DEFAULT_USB_IP                   = "192.168.0.1";
+const DEFAULT_USB_PREFIX               = "24";
+const DEFAULT_USB_DHCPSERVER_STARTIP   = "192.168.0.10";
+const DEFAULT_USB_DHCPSERVER_ENDIP     = "192.168.0.30";
+
+const DEFAULT_DNS1                     = "8.8.8.8";
+const DEFAULT_DNS2                     = "8.8.4.4";
 
 const MANUAL_PROXY_CONFIGURATION = 1;
 
@@ -99,6 +112,13 @@ function isComplete(code) {
   return (type != NETD_COMMAND_PROCEEDING);
 }
 
+function defineLazyRegExp(obj, name, pattern) {
+  obj.__defineGetter__(name, function() {
+    delete obj[name];
+    return obj[name] = new RegExp(pattern);
+  });
+}
+
 /**
  * This component watches for network interfaces changing state and then
  * adjusts routes etc. accordingly.
@@ -106,6 +126,8 @@ function isComplete(code) {
 function NetworkManager() {
   this.networkInterfaces = {};
   Services.obs.addObserver(this, TOPIC_INTERFACE_STATE_CHANGED, true);
+  Services.obs.addObserver(this, TOPIC_INTERFACE_REGISTERED, true);
+  Services.obs.addObserver(this, TOPIC_INTERFACE_UNREGISTERED, true);
   Services.obs.addObserver(this, TOPIC_XPCOM_SHUTDOWN, false);
   Services.obs.addObserver(this, TOPIC_MOZSETTINGS_CHANGED, false);
 
@@ -130,6 +152,9 @@ function NetworkManager() {
   }
   Services.prefs.addObserver(PREF_MANAGE_OFFLINE_STATUS, this, false);
 
+  // Possible usb tethering interfaces for different gonk platform.
+  this.possibleInterface = POSSIBLE_USB_INTERFACE_NAME.split(",");
+
   // Default values for internal and external interfaces.
   this._tetheringInterface = Object.create(null);
   this._tetheringInterface[TETHERING_TYPE_USB] = {externalInterface: DEFAULT_3G_INTERFACE_NAME,
@@ -137,44 +162,34 @@ function NetworkManager() {
   this._tetheringInterface[TETHERING_TYPE_WIFI] = {externalInterface: DEFAULT_3G_INTERFACE_NAME,
                                                    internalInterface: DEFAULT_WIFI_INTERFACE_NAME};
 
-  this.tetheringSettings[SETTINGS_WIFI_ENABLED] = false;
-  this.tetheringSettings[SETTINGS_USB_ENABLED] = false;
+  this.initTetheringSettings();
 
   let settingsLock = gSettingsService.createLock();
-  // Read wifi tethering data from settings DB.
-  settingsLock.get(SETTINGS_WIFI_SSID, this);
-  settingsLock.get(SETTINGS_WIFI_SECURITY_TYPE, this);
-  settingsLock.get(SETTINGS_WIFI_SECURITY_PASSWORD, this);
-  settingsLock.get(SETTINGS_WIFI_IP, this);
-  settingsLock.get(SETTINGS_WIFI_PREFIX, this);
-  settingsLock.get(SETTINGS_WIFI_DHCPSERVER_STARTIP, this);
-  settingsLock.get(SETTINGS_WIFI_DHCPSERVER_ENDIP, this);
   // Read usb tethering data from settings DB.
   settingsLock.get(SETTINGS_USB_IP, this);
   settingsLock.get(SETTINGS_USB_PREFIX, this);
   settingsLock.get(SETTINGS_USB_DHCPSERVER_STARTIP, this);
   settingsLock.get(SETTINGS_USB_DHCPSERVER_ENDIP, this);
+  settingsLock.get(SETTINGS_USB_DNS1, this);
+  settingsLock.get(SETTINGS_USB_DNS2, this);
+  settingsLock.get(SETTINGS_USB_ENABLED, this);
 
+  this._usbTetheringSettingsToRead = [SETTINGS_USB_IP,
+                                      SETTINGS_USB_PREFIX,
+                                      SETTINGS_USB_DHCPSERVER_STARTIP,
+                                      SETTINGS_USB_DHCPSERVER_ENDIP,
+                                      SETTINGS_USB_DNS1,
+                                      SETTINGS_USB_DNS2,
+                                      SETTINGS_USB_ENABLED];
+
+  this.wantConnectionEvent = null;
   this.setAndConfigureActive();
 
-  let self = this;
-  this.waitForConnectionReadyCallback = null;
-  settingsLock.get(SETTINGS_WIFI_ENABLED, {
-    handle: function (aName, aResult) {
-      if (!aResult) {
-        return;
-      }
-      // Turn on wifi tethering when the mobile data connection is established.
-      self.waitForConnectionReadyCallback = (function callback() {
-        let settingsLock = gSettingsService.createLock();
-        settingsLock.set(SETTINGS_WIFI_ENABLED, aResult, null);
-      });
-    },
+  ppmm.addMessageListener('NetworkInterfaceList:ListInterface', this);
 
-    handleError: function (aErrorMessage) {
-      debug("Error reading the 'tethering.wifi.enabled' setting: " + aErrorMessage);
-    }
-  });
+  // Used in resolveHostname().
+  defineLazyRegExp(this, "REGEXP_IPV4", "^\\d{1,3}(?:\\.\\d{1,3}){3}$");
+  defineLazyRegExp(this, "REGEXP_IPV6", "^[\\da-fA-F]{4}(?::[\\da-fA-F]{4}){7}$");
 }
 NetworkManager.prototype = {
   classID:   NETWORKMANAGER_CID,
@@ -211,11 +226,15 @@ NetworkManager.prototype = {
             // to set default route only on preferred network
             this.removeDefaultRoute(network.name);
             this.setAndConfigureActive();
-            // Turn on wifi tethering when the callback is set.
-            if (this.waitForConnectionReadyCallback) {
-              this.waitForConnectionReadyCallback.call(this);
-              this.waitForConnectionReadyCallback = null;
+            // Update data connection when Wifi connected/disconnected
+            if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_WIFI) {
+              this.mRIL.updateRILNetworkInterface();
             }
+
+            this.onConnectionChanged(network);
+
+            // Probing the public network accessibility after routing table is ready
+            CaptivePortalDetectionHelper.notify(CaptivePortalDetectionHelper.EVENT_CONNECT, this.active);
             break;
           case Ci.nsINetworkInterface.NETWORK_STATE_DISCONNECTED:
             // Remove host route for data calls
@@ -224,8 +243,40 @@ NetworkManager.prototype = {
                 network.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_SUPL) {
               this.removeHostRoute(network);
             }
+            // Remove routing table in /proc/net/route
+            if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_WIFI) {
+              this.resetRoutingTable(this._activeInfo);
+            }
+            // Abort ongoing captive portal detection on the wifi interface
+            CaptivePortalDetectionHelper.notify(CaptivePortalDetectionHelper.EVENT_DISCONNECT, network);
             this.setAndConfigureActive();
+            // Update data connection when Wifi connected/disconnected
+            if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_WIFI) {
+              this.mRIL.updateRILNetworkInterface();
+            }
             break;
+        }
+        break;
+      case TOPIC_INTERFACE_REGISTERED:
+        let regNetwork = subject.QueryInterface(Ci.nsINetworkInterface);
+        if (regNetwork.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_MMS) {
+          debug("Network '" + regNetwork.name + "' registered, adding mmsproxy and/or mmsc route");
+	  let mmsHosts = this.resolveHostname(
+	      [ Services.prefs.getCharPref("ril.mms.mmsproxy"),
+                Services.prefs.getCharPref("ril.mms.mmsc") ]
+	    );
+          this.addHostRouteWithResolve(regNetwork, mmsHosts);
+        }
+        break;
+      case TOPIC_INTERFACE_UNREGISTERED:
+        let unregNetwork = subject.QueryInterface(Ci.nsINetworkInterface);
+        if (unregNetwork.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_MMS) {
+          debug("Network '" + unregNetwork.name + "' unregistered, removing mmsproxy and/or mmsc route");
+	  let mmsHosts = this.resolveHostname(
+	      [ Services.prefs.getCharPref("ril.mms.mmsproxy"),
+                Services.prefs.getCharPref("ril.mms.mmsc") ]
+	    );
+          this.removeHostRouteWithResolve(unregNetwork, mmsHosts);
         }
         break;
       case TOPIC_MOZSETTINGS_CHANGED:
@@ -240,8 +291,42 @@ NetworkManager.prototype = {
       case TOPIC_XPCOM_SHUTDOWN:
         Services.obs.removeObserver(this, TOPIC_XPCOM_SHUTDOWN);
         Services.obs.removeObserver(this, TOPIC_MOZSETTINGS_CHANGED);
+        Services.obs.removeObserver(this, TOPIC_INTERFACE_REGISTERED);
+        Services.obs.removeObserver(this, TOPIC_INTERFACE_UNREGISTERED);
         Services.obs.removeObserver(this, TOPIC_INTERFACE_STATE_CHANGED);
         break;
+    }
+  },
+
+  receiveMessage: function receiveMessage(aMsg) {
+    switch (aMsg.name) {
+      case "NetworkInterfaceList:ListInterface": {
+        let excludeMms = aMsg.json.exculdeMms;
+        let excludeSupl = aMsg.json.exculdeSupl;
+        let interfaces = [];
+
+        for each (let i in this.networkInterfaces) {
+          if ((i.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_MMS && excludeMms) ||
+              (i.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_SUPL && excludeSupl)) {
+            continue;
+          }
+          interfaces.push({
+            state: i.state,
+            type: i.type,
+            name: i.name,
+            dhcp: i.dhcp,
+            ip: i.ip,
+            netmask: i.netmask,
+            broadcast: i.broadcast,
+            gateway: i.gateway,
+            dns1: i.dns1,
+            dns2: i.dns2,
+            httpProxyHost: i.httpProxyHost,
+            httpProxyPort: i.httpProxyPort
+          });
+        }
+        return interfaces;
+      }
     }
   },
 
@@ -313,36 +398,31 @@ NetworkManager.prototype = {
   active: null,
   _overriddenActive: null,
 
+  // Clone network info so we can still get information when network is disconnected
+  _activeInfo: null,
+
   overrideActive: function overrideActive(network) {
     this._overriddenActive = network;
     this.setAndConfigureActive();
   },
 
-  getNetworkInterfaceStats: function getNetworkInterfaceStats(connectionType, callback) {
-    let iface = this.getNetworkInterface(connectionType);
-
-    if (!iface) {
-      debug("There is no interface registered for network type " + connectionType);
-      return false;
-    }
-
-    debug("getNetworkInterfaceStats for " + iface.name);
+  getNetworkInterfaceStats: function getNetworkInterfaceStats(networkName, callback) {
+    debug("getNetworkInterfaceStats for " + networkName);
 
     let params = {
       cmd: "getNetworkInterfaceStats",
-      ifname: iface.name,
-      connType: connectionType
+      ifname: networkName
     };
 
     params.report = true;
     params.isAsync = true;
 
     this.controlMessage(params, function(result) {
-      let success = result.resultCode >= NETD_COMMAND_OKAY && result.resultCode < NETD_COMMAND_ERROR;
-      callback.networkStatsAvailable(success, result.connType, result.rxBytes, result.txBytes, result.date);
+      let success = result.resultCode >= NETD_COMMAND_OKAY &&
+                    result.resultCode < NETD_COMMAND_ERROR;
+      callback.networkStatsAvailable(success, result.rxBytes,
+                                     result.txBytes, result.date);
     });
-
-    return true;
   },
 
   // Helpers
@@ -360,6 +440,10 @@ NetworkManager.prototype = {
     debug("NetworkManager received message from worker: " + JSON.stringify(e.data));
     let response = e.data;
     let id = response.id;
+    if (id == 'broadcast') {
+      Services.obs.notifyObservers(null, response.topic, response.reason);
+      return;
+    }
     let callback = this.controlCallbacks[id];
     if (callback) {
       callback.call(this, response);
@@ -381,20 +465,23 @@ NetworkManager.prototype = {
       if (this.active != this._overriddenActive) {
         this.active = this._overriddenActive;
         this.setDefaultRouteAndDNS(oldActive);
+        Services.obs.notifyObservers(this.active, TOPIC_ACTIVE_CHANGED, null);
       }
       return;
     }
 
-    // If the active network is already of the preferred type, nothing to do.
+    // The active network is already our preferred type.
     if (this.active &&
         this.active.state == Ci.nsINetworkInterface.NETWORK_STATE_CONNECTED &&
         this.active.type == this._preferredNetworkType) {
-      debug("Active network is already our preferred type. Not doing anything.");
+      debug("Active network is already our preferred type.");
+      this.setDefaultRouteAndDNS(oldActive);
       return;
     }
 
     // Find a suitable network interface to activate.
     this.active = null;
+    this._activeInfo = Object.create(null);
     for each (let network in this.networkInterfaces) {
       if (network.state != Ci.nsINetworkInterface.NETWORK_STATE_CONNECTED) {
         continue;
@@ -403,6 +490,7 @@ NetworkManager.prototype = {
         defaultDataNetwork = network;
       }
       this.active = network;
+      this._activeInfo = {name:network.name, ip:network.ip, netmask:network.netmask};
       if (network.type == this.preferredNetworkType) {
         debug("Found our preferred type of network: " + network.name);
         break;
@@ -419,11 +507,24 @@ NetworkManager.prototype = {
         this.active = defaultDataNetwork;
       }
       this.setDefaultRouteAndDNS(oldActive);
+      if (this.active != oldActive) {
+        Services.obs.notifyObservers(this.active, TOPIC_ACTIVE_CHANGED, null);
+      }
     }
 
     if (this._manageOfflineStatus) {
       Services.io.offline = !this.active;
     }
+  },
+
+  resetRoutingTable: function resetRoutingTable(network) {
+    let options = {
+      cmd: "removeNetworkRoute",
+      ifname: network.name,
+      ip : network.ip,
+      netmask: network.netmask,
+    };
+    this.worker.postMessage(options);
   },
 
   setDefaultRouteAndDNS: function setDefaultRouteAndDNS(oldInterface) {
@@ -454,11 +555,8 @@ NetworkManager.prototype = {
     let options = {
       cmd: "addHostRoute",
       ifname: network.name,
-      dns1: network.dns1,
-      dns2: network.dns2,
       gateway: network.gateway,
-      httpproxy: network.httpProxyHost,
-      mmsproxy: Services.prefs.getCharPref("ril.mms.mmsproxy")
+      hostnames: [network.dns1, network.dns2, network.httpProxyHost]
     };
     this.worker.postMessage(options);
   },
@@ -468,11 +566,57 @@ NetworkManager.prototype = {
     let options = {
       cmd: "removeHostRoute",
       ifname: network.name,
-      dns1: network.dns1,
-      dns2: network.dns2,
       gateway: network.gateway,
-      httpproxy: network.httpProxyHost,
-      mmsproxy: Services.prefs.getCharPref("ril.mms.mmsproxy")
+      hostnames: [network.dns1, network.dns2, network.httpProxyHost]
+    };
+    this.worker.postMessage(options);
+  },
+
+  resolveHostname: function resolveHostname(hosts) {
+    let retval = [];
+
+    for (let hostname of hosts) {
+      try {
+        let uri = Services.io.newURI(hostname, null, null);
+        hostname = uri.host;
+      } catch (e) {}
+
+      if (hostname.match(this.REGEXP_IPV4) ||
+          hostname.match(this.REGEXP_IPV6)) {
+        retval.push(hostname);
+        continue;
+      }
+
+      try {
+        let hostnameIps = gDNSService.resolve(hostname, 0);
+        while (hostnameIps.hasMore()) {
+          retval.push(hostnameIps.getNextAddrAsString());
+          debug("Found IP at: " + JSON.stringify(retval));
+        }
+      } catch (e) {}
+    }
+
+    return retval;
+  },
+
+  addHostRouteWithResolve: function addHostRouteWithResolve(network, hosts) {
+    debug("Going to add host route after dns resolution on " + network.name);
+    let options = {
+      cmd: "addHostRoute",
+      ifname: network.name,
+      gateway: network.gateway,
+      hostnames: hosts
+    };
+    this.worker.postMessage(options);
+  },
+
+  removeHostRouteWithResolve: function removeHostRouteWithResolve(network, hosts) {
+    debug("Going to remove host route after dns resolution on " + network.name);
+    let options = {
+      cmd: "removeHostRoute",
+      ifname: network.name,
+      gateway: network.gateway,
+      hostnames: hosts
     };
     this.worker.postMessage(options);
   },
@@ -512,28 +656,52 @@ NetworkManager.prototype = {
 
   tetheringSettings: {},
 
+  initTetheringSettings: function initTetheringSettings() {
+    this.tetheringSettings[SETTINGS_USB_ENABLED] = false;
+    this.tetheringSettings[SETTINGS_USB_IP] = DEFAULT_USB_IP;
+    this.tetheringSettings[SETTINGS_USB_PREFIX] = DEFAULT_USB_PREFIX;
+    this.tetheringSettings[SETTINGS_USB_DHCPSERVER_STARTIP] = DEFAULT_USB_DHCPSERVER_STARTIP;
+    this.tetheringSettings[SETTINGS_USB_DHCPSERVER_ENDIP] = DEFAULT_USB_DHCPSERVER_ENDIP;
+    this.tetheringSettings[SETTINGS_USB_DNS1] = DEFAULT_DNS1;
+    this.tetheringSettings[SETTINGS_USB_DNS2] = DEFAULT_DNS2;
+  },
+
+  _requestCount: 0,
+
   handle: function handle(aName, aResult) {
     switch(aName) {
       case SETTINGS_USB_ENABLED:
-        this.handleUSBTetheringToggle(aResult);
-        break;
-      // SETTINGS_WIFI_ENABLED is handled in WifiManager.js to deal with
-      // the interaction between wifi and wifi tethering settings. Also, we
-      // update tetheringSettings[SETTINGS_WIFI_ENABLED] in setWifiTethering
-      // function.
-      case SETTINGS_WIFI_SSID:
-      case SETTINGS_WIFI_SECURITY_TYPE:
-      case SETTINGS_WIFI_SECURITY_PASSWORD:
-      case SETTINGS_WIFI_IP:
-      case SETTINGS_WIFI_PREFIX:
-      case SETTINGS_WIFI_DHCPSERVER_STARTIP:
-      case SETTINGS_WIFI_DHCPSERVER_ENDIP:
+        this._oldUsbTetheringEnabledState = this.tetheringSettings[SETTINGS_USB_ENABLED];
       case SETTINGS_USB_IP:
       case SETTINGS_USB_PREFIX:
       case SETTINGS_USB_DHCPSERVER_STARTIP:
       case SETTINGS_USB_DHCPSERVER_ENDIP:
-        this.tetheringSettings[aName] = aResult;
+      case SETTINGS_USB_DNS1:
+      case SETTINGS_USB_DNS2:
+        if (aResult !== null) {
+          this.tetheringSettings[aName] = aResult;
+        }
         debug("'" + aName + "'" + " is now " + this.tetheringSettings[aName]);
+        let index = this._usbTetheringSettingsToRead.indexOf(aName);
+
+        if (index != -1) {
+          this._usbTetheringSettingsToRead.splice(index, 1);
+        }
+
+        if (this._usbTetheringSettingsToRead.length) {
+          debug("We haven't read completely the usb Tethering data from settings db.");
+          break;
+        }
+
+        if (this._oldUsbTetheringEnabledState === this.tetheringSettings[SETTINGS_USB_ENABLED]) {
+          debug("No changes for SETTINGS_USB_ENABLED flag. Nothing to do.");
+          break;
+        }
+
+        this._requestCount++;
+        if (this._requestCount === 1) {
+          this.handleUSBTetheringToggle(aResult);
+        }
         break;
     };
   },
@@ -541,7 +709,6 @@ NetworkManager.prototype = {
   handleError: function handleError(aErrorMessage) {
     debug("There was an error while reading Tethering settings.");
     this.tetheringSettings = {};
-    this.tetheringSettings[SETTINGS_WIFI_ENABLED] = false;
     this.tetheringSettings[SETTINGS_USB_ENABLED] = false;
   },
 
@@ -554,17 +721,39 @@ NetworkManager.prototype = {
     return null;
   },
 
+  _usbTetheringAction: TETHERING_STATE_IDLE,
+
+  _usbTetheringSettingsToRead: [],
+
+  _oldUsbTetheringEnabledState: null,
+
   // External and internal interface name.
   _tetheringInterface: null,
 
-  handleUSBTetheringToggle: function handleUSBTetheringToggle(enable) {
-    if (this.tetheringSettings[SETTINGS_USB_ENABLED] == enable) {
+  handleLastRequest: function handleLastRequest() {
+    let count = this._requestCount;
+    this._requestCount = 0;
+
+    if (count === 1) {
+      if (this.wantConnectionEvent) {
+        if (this.tetheringSettings[SETTINGS_USB_ENABLED]) {
+          this.wantConnectionEvent.call(this);
+        }
+        this.wantConnectionEvent = null;
+      }
       return;
     }
 
+    if (count > 1) {
+      this.handleUSBTetheringToggle(this.tetheringSettings[SETTINGS_USB_ENABLED]);
+      this.wantConnectionEvent = null;
+    }
+  },
+
+  handleUSBTetheringToggle: function handleUSBTetheringToggle(enable) {
     if (!enable) {
       this.tetheringSettings[SETTINGS_USB_ENABLED] = false;
-      this.setUSBFunction(false, USB_FUNCTION_ADB, this.setUSBFunctionResult);
+      this.enableUsbRndis(false, this.enableUsbRndisResult);
       return;
     }
 
@@ -572,82 +761,12 @@ NetworkManager.prototype = {
       this._tetheringInterface[TETHERING_TYPE_USB].externalInterface = this.active.name
     } else {
       let mobile = this.getNetworkInterface(Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE);
-      if (!mobile) {
-        let params = {
-          enable: enable,
-          resultCode: NETD_COMMAND_ERROR,
-          resultReason: "Mobile interface is not registered"
-        };
-        this.usbTetheringResultReport(params);
-        debug("Can't enable usb tethering - no active network interface.");
-        return;
+      if (mobile) {
+        this._tetheringInterface[TETHERING_TYPE_USB].externalInterface = mobile.name;
       }
-      this._tetheringInterface[TETHERING_TYPE_USB].externalInterface = mobile.name;
     }
     this.tetheringSettings[SETTINGS_USB_ENABLED] = true;
-    this.setUSBFunction(true, USB_FUNCTION_RNDIS, this.setUSBFunctionResult);
-  },
-
-  getWifiTetheringParameters: function getWifiTetheringParameters(enable, tetheringinterface) {
-    let ssid;
-    let securityType;
-    let securityId;
-    let interfaceIp;
-    let prefix;
-    let dhcpStartIp;
-    let dhcpEndIp;
-    let internalInterface = tetheringinterface.internalInterface;
-    let externalInterface = tetheringinterface.externalInterface;
-
-    ssid = this.tetheringSettings[SETTINGS_WIFI_SSID];
-    securityType = this.tetheringSettings[SETTINGS_WIFI_SECURITY_TYPE];
-    securityId = this.tetheringSettings[SETTINGS_WIFI_SECURITY_PASSWORD];
-    interfaceIp = this.tetheringSettings[SETTINGS_WIFI_IP];
-    prefix = this.tetheringSettings[SETTINGS_WIFI_PREFIX];
-    dhcpStartIp = this.tetheringSettings[SETTINGS_WIFI_DHCPSERVER_STARTIP];
-    dhcpEndIp = this.tetheringSettings[SETTINGS_WIFI_DHCPSERVER_ENDIP];
-
-    // Check the format to prevent netd from crash.
-    if (!ssid || ssid == "") {
-      debug("Invalid SSID value.");
-      return null;
-    }
-    if (securityType != WIFI_SECURITY_TYPE_NONE &&
-        securityType != WIFI_SECURITY_TYPE_WPA_PSK &&
-        securityType != WIFI_SECURITY_TYPE_WPA2_PSK) {
-
-      debug("Invalid security type.");
-      return null;
-    }
-    if (securityType != WIFI_SECURITY_TYPE_NONE && !securityId) {
-      debug("Invalid security password.");
-      return null;
-    }
-    // Using the default values here until application supports these settings.
-    if (interfaceIp == "" || prefix == "" ||
-        dhcpStartIp == "" || dhcpEndIp == "") {
-      debug("Invalid subnet information.");
-      return null;
-    }
-
-    return {
-      ifname: internalInterface,
-      wifictrlinterfacename: WIFI_CTRL_INTERFACE,
-      ssid: ssid,
-      security: securityType,
-      key: securityId,
-      ip: interfaceIp,
-      prefix: prefix,
-      startIp: dhcpStartIp,
-      endIp: dhcpEndIp,
-      dns1: "",
-      dns2: "",
-      internalIfname: internalInterface,
-      externalIfname: externalInterface,
-      enable: enable,
-      mode: enable ? WIFI_FIRMWARE_AP : WIFI_FIRMWARE_STATION,
-      link: enable ? NETWORK_INTERFACE_UP : NETWORK_INTERFACE_DOWN
-    };
+    this.enableUsbRndis(true, this.enableUsbRndisResult);
   },
 
   getUSBTetheringParameters: function getUSBTetheringParameters(enable, tetheringinterface) {
@@ -655,6 +774,8 @@ NetworkManager.prototype = {
     let prefix;
     let dhcpStartIp;
     let dhcpEndIp;
+    let dns1;
+    let dns2;
     let internalInterface = tetheringinterface.internalInterface;
     let externalInterface = tetheringinterface.externalInterface;
 
@@ -662,6 +783,8 @@ NetworkManager.prototype = {
     prefix = this.tetheringSettings[SETTINGS_USB_PREFIX];
     dhcpStartIp = this.tetheringSettings[SETTINGS_USB_DHCPSERVER_STARTIP];
     dhcpEndIp = this.tetheringSettings[SETTINGS_USB_DHCPSERVER_ENDIP];
+    dns1 = this.tetheringSettings[SETTINGS_USB_DNS1];
+    dns2 = this.tetheringSettings[SETTINGS_USB_DNS2];
 
     // Using the default values here until application support these settings.
     if (interfaceIp == "" || prefix == "" ||
@@ -676,8 +799,8 @@ NetworkManager.prototype = {
       prefix: prefix,
       startIp: dhcpStartIp,
       endIp: dhcpEndIp,
-      dns1: "",
-      dns2: "",
+      dns1: dns1,
+      dns2: dns2,
       internalIfname: internalInterface,
       externalIfname: externalInterface,
       enable: enable,
@@ -685,14 +808,9 @@ NetworkManager.prototype = {
     };
   },
 
-  get wifiTetheringEnabled() {
-    return this.tetheringSettings[SETTINGS_WIFI_ENABLED];
-  },
-
   notifyError: function notifyError(resetSettings, callback, msg) {
     if (resetSettings) {
       let settingsLock = gSettingsService.createLock();
-      this.tetheringSettings[SETTINGS_WIFI_ENABLED] = false;
       // Disable wifi tethering with a useful error message for the user.
       settingsLock.set("tethering.wifi.enabled", false, null, msg);
     }
@@ -705,46 +823,40 @@ NetworkManager.prototype = {
   },
 
   // Enable/disable WiFi tethering by sending commands to netd.
-  setWifiTethering: function setWifiTethering(enable, network, callback) {
-    if (this.tetheringSettings[SETTINGS_WIFI_ENABLED] == enable) {
-      this.notifyError(false, callback, "no change");
-      return;
-    }
-
+  setWifiTethering: function setWifiTethering(enable, network, config, callback) {
     if (!network) {
       this.notifyError(true, callback, "invalid network information");
       return;
     }
+
+    if (!config) {
+      this.notifyError(true, callback, "invalid configuration");
+      return;
+    }
+
     this._tetheringInterface[TETHERING_TYPE_WIFI].internalInterface = network.name;
 
     let mobile = this.getNetworkInterface(Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE);
-    if (!mobile) {
-      this.notifyError(true, callback, "mobile interface is not registered");
-      return;
-    }
-    // Clear this flag to prevent unexpected action.
-    this.waitForConnectionReadyCallback = null;
-
-    this._tetheringInterface[TETHERING_TYPE_WIFI].externalInterface = mobile.name;
-
-    let params = this.getWifiTetheringParameters(enable, this._tetheringInterface[TETHERING_TYPE_WIFI]);
-    if (!params) {
-      this.notifyError(true, callback, "invalid parameters");
-      return;
+    // Update the real interface name
+    if (mobile) {
+      this._tetheringInterface[TETHERING_TYPE_WIFI].externalInterface = mobile.name;
     }
 
-    params.cmd = "setWifiTethering";
+    config.ifname         = this._tetheringInterface[TETHERING_TYPE_WIFI].internalInterface;
+    config.internalIfname = this._tetheringInterface[TETHERING_TYPE_WIFI].internalInterface;
+    config.externalIfname = this._tetheringInterface[TETHERING_TYPE_WIFI].externalInterface;
+    config.wifictrlinterfacename = WIFI_CTRL_INTERFACE;
+
+    config.cmd = "setWifiTethering";
     // The callback function in controlMessage may not be fired immediately.
-    params.isAsync = true;
-    this.controlMessage(params, function setWifiTetheringResult(data) {
+    config.isAsync = true;
+    this.controlMessage(config, function setWifiTetheringResult(data) {
       let code = data.resultCode;
       let reason = data.resultReason;
       let enable = data.enable;
       let enableString = enable ? "Enable" : "Disable";
 
       debug(enableString + " Wifi tethering result: Code " + code + " reason " + reason);
-      // Update settings status.
-      this.tetheringSettings[SETTINGS_WIFI_ENABLED] = enable;
 
       if (isError(code)) {
         this.notifyError(true, callback, "netd command error");
@@ -755,7 +867,9 @@ NetworkManager.prototype = {
   },
 
   // Enable/disable USB tethering by sending commands to netd.
-  setUSBTethering: function setUSBTethering(enable, tetheringInterface) {
+  setUSBTethering: function setUSBTethering(enable,
+                                            tetheringInterface,
+                                            callback) {
     let params = this.getUSBTetheringParameters(enable, tetheringInterface);
 
     if (params === null) {
@@ -764,22 +878,42 @@ NetworkManager.prototype = {
         resultCode: NETD_COMMAND_ERROR,
         resultReason: "Invalid parameters"
       };
+      this.enableUsbRndis(false, null);
       this.usbTetheringResultReport(params);
-      this.setUSBFunction(false, USB_FUNCTION_ADB, null);
       return;
     }
 
     params.cmd = "setUSBTethering";
     // The callback function in controlMessage may not be fired immediately.
     params.isAsync = true;
-    this.controlMessage(params, this.usbTetheringResultReport);
+    this.controlMessage(params, callback);
   },
 
-  setUSBFunctionResult: function setUSBFunctionResult(data) {
+  getUsbInterface: function getUsbInterface() {
+    // Find the rndis interface.
+    for (let i = 0; i < this.possibleInterface.length; i++) {
+      try {
+        let file = new FileUtils.File(KERNEL_NETWORK_ENTRY + "/" +
+                                      this.possibleInterface[i]);
+        if (file.exists()) {
+          return this.possibleInterface[i];
+        }
+      } catch (e) {
+        debug("Not " + this.possibleInterface[i] + " interface.");
+      }
+    }
+    debug("Can't find rndis interface in possible lists.");
+    return DEFAULT_USB_INTERFACE_NAME;
+  },
+
+  enableUsbRndisResult: function enableUsbRndisResult(data) {
     let result = data.result;
     let enable = data.enable;
     if (result) {
-      this.setUSBTethering(enable, this._tetheringInterface[TETHERING_TYPE_USB]);
+      this._tetheringInterface[TETHERING_TYPE_USB].internalInterface = this.getUsbInterface();
+      this.setUSBTethering(enable,
+                           this._tetheringInterface[TETHERING_TYPE_USB],
+                           this.usbTetheringResultReport);
     } else {
       let params = {
         enable: false,
@@ -791,12 +925,11 @@ NetworkManager.prototype = {
     }
   },
   // Switch usb function by modifying property of persist.sys.usb.config.
-  setUSBFunction: function setUSBFunction(enable, usbfunc, callback) {
-    debug("Set usb function to " + usbfunc);
+  enableUsbRndis: function enableUsbRndis(enable, callback) {
+    debug("enableUsbRndis: " + enable);
 
     let params = {
-      cmd: "setUSBFunction",
-      usbfunc: usbfunc,
+      cmd: "enableUsbRndis",
       enable: enable
     };
     // Ask net work to report the result when this value is set to true.
@@ -808,6 +941,7 @@ NetworkManager.prototype = {
 
     // The callback function in controlMessage may not be fired immediately.
     params.isAsync = true;
+    this._usbTetheringAction = TETHERING_STATE_ONGOING;
     this.controlMessage(params, callback);
   },
 
@@ -819,13 +953,163 @@ NetworkManager.prototype = {
     let settingsLock = gSettingsService.createLock();
 
     debug(enableString + " USB tethering result: Code " + code + " reason " + reason);
+    this._usbTetheringAction = TETHERING_STATE_IDLE;
     // Disable tethering settings when fail to enable it.
     if (isError(code)) {
       this.tetheringSettings[SETTINGS_USB_ENABLED] = false;
       settingsLock.set("tethering.usb.enabled", false, null);
+      // Skip others request when we found an error.
+      this._requestCount = 0;
+    } else {
+      this.handleLastRequest();
     }
+
+  },
+
+  updateUpStream: function updateUpStream(previous, current, callback) {
+    let params = {
+      cmd: "updateUpStream",
+      isAsync: true,
+      previous: previous,
+      current: current
+    };
+
+    this.controlMessage(params, callback);
+  },
+
+  onConnectionChangedReport: function onConnectionChangedReport(data) {
+    let code = data.resultCode;
+    let reason = data.resultReason;
+
+    debug("onConnectionChangedReport result: Code " + code + " reason " + reason);
+
+    if (!isError(code)) {
+      // Update the external interface.
+      this._tetheringInterface[TETHERING_TYPE_USB].externalInterface = data.current.externalIfname;
+      debug("Change the interface name to " + data.current.externalIfname);
+    }
+  },
+
+  onConnectionChanged: function onConnectionChanged(network) {
+    if (network.state != Ci.nsINetworkInterface.NETWORK_STATE_CONNECTED) {
+      debug("We are only interested in CONNECTED event");
+      return;
+    }
+
+    if (!this.tetheringSettings[SETTINGS_USB_ENABLED]) {
+      debug("Usb tethering settings is not enabled");
+      return;
+    }
+
+    if (this._tetheringInterface[TETHERING_TYPE_USB].externalInterface ===
+        this.active.name) {
+      debug("The active interface is the same");
+      return;
+    }
+
+    let previous = {
+      internalIfname: this._tetheringInterface[TETHERING_TYPE_USB].internalInterface,
+      externalIfname: this._tetheringInterface[TETHERING_TYPE_USB].externalInterface
+    };
+
+    let current = {
+      internalIfname: this._tetheringInterface[TETHERING_TYPE_USB].internalInterface,
+      externalIfname: network.name
+    };
+
+    let callback = (function () {
+      // Update external network interface.
+      debug("Update upstream interface to " + network.name);
+      this.updateUpStream(previous, current, this.onConnectionChangedReport);
+    }).bind(this);
+
+    if (this._usbTetheringAction === TETHERING_STATE_ONGOING) {
+      debug("Postpone the event and handle it when state is idle.");
+      this.wantConnectionEvent = callback;
+      return;
+    }
+    this.wantConnectionEvent = null;
+
+    callback.call(this);
   }
 };
+
+let CaptivePortalDetectionHelper = (function() {
+
+  const EVENT_CONNECT = "Connect";
+  const EVENT_DISCONNECT = "Disconnect";
+  let _ongoingInterface = null;
+  let _available = ("nsICaptivePortalDetector" in Ci);
+  let getService = function () {
+    return Cc['@mozilla.org/toolkit/captive-detector;1'].getService(Ci.nsICaptivePortalDetector);
+  };
+
+  let _performDetection = function (interfaceName, callback) {
+    let capService = getService();
+    let capCallback = {
+      QueryInterface: XPCOMUtils.generateQI([Ci.nsICaptivePortalCallback]),
+      prepare: function prepare() {
+        capService.finishPreparation(interfaceName);
+      },
+      complete: function complete(success) {
+        _ongoingInterface = null;
+        callback(success);
+      }
+    };
+
+    // Abort any unfinished captive portal detection.
+    if (_ongoingInterface != null) {
+      capService.abort(_ongoingInterface);
+      _ongoingInterface = null;
+    }
+    try {
+      capService.checkCaptivePortal(interfaceName, capCallback);
+      _ongoingInterface = interfaceName;
+    } catch (e) {
+      debug('Fail to detect captive portal due to: ' + e.message);
+    }
+  };
+
+  let _abort = function (interfaceName) {
+    if (_ongoingInterface !== interfaceName) {
+      return;
+    }
+
+    let capService = getService();
+    capService.abort(_ongoingInterface);
+    _ongoingInterface = null;
+  };
+
+  return {
+    EVENT_CONNECT: EVENT_CONNECT,
+    EVENT_DISCONNECT: EVENT_DISCONNECT,
+    notify: function notify(eventType, network) {
+      switch (eventType) {
+        case EVENT_CONNECT:
+          // perform captive portal detection on wifi interface
+          if (_available && network &&
+              network.type == Ci.nsINetworkInterface.NETWORK_TYPE_WIFI) {
+            _performDetection(network.name, function () {
+              // TODO: bug 837600
+              // We can disconnect wifi in here if user abort the login procedure.
+            });
+          }
+
+          break;
+        case EVENT_DISCONNECT:
+          if (_available &&
+              network.type == Ci.nsINetworkInterface.NETWORK_TYPE_WIFI) {
+            _abort(network.name);
+          }
+          break;
+      }
+    }
+  };
+}());
+
+XPCOMUtils.defineLazyServiceGetter(NetworkManager.prototype, "mRIL",
+                                   "@mozilla.org/ril;1",
+                                   "nsIRadioInterfaceLayer");
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([NetworkManager]);
 

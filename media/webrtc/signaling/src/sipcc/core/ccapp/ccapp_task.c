@@ -7,9 +7,16 @@
 #include "CCProvider.h"
 #include "platform_api.h"
 
+#include <prcvar.h>
+#include <prlock.h>
+
 extern cprMsgQueue_t ccapp_msgq;
 extern void CCAppInit();
 static sll_lite_list_t sll_list;
+
+PRCondVar *ccAppReadyToStartCond = NULL;
+PRLock *ccAppReadyToStartLock = NULL;
+char ccAppReadyToStart = 0;
 
 /**
  * Add/Get ccapp task listener
@@ -18,18 +25,18 @@ void addCcappListener(appListener* listener, int type) {
 
    listener_t *alistener = NULL;
 
-   CCAPP_DEBUG(DEB_F_PREFIX"Entered: listenr=0x%x, type=%d\n", DEB_F_PREFIX_ARGS(SIP_CC_PROV, "addCcappListener"),
+   CCAPP_DEBUG(DEB_F_PREFIX"Entered: listenr=%p, type=%d", DEB_F_PREFIX_ARGS(SIP_CC_PROV, "addCcappListener"),
            listener, type);
 
    if (listener == NULL)
    {
-       CCAPP_ERROR(DEB_F_PREFIX"listener is NULL, returning\n", DEB_F_PREFIX_ARGS(SIP_CC_PROV, "addCcappListener"));
+       CCAPP_ERROR(DEB_F_PREFIX"listener is NULL, returning", DEB_F_PREFIX_ARGS(SIP_CC_PROV, "addCcappListener"));
        return;
    }
 
    alistener = cpr_malloc(sizeof(listener_t));
    if (alistener == NULL) {
-       CCAPP_ERROR(DEB_F_PREFIX"alistener is NULL, returning\n", DEB_F_PREFIX_ARGS(SIP_CC_PROV, "addCcappListener"));
+       CCAPP_ERROR(DEB_F_PREFIX"alistener is NULL, returning", DEB_F_PREFIX_ARGS(SIP_CC_PROV, "addCcappListener"));
        return;
    }
 
@@ -37,7 +44,7 @@ void addCcappListener(appListener* listener, int type) {
    alistener->listener_p = listener;
 
    sll_lite_link_tail(&sll_list, (sll_lite_node_t *)alistener);
-   CCAPP_DEBUG(DEB_F_PREFIX"Added: listenr=0x%x, type=%d\n", DEB_F_PREFIX_ARGS(SIP_CC_PROV, "addCcappListener"),
+   CCAPP_DEBUG(DEB_F_PREFIX"Added: listenr=%p, type=%d", DEB_F_PREFIX_ARGS(SIP_CC_PROV, "addCcappListener"),
            alistener->listener_p, alistener->type);
 }
 
@@ -46,13 +53,13 @@ appListener *getCcappListener(int type) {
     listener_t *temp_info;
     sll_lite_node_t *iterator;
 
-    CCAPP_DEBUG(DEB_F_PREFIX"entered: for app[%d]\n", DEB_F_PREFIX_ARGS(SIP_CC_PROV, fname),
+    CCAPP_DEBUG(DEB_F_PREFIX"entered: for app[%d]", DEB_F_PREFIX_ARGS(SIP_CC_PROV, fname),
             type);
 
     iterator = sll_list.head_p;
     while (iterator) {
         temp_info = (listener_t *)iterator;
-        CCAPP_DEBUG(DEB_F_PREFIX"appid=%d, listener=0x%x\n",
+        CCAPP_DEBUG(DEB_F_PREFIX"appid=%d, listener=%p",
                 DEB_F_PREFIX_ARGS(SIP_CC_PROV, fname), temp_info->type, temp_info->listener_p);
         if (temp_info->type == type) {
             {
@@ -85,7 +92,7 @@ cpr_status_e ccappTaskPostMsg(unsigned int msgId, void * data, uint16_t len, int
 
     msg = (cprBuffer_t *) cpr_malloc(len);
     if (msg == NULL) {
-        CCAPP_ERROR(DEB_F_PREFIX"failed to allocate message.\n",
+        CCAPP_ERROR(DEB_F_PREFIX"failed to allocate message.",
                DEB_F_PREFIX_ARGS(SIP_CC_PROV, fname));
         return CPR_FAILURE;
     }
@@ -154,17 +161,29 @@ void CCApp_task(void * arg)
 
     CCAppInit();
 
+    // If the "ready to start" condition variable has been created
+    // (is non-null), we're going to wait for it to be signaled
+    // before we start processing messages.
+    if (ccAppReadyToStartCond) {
+      PR_Lock(ccAppReadyToStartLock);
+      while (!ccAppReadyToStart) {
+        PR_WaitCondVar(ccAppReadyToStartCond, PR_INTERVAL_NO_TIMEOUT);
+      }
+      PR_Unlock(ccAppReadyToStartLock);
+    }
+
+
     while (1) {
         msg = cprGetMessage(ccapp_msgq, TRUE, (void **) &syshdr);
         if ( msg) {
-            CCAPP_DEBUG(DEB_F_PREFIX"Received Cmd[%d] for app[%d]\n", DEB_F_PREFIX_ARGS(SIP_CC_PROV, fname),
+            CCAPP_DEBUG(DEB_F_PREFIX"Received Cmd[%d] for app[%d]", DEB_F_PREFIX_ARGS(SIP_CC_PROV, fname),
                     syshdr->Cmd, syshdr->Usr.UsrInfo);
 
             listener = getCcappListener(syshdr->Usr.UsrInfo);
             if (listener != NULL) {
                 (* ((appListener)(listener)))(msg, syshdr->Cmd);
             } else {
-                CCAPP_DEBUG(DEB_F_PREFIX"Event[%d] doesn't have a dedicated listener.\n", DEB_F_PREFIX_ARGS(SIP_CC_PROV, fname),
+                CCAPP_DEBUG(DEB_F_PREFIX"Event[%d] doesn't have a dedicated listener.", DEB_F_PREFIX_ARGS(SIP_CC_PROV, fname),
                         syshdr->Usr.UsrInfo);
             }
             cprReleaseSysHeader(syshdr);

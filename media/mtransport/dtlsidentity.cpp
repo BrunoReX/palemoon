@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "logging.h"
 #include "nspr.h"
 #include "cryptohi.h"
 #include "ssl.h"
@@ -12,7 +13,6 @@
 #include "sechash.h"
 #include "nsError.h"
 #include "dtlsidentity.h"
-#include "logging.h"
 
 namespace mozilla {
 
@@ -41,7 +41,7 @@ TemporaryRef<DtlsIdentity> DtlsIdentity::Generate() {
 
   std::string name;
   char chunk[3];
-  for (int i=0; i<sizeof(random_name); ++i) {
+  for (size_t i = 0; i < sizeof(random_name); ++i) {
     PR_snprintf(chunk, sizeof(chunk), "%.2x", random_name[i]);
     name += chunk;
   }

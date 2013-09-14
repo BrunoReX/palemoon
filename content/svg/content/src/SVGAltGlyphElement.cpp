@@ -5,9 +5,6 @@
 
 #include "mozilla/dom/SVGAltGlyphElement.h"
 #include "mozilla/dom/SVGAltGlyphElementBinding.h"
-#include "nsContentUtils.h"
-
-DOMCI_NODE_DATA(SVGAltGlyphElement, mozilla::dom::SVGAltGlyphElement)
 
 NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(AltGlyph)
 
@@ -15,9 +12,9 @@ namespace mozilla {
 namespace dom {
 
 JSObject*
-SVGAltGlyphElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+SVGAltGlyphElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return SVGAltGlyphElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return SVGAltGlyphElementBinding::Wrap(aCx, aScope, this);
 }
 
 nsSVGElement::StringInfo SVGAltGlyphElement::sStringInfo[1] =
@@ -27,79 +24,46 @@ nsSVGElement::StringInfo SVGAltGlyphElement::sStringInfo[1] =
 
 
 //----------------------------------------------------------------------
-// nsISupports methods
-
-NS_IMPL_ADDREF_INHERITED(SVGAltGlyphElement,SVGAltGlyphElementBase)
-NS_IMPL_RELEASE_INHERITED(SVGAltGlyphElement,SVGAltGlyphElementBase)
-
-NS_INTERFACE_TABLE_HEAD(SVGAltGlyphElement)
-  NS_NODE_INTERFACE_TABLE7(SVGAltGlyphElement, nsIDOMNode, nsIDOMElement,
-                           nsIDOMSVGElement, nsIDOMSVGAltGlyphElement,
-                           nsIDOMSVGTextPositioningElement, nsIDOMSVGTextContentElement,
-                           nsIDOMSVGURIReference)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGAltGlyphElement)
-NS_INTERFACE_MAP_END_INHERITING(SVGAltGlyphElementBase)
-
-//----------------------------------------------------------------------
 // Implementation
 
 SVGAltGlyphElement::SVGAltGlyphElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : SVGAltGlyphElementBase(aNodeInfo)
 {
-  SetIsDOMBinding();
 }
-
 
 //----------------------------------------------------------------------
 // nsIDOMNode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGAltGlyphElement)
 
-//----------------------------------------------------------------------
-// nsIDOMSVGURIReference methods
-
-/* readonly attribute nsIDOMSVGAnimatedString href; */
-NS_IMETHODIMP SVGAltGlyphElement::GetHref(nsIDOMSVGAnimatedString * *aHref)
-{
-  *aHref = Href().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedString>
+already_AddRefed<SVGAnimatedString>
 SVGAltGlyphElement::Href()
 {
-  nsCOMPtr<nsIDOMSVGAnimatedString> href;
-  mStringAttributes[HREF].ToDOMAnimatedString(getter_AddRefs(href), this);
-  return href.forget();
+  return mStringAttributes[HREF].ToDOMAnimatedString(this);
 }
 
-//----------------------------------------------------------------------
-// nsIDOMSVGAltGlyphElement methods
-
-/* attribute DOMString glyphRef; */
-NS_IMETHODIMP SVGAltGlyphElement::GetGlyphRef(nsAString & aGlyphRef)
+void
+SVGAltGlyphElement::GetGlyphRef(nsAString & aGlyphRef)
 {
   GetAttr(kNameSpaceID_None, nsGkAtoms::glyphRef, aGlyphRef);
-
-  return NS_OK;
 }
 
-NS_IMETHODIMP SVGAltGlyphElement::SetGlyphRef(const nsAString & aGlyphRef)
+void
+SVGAltGlyphElement::SetGlyphRef(const nsAString & aGlyphRef, ErrorResult& rv)
 {
-  return SetAttr(kNameSpaceID_None, nsGkAtoms::glyphRef, aGlyphRef, true);
+  rv = SetAttr(kNameSpaceID_None, nsGkAtoms::glyphRef, aGlyphRef, true);
 }
 
-/* attribute DOMString format; */
-NS_IMETHODIMP SVGAltGlyphElement::GetFormat(nsAString & aFormat)
+void
+SVGAltGlyphElement::GetFormat(nsAString & aFormat)
 {
   GetAttr(kNameSpaceID_None, nsGkAtoms::format, aFormat);
-
-  return NS_OK;
 }
 
-NS_IMETHODIMP SVGAltGlyphElement::SetFormat(const nsAString & aFormat)
+void
+SVGAltGlyphElement::SetFormat(const nsAString & aFormat, ErrorResult& rv)
 {
-  return SetAttr(kNameSpaceID_None, nsGkAtoms::format, aFormat, true);
+  rv = SetAttr(kNameSpaceID_None, nsGkAtoms::format, aFormat, true);
 }
 
 //----------------------------------------------------------------------
@@ -122,12 +86,6 @@ SVGAltGlyphElement::IsAttributeMapped(const nsIAtom* name) const
 
 //----------------------------------------------------------------------
 // nsSVGElement overrides
-
-bool
-SVGAltGlyphElement::IsEventName(nsIAtom* aName)
-{
-  return nsContentUtils::IsEventAttributeName(aName, EventNameType_SVGGraphic);
-}
 
 nsSVGElement::StringAttributesInfo
 SVGAltGlyphElement::GetStringInfo()

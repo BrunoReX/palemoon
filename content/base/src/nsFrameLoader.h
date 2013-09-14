@@ -47,7 +47,7 @@ class RenderFrameParent;
 }
 }
 
-#ifdef MOZ_WIDGET_GTK2
+#if defined(MOZ_WIDGET_GTK)
 typedef struct _GtkWidget GtkWidget;
 #endif
 #ifdef MOZ_WIDGET_QT
@@ -179,17 +179,18 @@ public:
   nsresult ReallyStartLoading();
   void Finalize();
   nsIDocShell* GetExistingDocShell() { return mDocShell; }
-  nsIDOMEventTarget* GetTabChildGlobalAsEventTarget();
+  mozilla::dom::EventTarget* GetTabChildGlobalAsEventTarget();
   nsresult CreateStaticClone(nsIFrameLoader* aDest);
 
   /**
    * MessageManagerCallback methods that we override.
    */
-  virtual bool DoLoadFrameScript(const nsAString& aURL);
+  virtual bool DoLoadFrameScript(const nsAString& aURL) MOZ_OVERRIDE;
   virtual bool DoSendAsyncMessage(const nsAString& aMessage,
-                                  const mozilla::dom::StructuredCloneData& aData);
-  virtual bool CheckPermission(const nsAString& aPermission);
-
+                                  const mozilla::dom::StructuredCloneData& aData) MOZ_OVERRIDE;
+  virtual bool CheckPermission(const nsAString& aPermission) MOZ_OVERRIDE;
+  virtual bool CheckManifestURL(const nsAString& aManifestURL) MOZ_OVERRIDE;
+  virtual bool CheckAppHasPermission(const nsAString& aPermission) MOZ_OVERRIDE;
 
   /**
    * Called from the layout frame associated with this frame loader;
@@ -245,7 +246,7 @@ public:
    * The "current" render frame is the one on which the most recent
    * remote layer-tree transaction was executed.  If no content has
    * been drawn yet, or the remote browser doesn't have any drawn
-   * content for whatever reason, return NULL.  The returned render
+   * content for whatever reason, return nullptr.  The returned render
    * frame has an associated shadow layer tree.
    *
    * Note that the returned render frame might not be a frame
@@ -356,12 +357,11 @@ private:
   NS_HIDDEN_(void) GetURL(nsString& aURL);
 
   // Properly retrieves documentSize of any subdocument type.
-  NS_HIDDEN_(nsIntSize) GetSubDocumentSize(const nsIFrame *aIFrame);
   nsresult GetWindowDimensions(nsRect& aRect);
 
   // Updates the subdocument position and size. This gets called only
   // when we have our own in-process DocShell.
-  NS_HIDDEN_(nsresult) UpdateBaseWindowPositionAndSize(nsIFrame *aIFrame);
+  NS_HIDDEN_(nsresult) UpdateBaseWindowPositionAndSize(nsSubDocumentFrame *aIFrame);
   nsresult CheckURILoad(nsIURI* aURI);
   void FireErrorEvent();
   nsresult ReallyStartLoadingInternal();
@@ -370,7 +370,8 @@ private:
   bool TryRemoteBrowser();
 
   // Tell the remote browser that it's now "virtually visible"
-  bool ShowRemoteFrame(const nsIntSize& size);
+  bool ShowRemoteFrame(const nsIntSize& size,
+                       nsSubDocumentFrame *aFrame = nullptr);
 
   bool AddTreeItemToTreeOwner(nsIDocShellTreeItem* aItem,
                               nsIDocShellTreeOwner* aOwner,
@@ -426,6 +427,11 @@ private:
   bool mClampScrollPosition : 1;
   bool mRemoteBrowserInitialized : 1;
   bool mObservingOwnerContent : 1;
+
+  // Backs nsIFrameLoader::{Get,Set}Visible.  Visibility state here relates to
+  // whether this frameloader's <iframe mozbrowser> is setVisible(true)'ed, and
+  // doesn't necessarily correlate with docshell/document visibility.
+  bool mVisible : 1;
 
   // XXX leaking
   nsCOMPtr<nsIObserver> mChildHost;

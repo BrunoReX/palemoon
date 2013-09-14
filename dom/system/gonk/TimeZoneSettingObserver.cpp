@@ -11,7 +11,6 @@
 #include "mozilla/StaticPtr.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
-#include "nsIJSContextStack.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
 #include "nsISettingsService.h"
@@ -21,6 +20,7 @@
 #include "TimeZoneSettingObserver.h"
 #include "xpcpublic.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 
 #undef LOG
 #define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "Time Zone Setting" , ## args)
@@ -81,8 +81,6 @@ public:
 
     // Set the system timezone based on the current settings.
     if (aResult.isString()) {
-      JSAutoRequest ar(cx);
-      JSAutoCompartment ac(cx, aResult.toString());
       return TimeZoneSettingObserver::SetTimeZone(aResult, cx);
     }
 
@@ -134,7 +132,7 @@ nsresult TimeZoneSettingObserver::SetTimeZone(const JS::Value &aValue, JSContext
     ERR("Failed to convert JS value to nsCString");
     return NS_ERROR_FAILURE;
   }
-  nsCString newTimezone = NS_ConvertUTF16toUTF8(valueStr);
+  NS_ConvertUTF16toUTF8 newTimezone(valueStr);
 
   // Set the timezone only when the system timezone is not identical.
   nsCString curTimezone = hal::GetTimezone();
@@ -170,22 +168,11 @@ TimeZoneSettingObserver::Observe(nsISupports *aSubject,
   // The string that we're interested in will be a JSON string that looks like:
   // {"key":"time.timezone","value":"America/Chicago"}
 
-  // Get the safe JS context.
-  nsCOMPtr<nsIThreadJSContextStack> stack =
-    do_GetService("@mozilla.org/js/xpc/ContextStack;1");
-  if (!stack) {
-    ERR("Failed to get JSContextStack");
-    return NS_OK;
-  }
-  JSContext *cx = stack->GetSafeJSContext();
-  if (!cx) {
-    ERR("Failed to GetSafeJSContext");
-    return NS_OK;
-  }
+  AutoSafeJSContext cx;
 
   // Parse the JSON value.
   nsDependentString dataStr(aData);
-  JS::Value val;
+  JS::Rooted<JS::Value> val(cx);
   if (!JS_ParseJSON(cx, dataStr.get(), dataStr.Length(), &val) ||
       !val.isObject()) {
     return NS_OK;

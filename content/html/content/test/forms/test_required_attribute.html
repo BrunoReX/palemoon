@@ -166,6 +166,8 @@ function checkInputRequiredValidity(type)
     element.value = '42';
   } else if (element.type == 'date') {
     element.value = '2010-10-10';
+  } else if (element.type == 'time') {
+    element.value = '21:21';
   } else {
     element.value = 'foo';
   }
@@ -354,9 +356,6 @@ function checkInputRequiredValidityForFile()
   checkNotSufferingFromBeingMissing(element);
 }
 
-SimpleTest.waitForExplicitFinish();
-SpecialPowers.pushPrefEnv({'set': [["dom.experimental_forms", true]]}, function() {
-
 checkTextareaRequiredValidity();
 
 // The require attribute behavior depend of the input type.
@@ -368,17 +367,16 @@ for (type of typeBarredFromConstraintValidation) {
 }
 
 // Then, checks for the types which do not use the required attribute.
-// TODO: check 'color' and 'range' when they will be implemented.
-var typeRequireNotApply = [];
+var typeRequireNotApply = ['range', 'color'];
 for (type of typeRequireNotApply) {
   checkInputRequiredNotApply(type, false);
 }
 
 // Now, checking for all types which accept the required attribute.
-// TODO: check 'datetime', 'month', 'week', 'time' and 'datetime-local'
+// TODO: check 'datetime', 'month', 'week' and 'datetime-local'
 //       when they will be implemented.
 var typeRequireApply = ["text", "password", "search", "tel", "email", "url",
-                        "number", "date"];
+                        "number", "date", "time"];
 
 for (type of typeRequireApply) {
   checkInputRequiredValidity(type);
@@ -387,9 +385,6 @@ for (type of typeRequireApply) {
 checkInputRequiredValidityForCheckbox();
 checkInputRequiredValidityForRadio();
 checkInputRequiredValidityForFile();
-
-SimpleTest.finish();
-});
 
 </script>
 </pre>

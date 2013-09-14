@@ -39,13 +39,13 @@ const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
 
-__defineGetter__("PluralForm", function() {
+this.__defineGetter__("PluralForm", function() {
   delete this.PluralForm;
   Cu.import("resource://gre/modules/PluralForm.jsm");
   return PluralForm;
 });
 
-__defineGetter__("gDecimalSymbol", function() {
+this.__defineGetter__("gDecimalSymbol", function() {
   delete this.gDecimalSymbol;
   return this.gDecimalSymbol = Number(5.4).toLocaleString().match(/\D/);
 });
@@ -55,6 +55,7 @@ const kDownloadProperties =
 
 let gStr = {
   statusFormat: "statusFormat3",
+  statusFormatInfiniteRate: "statusFormatInfiniteRate",
   statusFormatNoRate: "statusFormatNoRate",
   transferSameUnits: "transferSameUnits2",
   transferDiffUnits: "transferDiffUnits2",
@@ -71,10 +72,11 @@ let gStr = {
   units: ["bytes", "kilobyte", "megabyte", "gigabyte"],
   // Update timeSize in convertTimeUnits if changing the length of this array
   timeUnits: ["seconds", "minutes", "hours", "days"],
+  infiniteRate: "infiniteRate",
 };
 
 // This lazily initializes the string bundle upon first use.
-__defineGetter__("gBundle", function() {
+this.__defineGetter__("gBundle", function() {
   delete gBundle;
   return this.gBundle = Cc["@mozilla.org/intl/stringbundle;1"].
                         getService(Ci.nsIStringBundleService).
@@ -108,9 +110,19 @@ this.DownloadUtils = {
       = this._deriveTransferRate(aCurrBytes, aMaxBytes, aSpeed, aLastSec);
 
     let [rate, unit] = DownloadUtils.convertByteUnits(normalizedSpeed);
-    let params = [transfer, rate, unit, timeLeft];
-    let status = gBundle.formatStringFromName(gStr.statusFormat, params,
-                                              params.length);
+
+    let status;
+    if (rate === "Infinity") {
+      // Infinity download speed doesn't make sense. Show a localized phrase instead.
+      let params = [transfer, gBundle.GetStringFromName(gStr.infiniteRate), timeLeft];
+      status = gBundle.formatStringFromName(gStr.statusFormatInfiniteRate, params,
+                                            params.length);
+    }
+    else {
+      let params = [transfer, rate, unit, timeLeft];
+      status = gBundle.formatStringFromName(gStr.statusFormat, params,
+                                            params.length);
+    }
     return [status, newLast];
   },
 

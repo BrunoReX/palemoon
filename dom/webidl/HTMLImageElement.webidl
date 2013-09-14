@@ -17,9 +17,7 @@ interface URI;
 interface MozChannel;
 interface nsIStreamListener;
 
-[NamedConstructor=Image(),
- NamedConstructor=Image(unsigned long width),
- NamedConstructor=Image(unsigned long width, unsigned long height)]
+[NamedConstructor=Image(optional unsigned long width, optional unsigned long height)]
 interface HTMLImageElement : HTMLElement {
            [SetterThrows]
            attribute DOMString alt;
@@ -39,11 +37,10 @@ interface HTMLImageElement : HTMLElement {
   readonly attribute unsigned long naturalWidth;
   readonly attribute unsigned long naturalHeight;
   readonly attribute boolean complete;
-/*};
+};
 
 // http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
 partial interface HTMLImageElement {
-*/
            [SetterThrows]
            attribute DOMString name;
            [SetterThrows]
@@ -56,7 +53,20 @@ partial interface HTMLImageElement {
            attribute DOMString longDesc;
 
   [TreatNullAs=EmptyString,SetterThrows] attribute DOMString border;
+};
 
+// Mozilla extensions.
+partial interface HTMLImageElement {
+           attribute DOMString lowsrc;
+
+  // These attributes are offsets from the closest view (to mimic
+  // NS4's "offset-from-layer" behavior).
+  readonly attribute long x;
+  readonly attribute long y;
+};
+
+[NoInterfaceObject]
+interface MozImageLoadingContent {
   // Mirrored chrome-only nsIImageLoadingContent methods.  Please make sure
   // to update this list if nsIImageLoadingContent changes.
   [ChromeOnly]
@@ -87,3 +97,5 @@ partial interface HTMLImageElement {
   [ChromeOnly]
   void forceImageState(boolean aForce, unsigned long long aState);
 };
+
+HTMLImageElement implements MozImageLoadingContent;

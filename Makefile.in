@@ -17,45 +17,11 @@ $(error GNU Make 3.80 or higher is required)
 endif
 endif
 
+export TOPLEVEL_BUILD := 1
+
 include $(DEPTH)/config/autoconf.mk
 
 default::
-
-TIERS += base
-
-#
-# tier "base" - basic setup
-#
-tier_base_dirs = \
-  config \
-  build \
-  probes \
-  mfbt \
-  $(NULL)
-
-ifndef LIBXUL_SDK
-ifeq (android,$(MOZ_WIDGET_TOOLKIT))
-tier_base_dirs += \
-  other-licenses/android \
-  $(NULL)
-endif
-ifeq (gonk,$(MOZ_WIDGET_TOOLKIT))
-tier_base_dirs += \
-  other-licenses/android \
-  $(NULL)
-endif
-
-ifdef MOZ_MEMORY
-tier_base_dirs += memory
-endif
-ifndef MOZ_NATIVE_ZLIB
-tier_base_dirs += modules/zlib
-endif
-tier_base_dirs += \
-  mozglue \
-  memory/mozalloc \
-  $(NULL)
-endif
 
 ifdef COMPILE_ENVIRONMENT
 include $(topsrcdir)/$(MOZ_BUILD_APP)/build.mk
@@ -71,13 +37,23 @@ DIST_GARBAGE = config.cache config.log config.status* config-defs.h \
    netwerk/necko-config.h xpcom/xpcom-config.h xpcom/xpcom-private.h \
    $(topsrcdir)/.mozconfig.mk $(topsrcdir)/.mozconfig.out
 
-default alldep all:: $(topsrcdir)/configure config.status
+ifndef MOZ_PROFILE_USE
+# We need to explicitly put backend.RecursiveMakeBackend.built here
+# otherwise the rule in rules.mk doesn't run early enough.
+default alldep all:: CLOBBER $(topsrcdir)/configure config.status backend.RecursiveMakeBackend.built
 	$(RM) -r $(DIST)/sdk
 	$(RM) -r $(DIST)/include
 	$(RM) -r $(DIST)/private
 	$(RM) -r $(DIST)/public
-	$(RM) $(DIST)/bin/chrome.manifest $(DIST)/bin/components/components.manifest
+	$(RM) -r $(DIST)/bin
 	$(RM) -r _tests
+endif
+
+CLOBBER: $(topsrcdir)/CLOBBER
+	@echo "STOP!  The CLOBBER file has changed."
+	@echo "Please run the build through a sanctioned build wrapper, such as"
+	@echo "'mach build' or client.mk."
+	@exit 1
 
 $(topsrcdir)/configure: $(topsrcdir)/configure.in
 	@echo "STOP!  configure.in has changed, and your configure is out of date."
@@ -209,3 +185,10 @@ scheck::
 endif
 
 js/src/Makefile: subsrcdir := js/src
+
+ifdef ENABLE_TESTS
+# Incorporate static tier directories into tests. This should be incorporated
+# into moz.build files someday.
+check::
+	$(call SUBMAKE,$@,js/src)
+endif

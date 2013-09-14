@@ -15,22 +15,17 @@
 #include "mozilla/net/WebSocketChannelChild.h"
 #include "mozilla/net/RemoteOpenFileChild.h"
 #include "mozilla/dom/network/TCPSocketChild.h"
-#include "mozilla/Preferences.h"
 
 using mozilla::dom::TCPSocketChild;
 
 namespace mozilla {
 namespace net {
 
-static bool gDisableIPCSecurity = false;
-static const char kPrefDisableIPCSecurity[] = "network.disable.ipc.security";
-
 PNeckoChild *gNeckoChild = nullptr;
 
 // C++ file contents
 NeckoChild::NeckoChild()
 {
-  Preferences::AddBoolVarCache(&gDisableIPCSecurity, kPrefDisableIPCSecurity);
 }
 
 NeckoChild::~NeckoChild()
@@ -67,7 +62,8 @@ void NeckoChild::DestroyNeckoChild()
 
 PHttpChannelChild*
 NeckoChild::AllocPHttpChannel(PBrowserChild* browser,
-                              const SerializedLoadContext& loadContext)
+                              const SerializedLoadContext& loadContext,
+                              const HttpChannelCreationArgs& aOpenArgs)
 {
   // We don't allocate here: instead we always use IPDL constructor that takes
   // an existing HttpChildChannel
@@ -87,7 +83,8 @@ NeckoChild::DeallocPHttpChannel(PHttpChannelChild* channel)
 
 PFTPChannelChild*
 NeckoChild::AllocPFTPChannel(PBrowserChild* aBrowser,
-                             const SerializedLoadContext& aSerialized)
+                             const SerializedLoadContext& aSerialized,
+                             const FTPChannelCreationArgs& aOpenArgs)
 {
   // We don't allocate here: see FTPChannelChild::AsyncOpen()
   NS_RUNTIMEABORT("AllocPFTPChannel should not be called");

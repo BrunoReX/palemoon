@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_lir_x86_shared_h__
-#define jsion_lir_x86_shared_h__
+#ifndef ion_shared_LIR_x86_shared_h
+#define ion_shared_LIR_x86_shared_h
 
 namespace js {
 namespace ion {
@@ -22,8 +21,51 @@ class LDivI : public LBinaryMath<1>
         setTemp(0, temp);
     }
 
+    const char *extraName() const {
+        if (mir()->isTruncated()) {
+            if (mir()->canBeNegativeZero()) {
+                return mir()->canBeNegativeOverflow()
+                       ? "Truncate_NegativeZero_NegativeOverflow"
+                       : "Truncate_NegativeZero";
+            }
+            return mir()->canBeNegativeOverflow() ? "Truncate_NegativeOverflow" : "Truncate";
+        }
+        if (mir()->canBeNegativeZero())
+            return mir()->canBeNegativeOverflow() ? "NegativeZero_NegativeOverflow" : "NegativeZero";
+        return mir()->canBeNegativeOverflow() ? "NegativeOverflow" : NULL;
+    }
+
     const LDefinition *remainder() {
         return getTemp(0);
+    }
+    MDiv *mir() const {
+        return mir_->toDiv();
+    }
+};
+
+// Signed division by a power-of-two constant.
+class LDivPowTwoI : public LBinaryMath<0>
+{
+    const int32_t shift_;
+
+  public:
+    LIR_HEADER(DivPowTwoI)
+
+    LDivPowTwoI(const LAllocation &lhs, const LAllocation &lhsCopy, int32_t shift)
+      : shift_(shift)
+    {
+        setOperand(0, lhs);
+        setOperand(1, lhsCopy);
+    }
+
+    const LAllocation *numerator() {
+        return getOperand(0);
+    }
+    const LAllocation *numeratorCopy() {
+        return getOperand(1);
+    }
+    int32_t shift() const {
+        return shift_;
     }
     MDiv *mir() const {
         return mir_->toDiv();
@@ -41,8 +83,33 @@ class LModI : public LBinaryMath<1>
         setTemp(0, temp);
     }
 
+    const char *extraName() const {
+        return mir()->isTruncated() ? "Truncated" : NULL;
+    }
+
     const LDefinition *remainder() {
         return getDef(0);
+    }
+    MMod *mir() const {
+        return mir_->toMod();
+    }
+};
+
+// This class performs a simple x86 'div', yielding either a quotient or remainder depending on
+// whether this instruction is defined to output eax (quotient) or edx (remainder).
+class LAsmJSDivOrMod : public LBinaryMath<1>
+{
+  public:
+    LIR_HEADER(AsmJSDivOrMod);
+
+    LAsmJSDivOrMod(const LAllocation &lhs, const LAllocation &rhs, const LDefinition &temp) {
+        setOperand(0, lhs);
+        setOperand(1, rhs);
+        setTemp(0, temp);
+    }
+
+    const LDefinition *remainder() {
+        return getTemp(0);
     }
 };
 
@@ -64,6 +131,9 @@ class LModPowTwoI : public LInstructionHelper<1,1,0>
     }
     const LDefinition *remainder() {
         return getDef(0);
+    }
+    MMod *mir() const {
+        return mir_->toMod();
     }
 };
 
@@ -150,7 +220,6 @@ class LTableSwitchV : public LInstructionHelper<0, BOX_PIECES, 3>
     }
 };
 
-// Guard against an object's shape.
 class LGuardShape : public LInstructionHelper<0, 1, 0>
 {
   public:
@@ -164,13 +233,16 @@ class LGuardShape : public LInstructionHelper<0, 1, 0>
     }
 };
 
-class LRecompileCheck : public LInstructionHelper<0, 0, 0>
+class LGuardObjectType : public LInstructionHelper<0, 1, 0>
 {
   public:
-    LIR_HEADER(RecompileCheck)
+    LIR_HEADER(GuardObjectType)
 
-    const MRecompileCheck *mir() const {
-        return mir_->toRecompileCheck();
+    LGuardObjectType(const LAllocation &in) {
+        setOperand(0, in);
+    }
+    const MGuardObjectType *mir() const {
+        return mir_->toGuardObjectType();
     }
 };
 
@@ -191,7 +263,13 @@ class LMulI : public LBinaryMath<0, 1>
         setOperand(2, lhsCopy);
     }
 
-    MMul *mir() {
+    const char *extraName() const {
+        return (mir()->mode() == MMul::Integer)
+               ? "Integer"
+               : (mir()->canBeNegativeZero() ? "CanBeNegativeZero" : NULL);
+    }
+
+    MMul *mir() const {
         return mir_->toMul();
     }
     const LAllocation *lhsCopy() {
@@ -202,5 +280,4 @@ class LMulI : public LBinaryMath<0, 1>
 } // namespace ion
 } // namespace js
 
-#endif // jsion_lir_x86_shared_h__
-
+#endif /* ion_shared_LIR_x86_shared_h */

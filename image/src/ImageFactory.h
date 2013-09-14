@@ -4,18 +4,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIURI.h"
-#include "nsIRequest.h"
+#ifndef MOZILLA_IMAGELIB_IMAGEFACTORY_H_
+#define MOZILLA_IMAGELIB_IMAGEFACTORY_H_
 
-#include "imgIContainer.h"
-#include "imgStatusTracker.h"
+#include "nsCOMPtr.h"
 
-#include "Image.h"
+class nsCString;
+class nsIRequest;
+class nsIURI;
+class imgStatusTracker;
 
 namespace mozilla {
 namespace image {
 
-extern const char* SVG_MIMETYPE;
+class Image;
 
 class ImageFactory
 {
@@ -44,7 +46,6 @@ public:
    */
   static already_AddRefed<Image> CreateAnonymousImage(const nsCString& aMimeType);
 
-
 private:
   // Factory functions that create specific types of image containers.
   static already_AddRefed<Image> CreateRasterImage(nsIRequest* aRequest,
@@ -67,3 +68,5 @@ private:
 
 } // namespace image
 } // namespace mozilla
+
+#endif // MOZILLA_IMAGELIB_IMAGEFACTORY_H_

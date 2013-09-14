@@ -7,12 +7,8 @@
  * http://xhr.spec.whatwg.org
  */
 
-interface HTMLFormElement;
-
 [Constructor(optional HTMLFormElement form)]
 interface FormData {
-  // Not supported (bug 739174)
-  // void append(DOMString name, Blob value, optional DOMString filename);
-  void append(DOMString name, Blob value);
+  void append(DOMString name, Blob value, optional DOMString filename);
   void append(DOMString name, DOMString value);
 };

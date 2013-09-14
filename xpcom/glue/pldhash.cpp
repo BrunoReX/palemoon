@@ -5,8 +5,6 @@
 
 /*
  * Double hashing implementation.
- *
- * Try to keep this file in sync with js/src/jsdhash.cpp.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,7 +61,7 @@
 #define DECREMENT_RECURSION_LEVEL(table_)                                     \
     PR_BEGIN_MACRO                                                            \
         if (RECURSION_LEVEL(table_) != IMMUTABLE_RECURSION_LEVEL) {           \
-            NS_ASSERTION(RECURSION_LEVEL(table_) > 0, "RECURSION_LEVEL(table_) > 0");              \
+            MOZ_ASSERT(RECURSION_LEVEL(table_) > 0);                          \
             --RECURSION_LEVEL(table_);                                        \
         }                                                                     \
     PR_END_MACRO
@@ -273,7 +271,7 @@ PL_DHashTableSetAlphaBounds(PLDHashTable *table,
                  "PL_DHASH_MIN_SIZE - (maxAlpha * PL_DHASH_MIN_SIZE) >= 1");
     if (PL_DHASH_MIN_SIZE - (maxAlpha * PL_DHASH_MIN_SIZE) < 1) {
         maxAlpha = (float)
-                   (PL_DHASH_MIN_SIZE - NS_MAX(PL_DHASH_MIN_SIZE / 256, 1))
+                   (PL_DHASH_MIN_SIZE - XPCOM_MAX(PL_DHASH_MIN_SIZE / 256, 1))
                    / PL_DHASH_MIN_SIZE;
     }
 
@@ -286,7 +284,7 @@ PL_DHashTableSetAlphaBounds(PLDHashTable *table,
                  "minAlpha < maxAlpha / 2");
     if (minAlpha >= maxAlpha / 2) {
         size = PL_DHASH_TABLE_SIZE(table);
-        minAlpha = (size * maxAlpha - NS_MAX(size / 256, 1u)) / (2 * size);
+        minAlpha = (size * maxAlpha - XPCOM_MAX(size / 256, 1u)) / (2 * size);
     }
 
     table->maxAlphaFrac = (uint8_t)(maxAlpha * 256);
@@ -365,8 +363,7 @@ PL_DHashTableFinish(PLDHashTable *table)
     }
 
     DECREMENT_RECURSION_LEVEL(table);
-    NS_ASSERTION(RECURSION_LEVEL_SAFE_TO_FINISH(table),
-                 "RECURSION_LEVEL_SAFE_TO_FINISH(table)");
+    MOZ_ASSERT(RECURSION_LEVEL_SAFE_TO_FINISH(table));
 
     /* Free entry storage last. */
     table->ops->freeTable(table, table->entryStore);
@@ -571,8 +568,7 @@ PL_DHashTableOperate(PLDHashTable *table, const void *key, PLDHashOperator op)
     uint32_t size;
     int deltaLog2;
 
-    NS_ASSERTION(op == PL_DHASH_LOOKUP || RECURSION_LEVEL(table) == 0,
-                 "op == PL_DHASH_LOOKUP || RECURSION_LEVEL(table) == 0");
+    MOZ_ASSERT(op == PL_DHASH_LOOKUP || RECURSION_LEVEL(table) == 0);
     INCREMENT_RECURSION_LEVEL(table);
 
     keyHash = table->ops->hashKey(table, key);
@@ -677,8 +673,7 @@ PL_DHashTableRawRemove(PLDHashTable *table, PLDHashEntryHdr *entry)
 {
     PLDHashNumber keyHash;      /* load first in case clearEntry goofs it */
 
-    NS_ASSERTION(RECURSION_LEVEL(table) != IMMUTABLE_RECURSION_LEVEL,
-                 "RECURSION_LEVEL(table) != IMMUTABLE_RECURSION_LEVEL");
+    MOZ_ASSERT(RECURSION_LEVEL(table) != IMMUTABLE_RECURSION_LEVEL);
 
     NS_ASSERTION(PL_DHASH_ENTRY_IS_LIVE(entry),
                  "PL_DHASH_ENTRY_IS_LIVE(entry)");
@@ -726,8 +721,7 @@ PL_DHashTableEnumerate(PLDHashTable *table, PLDHashEnumerator etor, void *arg)
         entryAddr += entrySize;
     }
 
-    NS_ASSERTION(!didRemove || RECURSION_LEVEL(table) == 1,
-                 "!didRemove || RECURSION_LEVEL(table) == 1");
+    MOZ_ASSERT(!didRemove || RECURSION_LEVEL(table) == 1);
 
     /*
      * Shrink or compress if a quarter or more of all entries are removed, or

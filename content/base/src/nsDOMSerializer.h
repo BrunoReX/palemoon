@@ -29,9 +29,10 @@ public:
 
   // WebIDL API
   static already_AddRefed<nsDOMSerializer>
-  Constructor(nsISupports* aOwner, mozilla::ErrorResult& rv)
+  Constructor(const mozilla::dom::GlobalObject& aOwner,
+              mozilla::ErrorResult& rv)
   {
-    nsRefPtr<nsDOMSerializer> domSerializer = new nsDOMSerializer(aOwner);
+    nsRefPtr<nsDOMSerializer> domSerializer = new nsDOMSerializer(aOwner.Get());
     return domSerializer.forget();
   }
 
@@ -48,11 +49,10 @@ public:
     return mOwner;
   }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope,
-                               bool* aTriedToWrap) MOZ_OVERRIDE
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE
   {
-    return mozilla::dom::XMLSerializerBinding::Wrap(aCx, aScope, this,
-                                                    aTriedToWrap);
+    return mozilla::dom::XMLSerializerBinding::Wrap(aCx, aScope, this);
   }
 
 private:

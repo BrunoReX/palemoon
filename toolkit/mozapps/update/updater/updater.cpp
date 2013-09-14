@@ -50,11 +50,17 @@
 
 #include "updatelogging.h"
 
+#include "mozilla/Compiler.h"
+
 // Amount of the progress bar to use in each of the 3 update stages,
 // should total 100.0.
 #define PROGRESS_PREPARE_SIZE 20.0f
 #define PROGRESS_EXECUTE_SIZE 75.0f
 #define PROGRESS_FINISH_SIZE   5.0f
+
+// Amount of time in ms to wait for the parent process to close
+#define PARENT_WAIT 5000
+#define IMMERSIVE_PARENT_WAIT 15000
 
 #if defined(XP_MACOSX)
 // These functions are defined in launchchild_osx.mm
@@ -83,6 +89,15 @@ void LaunchMacPostProcess(const char* aAppExe);
 #if defined(MOZ_WIDGET_GONK)
 # include "automounter_gonk.h"
 # include <unistd.h>
+# include <android/log.h>
+# include <linux/ioprio.h>
+# include <sys/resource.h>
+
+// The only header file in bionic which has a function prototype for ioprio_set
+// is libc/include/sys/linux-unistd.h. However, linux-unistd.h conflicts
+// badly with unistd.h, so we declare the prototype for ioprio_set directly.
+extern "C" int ioprio_set(int which, int who, int ioprio);
+
 # define MAYBE_USE_HARD_LINKS 1
 static bool sUseHardLinks = true;
 #else
@@ -110,12 +125,20 @@ static bool sUseHardLinks = true;
 
 // This variable lives in libbz2.  It's declared in bzlib_private.h, so we just
 // declare it here to avoid including that entire header file.
-#if (__GNUC__ >= 4) || (__GNUC__ == 3 && __GNUC_MINOR__ >= 3)
+#define BZ2_CRC32TABLE_UNDECLARED
+
+#if MOZ_IS_GCC
+#if MOZ_GCC_VERSION_AT_LEAST(3, 3, 0)
 extern "C"  __attribute__((visibility("default"))) unsigned int BZ2_crc32Table[256];
+#undef BZ2_CRC32TABLE_UNDECLARED
+#endif
 #elif defined(__SUNPRO_C) || defined(__SUNPRO_CC)
 extern "C" __global unsigned int BZ2_crc32Table[256];
-#else
+#undef BZ2_CRC32TABLE_UNDECLARED
+#endif
+#if defined(BZ2_CRC32TABLE_UNDECLARED)
 extern "C" unsigned int BZ2_crc32Table[256];
+#undef BZ2_CRC32TABLE_UNDECLARED
 #endif
 
 static unsigned int
@@ -1655,8 +1678,26 @@ PatchIfFile::Finish(int status)
 
 #ifdef XP_WIN
 #include "nsWindowsRestart.cpp"
+#include "nsWindowsHelpers.h"
 #include "uachelper.h"
 #include "pathhash.h"
+
+#ifdef MOZ_METRO
+/**
+ * Determines if the update came from an Immersive browser
+ * @return true if the update came from an immersive browser
+ */
+bool
+IsUpdateFromMetro(int argc, NS_tchar **argv)
+{
+  for (int i = 0; i < argc; i++) {
+    if (!wcsicmp(L"-ServerName:DefaultBrowserServer", argv[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+#endif
 #endif
 
 static void
@@ -1683,6 +1724,14 @@ LaunchCallbackApp(const NS_tchar *workingDir,
   // Do not allow the callback to run when running an update through the
   // service as session 0.  The unelevated updater.exe will do the launching.
   if (!usingService) {
+#if defined(MOZ_METRO)
+    // If our callback application is the default metro browser, then
+    // launch it now.
+    if (IsUpdateFromMetro(argc, argv)) {
+      LaunchDefaultMetroBrowser();
+      return;
+    }
+#endif
     WinLaunchChild(argv[0], argc, argv, NULL);
   }
 #else
@@ -2085,6 +2134,49 @@ ReadMARChannelIDs(const NS_tchar *path, MARChannelStringTable *results)
 }
 #endif
 
+static int
+GetUpdateFileName(NS_tchar *fileName, int maxChars)
+{
+#if defined(MOZ_WIDGET_GONK)  // If an update.link file exists, then it will contain the name
+  // of the update file (terminated by a newline).
+
+  NS_tchar linkFileName[MAXPATHLEN];
+  NS_tsnprintf(linkFileName, sizeof(linkFileName)/sizeof(linkFileName[0]),
+               NS_T("%s/update.link"), gSourcePath);
+  AutoFile linkFile = NS_tfopen(linkFileName, NS_T("rb"));
+  if (linkFile == NULL) {
+    NS_tsnprintf(fileName, maxChars,
+                 NS_T("%s/update.mar"), gSourcePath);
+    return OK;
+  }
+
+  char dataFileName[MAXPATHLEN];
+  size_t bytesRead;
+
+  if ((bytesRead = fread(dataFileName, 1, sizeof(dataFileName)-1, linkFile)) <= 0) {
+    *fileName = NS_T('\0');
+    return READ_ERROR;
+  }
+  if (dataFileName[bytesRead-1] == '\n') {
+    // Strip trailing newline (for \n and \r\n)
+    bytesRead--;
+  }
+  if (dataFileName[bytesRead-1] == '\r') {
+    // Strip trailing CR (for \r, \r\n)
+    bytesRead--;
+  }
+  dataFileName[bytesRead] = '\0';
+
+  strncpy(fileName, dataFileName, maxChars-1);
+  fileName[maxChars-1] = '\0';
+#else
+  // We currently only support update.link files under GONK
+  NS_tsnprintf(fileName, maxChars,
+               NS_T("%s/update.mar"), gSourcePath);
+#endif
+  return OK;
+}
+
 static void
 UpdateThreadFunc(void *param)
 {
@@ -2094,10 +2186,10 @@ UpdateThreadFunc(void *param)
     rv = ProcessReplaceRequest();
   } else {
     NS_tchar dataFile[MAXPATHLEN];
-    NS_tsnprintf(dataFile, sizeof(dataFile)/sizeof(dataFile[0]),
-                 NS_T("%s/update.mar"), gSourcePath);
-
-    rv = gArchiveReader.Open(dataFile);
+    rv = GetUpdateFileName(dataFile, sizeof(dataFile)/sizeof(dataFile[0]));
+    if (rv == OK) {
+      rv = gArchiveReader.Open(dataFile);
+    }
 
 #ifdef MOZ_VERIFY_MAR_SIGNATURE
     if (rv == OK) {
@@ -2207,6 +2299,23 @@ UpdateThreadFunc(void *param)
 
 int NS_main(int argc, NS_tchar **argv)
 {
+#if defined(MOZ_WIDGET_GONK)
+  if (getenv("LD_PRELOAD")) {
+    // If the updater is launched with LD_PRELOAD set, then we wind up
+    // preloading libmozglue.so. Under some circumstances, this can cause
+    // the remount of /system to fail when going from rw to ro, so if we
+    // detect LD_PRELOAD we unsetenv it and relaunch ourselves without it.
+    // This will cause the offending preloaded library to be closed.
+    //
+    // For a variety of reasons, this is really hard to do in a safe manner
+    // in the parent process, so we do it here.
+    unsetenv("LD_PRELOAD");
+    execv(argv[0], argv);
+    __android_log_print(ANDROID_LOG_INFO, "updater",
+                        "execve failed: errno: %d. Exiting...", errno);
+    _exit(1);
+  }
+#endif
   InitProgressUI(&argc, &argv);
 
   // To process an update the updater command line must at a minimum have the
@@ -2340,24 +2449,53 @@ int NS_main(int argc, NS_tchar **argv)
     LOG(("Performing a replace request"));
   }
 
+#ifdef MOZ_WIDGET_GONK
+  const char *prioEnv = getenv("MOZ_UPDATER_PRIO");
+  if (prioEnv) {
+    int32_t prioVal;
+    int32_t oomScoreAdj;
+    int32_t ioprioClass;
+    int32_t ioprioLevel;
+    if (sscanf(prioEnv, "%d/%d/%d/%d",
+               &prioVal, &oomScoreAdj, &ioprioClass, &ioprioLevel) == 4) {
+      LOG(("MOZ_UPDATER_PRIO=%s", prioEnv));
+      if (setpriority(PRIO_PROCESS, 0, prioVal)) {
+        LOG(("setpriority(%d) failed, errno = %d", prioVal, errno));
+      }
+      if (ioprio_set(IOPRIO_WHO_PROCESS, 0,
+                     IOPRIO_PRIO_VALUE(ioprioClass, ioprioLevel))) {
+        LOG(("ioprio_set(%d,%d) failed: errno = %d",
+             ioprioClass, ioprioLevel, errno));
+      }
+      FILE *fs = fopen("/proc/self/oom_score_adj", "w");
+      if (fs) {
+        fprintf(fs, "%d", oomScoreAdj);
+        fclose(fs);
+      } else {
+        LOG(("Unable to open /proc/self/oom_score_adj for writing, errno = %d", errno));
+      }
+    }
+  }
+#endif
+
 #ifdef XP_WIN
-  int possibleWriteError; // Variable holding one of the errors 46-48
   if (pid > 0) {
     HANDLE parent = OpenProcess(SYNCHRONIZE, false, (DWORD) pid);
     // May return NULL if the parent process has already gone away.
     // Otherwise, wait for the parent process to exit before starting the
     // update.
     if (parent) {
-      DWORD result = WaitForSingleObject(parent, 5000);
+      bool updateFromMetro = false;
+#ifdef MOZ_METRO
+      updateFromMetro = IsUpdateFromMetro(argc, argv);
+#endif
+      DWORD waitTime = updateFromMetro ?
+                       IMMERSIVE_PARENT_WAIT : PARENT_WAIT;
+      DWORD result = WaitForSingleObject(parent, waitTime);
       CloseHandle(parent);
-      if (result != WAIT_OBJECT_0)
+      if (result != WAIT_OBJECT_0 && !updateFromMetro)
         return 1;
-      possibleWriteError = WRITE_ERROR_SHARING_VIOLATION_SIGNALED;
-    } else {
-      possibleWriteError = WRITE_ERROR_SHARING_VIOLATION_NOPROCESSFORPID;
     }
-  } else {
-    possibleWriteError = WRITE_ERROR_SHARING_VIOLATION_NOPID;
   }
 #else
   if (pid > 0)
@@ -2856,7 +2994,8 @@ int NS_main(int argc, NS_tchar **argv)
 
       // Since the process may be signaled as exited by WaitForSingleObject before
       // the release of the executable image try to lock the main executable file
-      // multiple times before giving up.
+      // multiple times before giving up.  If we end up giving up, we won't
+      // fail the update.
       const int max_retries = 10;
       int retries = 1;
       DWORD lastWriteError = 0;
@@ -2880,26 +3019,30 @@ int NS_main(int argc, NS_tchar **argv)
         Sleep(100);
       } while (++retries <= max_retries);
 
-      // CreateFileW will fail if the callback executable is already in use. Since
-      // it isn't possible to update write the status file and return.
+      // CreateFileW will fail if the callback executable is already in use.
+      // We don't fail the update though.
       if (callbackFile == INVALID_HANDLE_VALUE) {
         LOG(("NS_main: file in use - failed to exclusively open executable " \
              "file: " LOG_S, argv[callbackIndex]));
         LogFinish();
-        if (ERROR_ACCESS_DENIED == lastWriteError) {
-          WriteStatusFile(WRITE_ERROR_ACCESS_DENIED);
-        } else if (ERROR_SHARING_VIOLATION == lastWriteError) {
-          WriteStatusFile(possibleWriteError);
+
+        if (lastWriteError == ERROR_SHARING_VIOLATION) {
+          LOG(("NS_main: callback in use, continuing without exclusive access"));
         } else {
-          WriteStatusFile(WRITE_ERROR_CALLBACK_APP);
+          if (lastWriteError == ERROR_ACCESS_DENIED) {
+            WriteStatusFile(WRITE_ERROR_ACCESS_DENIED);
+          } else {
+            WriteStatusFile(WRITE_ERROR_CALLBACK_APP);
+          }
+
+          NS_tremove(gCallbackBackupPath);
+          EXIT_WHEN_ELEVATED(elevatedLockFilePath, updateLockFileHandle, 1);
+          LaunchCallbackApp(argv[4],
+                            argc - callbackIndex,
+                            argv + callbackIndex,
+                            sUsingService);
+          return 1;
         }
-        NS_tremove(gCallbackBackupPath);
-        EXIT_WHEN_ELEVATED(elevatedLockFilePath, updateLockFileHandle, 1);
-        LaunchCallbackApp(argv[4],
-                          argc - callbackIndex,
-                          argv + callbackIndex,
-                          sUsingService);
-        return 1;
       }
     }
   }
@@ -2928,7 +3071,9 @@ int NS_main(int argc, NS_tchar **argv)
 
 #ifdef XP_WIN
   if (argc > callbackIndex && !sReplaceRequest) {
-    CloseHandle(callbackFile);
+    if (callbackFile != INVALID_HANDLE_VALUE) {
+      CloseHandle(callbackFile);
+    }
     // Remove the copy of the callback executable.
     NS_tremove(gCallbackBackupPath);
   }

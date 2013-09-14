@@ -57,37 +57,6 @@ nsMathMLFrame::FindAttrDisplaystyle(nsIContent*         aContent,
   // no reset if the attr isn't found. so be sure to call it on inherited flags
 }
 
-// snippet of code used by the tags where the dir attribute is allowed.
-/* static */ void
-nsMathMLFrame::FindAttrDirectionality(nsIContent*         aContent,
-                                      nsPresentationData& aPresentationData)
-{
-  NS_ASSERTION(aContent->Tag() == nsGkAtoms::math ||
-               aContent->Tag() == nsGkAtoms::mrow_ ||
-               aContent->Tag() == nsGkAtoms::mstyle_ ||
-               aContent->Tag() == nsGkAtoms::mi_ ||
-               aContent->Tag() == nsGkAtoms::mn_ ||
-               aContent->Tag() == nsGkAtoms::mo_ ||
-               aContent->Tag() == nsGkAtoms::mtext_ ||
-               aContent->Tag() == nsGkAtoms::ms_, "bad caller");
-
-  static nsIContent::AttrValuesArray strings[] =
-    {&nsGkAtoms::ltr, &nsGkAtoms::rtl, nullptr};
-
-  // see if the explicit dir attribute is there
-  switch (aContent->FindAttrValueIn(kNameSpaceID_None,
-                                    nsGkAtoms::dir, strings, eCaseMatters))
-    {
-    case 0:
-      aPresentationData.flags &= ~NS_MATHML_RTL;
-      break;
-    case 1:
-      aPresentationData.flags |= NS_MATHML_RTL;
-      break;
-    }
-  // no reset if the attr isn't found. so be sure to call it on inherited flags
-}
-
 NS_IMETHODIMP
 nsMathMLFrame::InheritAutomaticData(nsIFrame* aParent) 
 {
@@ -107,9 +76,6 @@ nsMathMLFrame::InheritAutomaticData(nsIFrame* aParent)
   mPresentationData.mstyle = parentData.mstyle;
   if (NS_MATHML_IS_DISPLAYSTYLE(parentData.flags)) {
     mPresentationData.flags |= NS_MATHML_DISPLAYSTYLE;
-  }
-  if (NS_MATHML_IS_RTL(parentData.flags)) {
-    mPresentationData.flags |= NS_MATHML_RTL;
   }
 
 #if defined(DEBUG) && defined(SHOW_BOUNDING_BOX)
@@ -223,12 +189,11 @@ nsMathMLFrame::GetPresentationDataFrom(nsIFrame*           aFrame,
       break;
 
     if (content->Tag() == nsGkAtoms::math) {
-      const nsStyleDisplay* display = frame->GetStyleDisplay();
+      const nsStyleDisplay* display = frame->StyleDisplay();
       if (display->mDisplay == NS_STYLE_DISPLAY_BLOCK) {
         aPresentationData.flags |= NS_MATHML_DISPLAYSTYLE;
       }
       FindAttrDisplaystyle(content, aPresentationData);
-      FindAttrDirectionality(content, aPresentationData);
       aPresentationData.mstyle = frame->GetFirstContinuation();
       break;
     }
@@ -332,7 +297,7 @@ nsMathMLFrame::CalcLength(nsPresContext*   aPresContext,
   nsCSSUnit unit = aCSSValue.GetUnit();
 
   if (eCSSUnit_EM == unit) {
-    const nsStyleFont* font = aStyleContext->GetStyleFont();
+    const nsStyleFont* font = aStyleContext->StyleFont();
     return NSToCoordRound(aCSSValue.GetFloatValue() * (float)font->mFont.size);
   }
   else if (eCSSUnit_XHeight == unit) {
@@ -467,13 +432,13 @@ void nsDisplayMathMLBar::Paint(nsDisplayListBuilder* aBuilder,
   aCtx->FillRect(mRect + ToReferenceFrame());
 }
 
-nsresult
+void
 nsMathMLFrame::DisplayBar(nsDisplayListBuilder* aBuilder,
                           nsIFrame* aFrame, const nsRect& aRect,
                           const nsDisplayListSet& aLists) {
-  if (!aFrame->GetStyleVisibility()->IsVisible() || aRect.IsEmpty())
-    return NS_OK;
+  if (!aFrame->StyleVisibility()->IsVisible() || aRect.IsEmpty())
+    return;
 
-  return aLists.Content()->AppendNewToTop(new (aBuilder)
-      nsDisplayMathMLBar(aBuilder, aFrame, aRect));
+  aLists.Content()->AppendNewToTop(new (aBuilder)
+    nsDisplayMathMLBar(aBuilder, aFrame, aRect));
 }

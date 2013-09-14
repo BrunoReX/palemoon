@@ -7,7 +7,7 @@ pref("app.update.interval", 172800);
 pref("app.update.auto", false);
 pref("app.update.enabled", false);
 // URL for update checks, re-enabled on palemoon.org (369)
-pref("app.update.url", "http://www.palemoon.org/update/%VERSION%/update.xml");
+pref("app.update.url", "http://www.palemoon.org/update/%VERSION%/%BUILD_TARGET%/update.xml");
 pref("app.update.promptWaitTime", 86400); 
 // The time interval between the downloading of mar file chunks in the
 // background (in seconds)
@@ -155,7 +155,7 @@ pref("dom.max_chrome_script_run_time", 90); //Some addons need ample time!
 pref("dom.max_script_run_time", 20); //Should be plenty for a page script to do what it needs
 
 //Image decoding tweaks
-pref("image.mem.max_ms_before_yield", 250);
+pref("image.mem.max_ms_before_yield", 20);
 
 //store sessions less frequently to prevent redundant mem usage by storing too much
 pref("browser.sessionstore.interval",60000); //every minute instead of every 10 seconds

@@ -1,4 +1,6 @@
-/*
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ *
  * Copyright (C) 2009 Apple Inc. All rights reserved.
  * Copyright (C) 2010 Peter Varga (pvarga@inf.u-szeged.hu), University of Szeged
  *
@@ -29,10 +31,6 @@
 #include "Yarr.h"
 #include "YarrCanonicalizeUCS2.h"
 #include "BumpPointerAllocator.h"
-
-#ifndef NDEBUG
-#include <stdio.h>
-#endif
 
 using namespace WTF;
 
@@ -156,6 +154,7 @@ public:
     ParenthesesDisjunctionContext* allocParenthesesDisjunctionContext(ByteDisjunction* disjunction, unsigned* output, ByteTerm& term)
     {
         size_t size = sizeof(ParenthesesDisjunctionContext) - sizeof(unsigned) + (term.atom.parenthesesDisjunction->m_numSubpatterns << 1) * sizeof(unsigned) + sizeof(DisjunctionContext) - sizeof(uintptr_t) + disjunction->m_frameSize * sizeof(uintptr_t);
+        size = JS_ROUNDUP(size, JS_ALIGNMENT_OF(ParenthesesDisjunctionContext));
         allocatorPool = allocatorPool->ensureCapacity(size);
         if (!allocatorPool)
             CRASH();
@@ -1120,6 +1119,10 @@ public:
     matchAgain:
         ASSERT(context->term < static_cast<int>(disjunction->terms.size()));
 
+        // Prevent jank resulting from getting stuck in Yarr for a long time.
+        if (!JS_CHECK_OPERATION_LIMIT(this->cx))
+            return JSRegExpErrorInternal;
+
         switch (currentTerm().type) {
         case ByteTerm::TypeSubpatternBegin:
             MATCH_NEXT();
@@ -1277,6 +1280,10 @@ public:
 
     backtrack:
         ASSERT(context->term < static_cast<int>(disjunction->terms.size()));
+
+        // Prevent jank resulting from getting stuck in Yarr for a long time.
+        if (!JS_CHECK_OPERATION_LIMIT(this->cx))
+            return JSRegExpErrorInternal;
 
         switch (currentTerm().type) {
         case ByteTerm::TypeSubpatternBegin:
@@ -1444,8 +1451,9 @@ public:
         return output[0];
     }
 
-    Interpreter(BytecodePattern* pattern, unsigned* output, const CharType* input, unsigned length, unsigned start)
-        : pattern(pattern)
+    Interpreter(JSContext *cx, BytecodePattern* pattern, unsigned* output, const CharType* input, unsigned length, unsigned start)
+        : cx(cx)
+        , pattern(pattern)
         , output(output)
         , input(input, start, length)
         , allocatorPool(0)
@@ -1454,6 +1462,7 @@ public:
     }
 
 private:
+    JSContext *cx;
     BytecodePattern* pattern;
     unsigned* output;
     InputStream input;
@@ -1724,6 +1733,7 @@ public:
         unsigned numSubpatterns = lastSubpatternId - subpatternId + 1;
         ByteDisjunction* parenthesesDisjunction = js_new<ByteDisjunction>(numSubpatterns, callFrameSize);
 
+        parenthesesDisjunction->terms.reserve(endTerm - beginTerm + 1);
         parenthesesDisjunction->terms.append(ByteTerm::SubpatternBegin());
         for (unsigned termInParentheses = beginTerm + 1; termInParentheses < endTerm; ++termInParentheses)
             parenthesesDisjunction->terms.append(m_bodyDisjunction->terms[termInParentheses]);
@@ -1938,23 +1948,23 @@ PassOwnPtr<BytecodePattern> byteCompile(YarrPattern& pattern, BumpPointerAllocat
     return ByteCompiler(pattern).compile(allocator);
 }
 
-unsigned interpret(BytecodePattern* bytecode, const String& input, unsigned start, unsigned* output)
+unsigned interpret(JSContext *cx, BytecodePattern* bytecode, const String& input, unsigned start, unsigned* output)
 {
 #if YARR_8BIT_CHAR_SUPPORT
     if (input.is8Bit())
-        return Interpreter<LChar>(bytecode, output, input.characters8(), input.length(), start).interpret();
+        return Interpreter<LChar>(cx, bytecode, output, input.characters8(), input.length(), start).interpret();
 #endif
-    return Interpreter<UChar>(bytecode, output, input.chars(), input.length(), start).interpret();
+    return Interpreter<UChar>(cx, bytecode, output, input.chars(), input.length(), start).interpret();
 }
 
-unsigned interpret(BytecodePattern* bytecode, const LChar* input, unsigned length, unsigned start, unsigned* output)
+unsigned interpret(JSContext *cx, BytecodePattern* bytecode, const LChar* input, unsigned length, unsigned start, unsigned* output)
 {
-    return Interpreter<LChar>(bytecode, output, input, length, start).interpret();
+    return Interpreter<LChar>(cx, bytecode, output, input, length, start).interpret();
 }
 
-unsigned interpret(BytecodePattern* bytecode, const UChar* input, unsigned length, unsigned start, unsigned* output)
+unsigned interpret(JSContext *cx, BytecodePattern* bytecode, const UChar* input, unsigned length, unsigned start, unsigned* output)
 {
-    return Interpreter<UChar>(bytecode, output, input, length, start).interpret();
+    return Interpreter<UChar>(cx, bytecode, output, input, length, start).interpret();
 }
 
 // These should be the same for both UChar & LChar.

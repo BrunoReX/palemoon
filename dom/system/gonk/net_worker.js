@@ -17,10 +17,16 @@
 
 const DEBUG = false;
 
-const USB_FUNCTION_PATH  = "sys.usb.config";
-const USB_FUNCTION_STATE = "sys.usb.state";
-const USB_FUNCTION_RNDIS = "rndis,adb";
-const USB_FUNCTION_ADB   = "adb";
+const PERSIST_SYS_USB_CONFIG_PROPERTY = "persist.sys.usb.config";
+const SYS_USB_CONFIG_PROPERTY         = "sys.usb.config";
+const SYS_USB_STATE_PROPERTY          = "sys.usb.state";
+
+const USB_FUNCTION_RNDIS  = "rndis";
+const USB_FUNCTION_ADB    = "adb";
+
+const kNetdInterfaceChangedTopic = "netd-interface-change";
+const kNetdBandwidthControlTopic = "netd-bandwidth-control";
+
 // Retry 20 times (2 seconds) for usb state transition.
 const USB_FUNCTION_RETRY_TIMES = 20;
 // Check "sys.usb.state" every 100ms.
@@ -38,10 +44,19 @@ const NETD_COMMAND_ERROR        = 500;
 // 6xx - Unsolicited broadcasts
 const NETD_COMMAND_UNSOLICITED  = 600;
 
+// Broadcast messages
+const NETD_COMMAND_INTERFACE_CHANGE     = 600;
+const NETD_COMMAND_BANDWIDTH_CONTROLLER = 601;
+
 importScripts("systemlibs.js");
 
 function netdResponseType(code) {
   return Math.floor(code/100)*100;
+}
+
+function isBroadcastMessage(code) {
+  let type = netdResponseType(code);
+  return (type == NETD_COMMAND_UNSOLICITED);
 }
 
 function isError(code) {
@@ -52,6 +67,22 @@ function isError(code) {
 function isComplete(code) {
   let type = netdResponseType(code);
   return (type != NETD_COMMAND_PROCEEDING);
+}
+
+function sendBroadcastMessage(code, reason) {
+  let topic = null;
+  switch (code) {
+    case NETD_COMMAND_INTERFACE_CHANGE:
+      topic = "netd-interface-change";
+      break;
+    case NETD_COMMAND_BANDWIDTH_CONTROLLER:
+      topic = "netd-bandwidth-control";
+      break;
+  }
+
+  if (topic) {
+    postMessage({id: 'broadcast', topic: topic, reason: reason});
+  }
 }
 
 let gWifiFailChain = [stopSoftAP,
@@ -85,15 +116,12 @@ function usbTetheringFail(params) {
   postMessage(params);
   // Try to roll back to ensure
   // we don't leave the network systems in limbo.
-  let functionChain = [setIpForwardingEnabled,
-                       stopTethering];
-
   // This parameter is used to disable ipforwarding.
   params.enable = false;
   chain(params, gUSBFailChain, null);
 
   // Disable usb rndis function.
-  setUSBFunction({usbfunc: USB_FUNCTION_ADB, report: false});
+  enableUsbRndis({enable: false, report: false});
 }
 
 function usbTetheringSuccess(params) {
@@ -112,6 +140,18 @@ function networkInterfaceStatsSuccess(params) {
   // Notify the main thread.
   params.txBytes = parseFloat(params.resultReason);
 
+  postMessage(params);
+  return true;
+}
+
+function updateUpStreamSuccess(params) {
+  // Notify the main thread.
+  postMessage(params);
+  return true;
+}
+
+function updateUpStreamFail(params) {
+  // Notify the main thread.
   postMessage(params);
   return true;
 }
@@ -198,20 +238,30 @@ function removeDefaultRoute(options) {
  * Add host route for given network interface.
  */
 function addHostRoute(options) {
-  libnetutils.ifc_add_route(options.ifname, options.dns1, 32, options.gateway);
-  libnetutils.ifc_add_route(options.ifname, options.dns2, 32, options.gateway);
-  libnetutils.ifc_add_route(options.ifname, options.httpproxy, 32, options.gateway);
-  libnetutils.ifc_add_route(options.ifname, options.mmsproxy, 32, options.gateway);
+  for (let i = 0; i < options.hostnames.length; i++) {
+    libnetutils.ifc_add_route(options.ifname, options.hostnames[i], 32, options.gateway);
+  }
 }
 
 /**
  * Remove host route for given network interface.
  */
 function removeHostRoute(options) {
-  libnetutils.ifc_remove_route(options.ifname, options.dns1, 32, options.gateway);
-  libnetutils.ifc_remove_route(options.ifname, options.dns2, 32, options.gateway);
-  libnetutils.ifc_remove_route(options.ifname, options.httpproxy, 32, options.gateway);
-  libnetutils.ifc_remove_route(options.ifname, options.mmsproxy, 32, options.gateway);
+  for (let i = 0; i < options.hostnames.length; i++) {
+    libnetutils.ifc_remove_route(options.ifname, options.hostnames[i], 32, options.gateway);
+  }
+}
+
+function removeNetworkRoute(options) {
+  let ipvalue = netHelpers.stringToIP(options.ip);
+  let netmaskvalue = netHelpers.stringToIP(options.netmask);
+  let subnet = netmaskvalue & ipvalue;
+  let dst = netHelpers.ipToString(subnet);
+  let prefixLength = netHelpers.getMaskLength(netmaskvalue);
+  let gateway = "0.0.0.0";
+
+  libnetutils.ifc_remove_default_route(options.ifname);
+  libnetutils.ifc_remove_route(options.ifname, dst, prefixLength, gateway);
 }
 
 let gCommandQueue = [];
@@ -250,6 +300,12 @@ function onNetdMessage(data) {
 
   // 1xx response code regards as command is proceeding, we need to wait for
   // final response code such as 2xx, 4xx and 5xx before sending next command.
+  if (isBroadcastMessage(code)) {
+    sendBroadcastMessage(code, reason);
+    nextNetdCommand();
+    return;
+  }
+
   if (isComplete(code)) {
     gPending = false;
   }
@@ -379,34 +435,89 @@ function getTxBytes(params, callback) {
   return doCommand(command, callback);
 }
 
+function escapeQuote(str) {
+  str = str.replace(/\\/g, "\\\\");
+  return str.replace(/"/g, "\\\"");
+}
+
 // The command format is "softap set wlan0 wl0.1 hotspot456 open null 6 0 8".
 function setAccessPoint(params, callback) {
   let command = "softap set " + params.ifname +
                 " " + params.wifictrlinterfacename +
-                " " + params.ssid +
+                " \"" + escapeQuote(params.ssid) + "\"" +
                 " " + params.security +
-                " " + params.key +
+                " \"" + escapeQuote(params.key) + "\"" +
                 " " + "6 0 8";
+  return doCommand(command, callback);
+}
+
+function cleanUpStream(params, callback) {
+  let command = "nat disable " + params.previous.internalIfname + " " +
+                params.previous.externalIfname + " " + "0";
+  return doCommand(command, callback);
+}
+
+function createUpStream(params, callback) {
+  let command = "nat enable " + params.current.internalIfname + " " +
+                params.current.externalIfname + " " + "0";
   return doCommand(command, callback);
 }
 
 /**
  * Modify usb function's property to turn on USB RNDIS function
  */
-function setUSBFunction(params) {
+function enableUsbRndis(params) {
   let report = params.report;
   let retry = 0;
-  let i = 0;
 
-  libcutils.property_set(USB_FUNCTION_PATH, params.usbfunc);
-  // Trigger the timer to check usb state and report the result to NetworkManager.
-  if (report) {
-    setTimeout(checkUSBFunction, USB_FUNCTION_RETRY_INTERVAL, params);
+  // For some reason, rndis doesn't play well with diag,modem,nmea.
+  // So when turning rndis on, we set sys.usb.config to either "rndis"
+  // or "rndis,adb". When turning rndis off, we go back to
+  // persist.sys.usb.config.
+  //
+  // On the otoro/unagi, persist.sys.usb.config should be one of:
+  //
+  //    diag,modem,nmea,mass_storage
+  //    diag,modem,nmea,mass_storage,adb
+  //
+  // When rndis is enabled, sys.usb.config should be one of:
+  //
+  //    rdnis
+  //    rndis,adb
+  //
+  // and when rndis is disabled, it should revert to persist.sys.usb.config
+
+  let currentConfig = libcutils.property_get(SYS_USB_CONFIG_PROPERTY);
+  let configFuncs = currentConfig.split(",");
+  let persistConfig = libcutils.property_get(PERSIST_SYS_USB_CONFIG_PROPERTY);
+  let persistFuncs = persistConfig.split(",");
+
+  if (params.enable) {
+    configFuncs = [USB_FUNCTION_RNDIS];
+    if (persistFuncs.indexOf(USB_FUNCTION_ADB) >= 0) {
+      configFuncs.push(USB_FUNCTION_ADB);
+    }
+  } else {
+    // We're turning rndis off, revert back to the persist setting.
+    // adb will already be correct there, so we don't need to do any
+    // further adjustments.
+    configFuncs = persistFuncs;
+  }
+  let newConfig = configFuncs.join(",");
+  if (newConfig != currentConfig) {
+    libcutils.property_set(SYS_USB_CONFIG_PROPERTY, newConfig);
   }
 
-  function checkUSBFunction(params) {
-    let result = libcutils.property_get(USB_FUNCTION_STATE);
-    if (result == params.usbfunc) {
+  // Trigger the timer to check usb state and report the result to NetworkManager.
+  if (report) {
+    setTimeout(checkUsbRndisState, USB_FUNCTION_RETRY_INTERVAL, params);
+  }
+
+  function checkUsbRndisState(params) {
+    let currentState = libcutils.property_get(SYS_USB_STATE_PROPERTY);
+    let stateFuncs = currentState.split(",");
+    let rndisPresent = (stateFuncs.indexOf(USB_FUNCTION_RNDIS) >= 0);
+    if (params.enable == rndisPresent) {
       params.result = true;
       postMessage(params);
       retry = 0;
@@ -414,7 +525,7 @@ function setUSBFunction(params) {
     }
     if (retry < USB_FUNCTION_RETRY_TIMES) {
       retry++;
-      setTimeout(checkUSBFunction, USB_FUNCTION_RETRY_INTERVAL, params);
+      setTimeout(checkUsbRndisState, USB_FUNCTION_RETRY_INTERVAL, params);
       return;
     }
     params.result = false;
@@ -504,8 +615,12 @@ function setWifiTethering(params) {
   let enable = params.enable;
   let interfaceProperties = getIFProperties(params.externalIfname);
 
-  params.dns1 = interfaceProperties.dns1_str;
-  params.dns2 = interfaceProperties.dns2_str;
+  if (interfaceProperties.dns1_str) {
+    params.dns1 = interfaceProperties.dns1_str;
+  }
+  if (interfaceProperties.dns2_str) {
+    params.dns2 = interfaceProperties.dns2_str;
+  }
   dumpParams(params, "WIFI");
 
   if (enable) {
@@ -520,6 +635,16 @@ function setWifiTethering(params) {
     chain(params, gWifiDisableChain, wifiTetheringFail);
   }
   return true;
+}
+
+let gUpdateUpStreamChain = [cleanUpStream,
+                            createUpStream,
+                            updateUpStreamSuccess];
+/**
+ * handling upstream interface change event.
+ */
+function updateUpStream(params) {
+  chain(params, gUpdateUpStreamChain, updateUpStreamFail);
 }
 
 let gUSBEnableChain = [setInterfaceUp,
@@ -543,8 +668,13 @@ function setUSBTethering(params) {
   let enable = params.enable;
   let interfaceProperties = getIFProperties(params.externalIfname);
 
-  params.dns1 = interfaceProperties.dns1_str;
-  params.dns2 = interfaceProperties.dns2_str;
+  if (interfaceProperties.dns1_str) {
+    params.dns1 = interfaceProperties.dns1_str;
+  }
+  if (interfaceProperties.dns2_str) {
+    params.dns2 = interfaceProperties.dns2_str;
+  }
+
   dumpParams(params, "USB");
 
   if (enable) {

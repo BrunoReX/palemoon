@@ -104,7 +104,7 @@ try {
 SpecialPowers.setBoolPref('browser.mozApps.installer.dry_run', true);
 
 // URL of the manifest of the app we want to install.
-const gManifestURL = "http://www.example.com:80/chrome/dom/tests/mochitest/webapps/apps/basic.webapp";
+const gManifestURL = "http://www.example.com/chrome/dom/tests/mochitest/webapps/apps/basic.webapp";
 // ID of the installed app.
 var gTestAppId = 0;
 // Cookies currently in the system.
@@ -186,7 +186,7 @@ function browserLoadEvent() {
     for (i in this.result) {
       var app = this.result[i];
       if (app.manifestURL == gManifestURL) {
-        app.uninstall().onsuccess = function() {
+        navigator.mozApps.mgmt.uninstall(app).onsuccess = function() {
           /*
            * Now that the app is uninstalled, we should not find any more
            * localStorage data from the app or its browsers. However,

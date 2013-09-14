@@ -57,6 +57,8 @@
 #include <pthread.h>
 #endif
 
+#include "mozilla/NullPtr.h"
+
 using namespace std;
 
 #define PLUGIN_VERSION     "1.0.0.0"
@@ -165,6 +167,7 @@ static bool setSitesWithDataCapabilities(NPObject* npobj, const NPVariant* args,
 static bool getLastKeyText(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool getNPNVdocumentOrigin(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool getMouseUpEventCount(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
+static bool queryContentsScaleFactor(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 
 static const NPUTF8* sPluginMethodIdentifierNames[] = {
   "npnEvaluateTest",
@@ -226,7 +229,8 @@ static const NPUTF8* sPluginMethodIdentifierNames[] = {
   "setSitesWithDataCapabilities",
   "getLastKeyText",
   "getNPNVdocumentOrigin",
-  "getMouseUpEventCount"
+  "getMouseUpEventCount",
+  "queryContentsScaleFactor"
 };
 static NPIdentifier sPluginMethodIdentifiers[ARRAY_LENGTH(sPluginMethodIdentifierNames)];
 static const ScriptableFunction sPluginMethodFunctions[] = {
@@ -289,7 +293,8 @@ static const ScriptableFunction sPluginMethodFunctions[] = {
   setSitesWithDataCapabilities,
   getLastKeyText,
   getNPNVdocumentOrigin,
-  getMouseUpEventCount
+  getMouseUpEventCount,
+  queryContentsScaleFactor
 };
 
 STATIC_ASSERT(ARRAY_LENGTH(sPluginMethodIdentifierNames) ==
@@ -583,6 +588,32 @@ drawAsyncBitmapColor(InstanceData* instanceData)
   instanceData->backBuffer = oldFront;
 }
 
+static bool bug813906(NPP npp, const char* const function, const char* const url, const char* const frame)
+{
+  NPObject *windowObj = nullptr;
+  NPError err = NPN_GetValue(npp, NPNVWindowNPObject, &windowObj);
+  if (err != NPERR_NO_ERROR) {
+    return false;
+  }
+
+  NPVariant result;
+  bool res = NPN_Invoke(npp, windowObj, NPN_GetStringIdentifier(function), nullptr, 0, &result);
+  NPN_ReleaseObject(windowObj);
+  if (!res) {
+    return false;
+  }
+
+  NPN_ReleaseVariantValue(&result);
+
+  err = NPN_GetURL(npp, url, frame);
+  if (err != NPERR_NO_ERROR) {
+    err = NPN_GetURL(npp, "about:blank", frame);
+    return false;
+  }
+
+  return true;
+}
+
 //
 // function signatures
 //
@@ -794,6 +825,7 @@ NPP_New(NPMIMEType pluginType, NPP instance, uint16_t mode, int16_t argc, char* 
   instanceData->frontBuffer = NULL;
   instanceData->backBuffer = NULL;
   instanceData->mouseUpEventCount = 0;
+  instanceData->bugMode = -1;
   instance->pdata = instanceData;
 
   TestNPObject* scriptableObject = (TestNPObject*)NPN_CreateObject(instance, &sNPClass);
@@ -924,6 +956,9 @@ NPP_New(NPMIMEType pluginType, NPP instance, uint16_t mode, int16_t argc, char* 
     if (!strcmp(argn[i], "closestream")) {
       instanceData->closeStream = true;
     }
+    if (strcmp(argn[i], "bugmode") == 0) {
+      instanceData->bugMode = atoi(argv[i]);
+    }
   }
 
   if (!browserSupportsWindowless || !pluginSupportsWindowlessMode()) {
@@ -1014,6 +1049,10 @@ NPP_New(NPMIMEType pluginType, NPP instance, uint16_t mode, int16_t argc, char* 
     if (err != NPERR_NO_ERROR) {
       instanceData->err << "NPN_GetURLNotify returned " << err;
     }
+  }
+
+  if ((instanceData->bugMode == 813906) && instanceData->frame.length()) {
+    bug813906(instance, "f", "browser.xul", instanceData->frame.c_str());
   }
 
   return NPERR_NO_ERROR;
@@ -1389,7 +1428,11 @@ NPP_StreamAsFile(NPP instance, NPStream* stream, const char* fname)
     instanceData->fileBuf = malloc((int32_t)size + 1);
     char* buf = reinterpret_cast<char *>(instanceData->fileBuf);
     fseek(file, 0, SEEK_SET);
-    fread(instanceData->fileBuf, 1, size, file);
+    size_t sizeRead = fread(instanceData->fileBuf, 1, size, file);
+    if (sizeRead != size) {
+      printf("Unable to read data from file\n");
+      instanceData->err << "Unable to read data from file " << fname;
+    }
     fclose(file);
     buf[size] = '\0';
     instanceData->fileBufSize = (int32_t)size;
@@ -3696,5 +3739,22 @@ bool getMouseUpEventCount(NPObject* npobj, const NPVariant* args, uint32_t argCo
   NPP npp = static_cast<TestNPObject*>(npobj)->npp;
   InstanceData* id = static_cast<InstanceData*>(npp->pdata);
   INT32_TO_NPVARIANT(id->mouseUpEventCount, *result);
+  return true;
+}
+
+bool queryContentsScaleFactor(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result)
+{
+  if (argCount != 0)
+    return false;
+
+  double scaleFactor = 1.0;
+#if defined(XP_MACOSX)
+  NPError err = NPN_GetValue(static_cast<TestNPObject*>(npobj)->npp,
+                             NPNVcontentsScaleFactor, &scaleFactor);
+  if (err != NPERR_NO_ERROR) {
+    return false;
+  }
+#endif
+  DOUBLE_TO_NPVARIANT(scaleFactor, *result);
   return true;
 }

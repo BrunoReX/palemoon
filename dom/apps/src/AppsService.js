@@ -13,6 +13,7 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource://gre/modules/Services.jsm");
 
 const APPS_SERVICE_CID = Components.ID("{05072afa-92fe-45bf-ae22-39b69c117058}");
 
@@ -43,6 +44,11 @@ AppsService.prototype = {
     return DOMApplicationRegistry.getAppLocalIdByManifestURL(aManifestURL);
   },
 
+  getAppLocalIdByStoreId: function getAppLocalIdByStoreId(aStoreId) {
+    debug("getAppLocalIdByStoreId( " + aStoreId + " )");
+    return DOMApplicationRegistry.getAppLocalIdByStoreId(aStoreId);
+  },
+
   getAppByLocalId: function getAppByLocalId(aLocalId) {
     debug("getAppByLocalId( " + aLocalId + " )");
     return DOMApplicationRegistry.getAppByLocalId(aLocalId);
@@ -66,6 +72,47 @@ AppsService.prototype = {
   getWebAppsBasePath: function getWebAppsBasePath() {
     debug("getWebAppsBasePath()");
     return DOMApplicationRegistry.getWebAppsBasePath();
+  },
+
+  getAppInfo: function getAppInfo(aAppId) {
+    debug("getAppInfo()");
+    return DOMApplicationRegistry.getAppInfo(aAppId);
+  },
+
+  getRedirect: function getRedirect(aLocalId, aURI) {
+    debug("getRedirect for " + aLocalId + " " + aURI.spec);
+    if (aLocalId == Ci.nsIScriptSecurityManager.NO_APP_ID ||
+        aLocalId == Ci.nsIScriptSecurityManager.UNKNOWN_APP_ID) {
+      return null;
+    }
+
+    let app = DOMApplicationRegistry.getAppByLocalId(aLocalId);
+    if (app && app.redirects) {
+      let spec = aURI.spec;
+      for (let i = 0; i < app.redirects.length; i++) {
+        let redirect = app.redirects[i];
+        if (spec.startsWith(redirect.from)) {
+          // Prepend the app origin to the redirection. We need that since
+          // the origin of packaged apps is a uuid created at install time.
+          let to = app.origin + redirect.to;
+          // If we have a ? or a # in the current URL, add this part to the
+          // redirection.
+          let index = -1;
+          index = spec.indexOf('?');
+          if (index == -1) {
+            index = spec.indexOf('#');
+          }
+
+          if (index != -1) {
+            to += spec.substring(index);
+          }
+          debug('App specific redirection from ' + spec + ' to ' + to);
+          return Services.io.newURI(to, null, null);
+        }
+      }
+    } else {
+      return null;
+    }
   },
 
   classID : APPS_SERVICE_CID,

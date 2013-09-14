@@ -8,11 +8,9 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "SocialService", "resource://gre/modules/SocialService.jsm");
-#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
 XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils", "resource://gre/modules/PrivateBrowsingUtils.jsm");
-#endif
 
-this.EXPORTED_SYMBOLS = ["MozSocialAPI", "openChatWindow"];
+this.EXPORTED_SYMBOLS = ["MozSocialAPI", "openChatWindow", "findChromeWindowForChats"];
 
 this.MozSocialAPI = {
   _enabled: false,
@@ -33,7 +31,7 @@ this.MozSocialAPI = {
       }
 
     } else {
-      Services.obs.removeObserver(injectController, "document-element-inserted", false);
+      Services.obs.removeObserver(injectController, "document-element-inserted");
     }
   }
 };
@@ -43,11 +41,7 @@ this.MozSocialAPI = {
 function injectController(doc, topic, data) {
   try {
     let window = doc.defaultView;
-    if (!window
-#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
-        || PrivateBrowsingUtils.isWindowPrivate(window)
-#endif
-       )
+    if (!window || PrivateBrowsingUtils.isWindowPrivate(window))
       return;
 
     // Do not attempt to load the API into about: error pages
@@ -59,13 +53,20 @@ function injectController(doc, topic, data) {
                                   .getInterface(Ci.nsIWebNavigation)
                                   .QueryInterface(Ci.nsIDocShell)
                                   .chromeEventHandler;
+    // limit injecting into social panels or same-origin browser tabs if
+    // social.debug.injectIntoTabs is enabled
+    let allowTabs = false;
+    try {
+      allowTabs = containingBrowser.contentWindow == window &&
+                  Services.prefs.getBoolPref("social.debug.injectIntoTabs");
+    } catch(e) {}
 
     let origin = containingBrowser.getAttribute("origin");
-    if (!origin) {
+    if (!allowTabs && !origin) {
       return;
     }
 
-    SocialService.getProvider(origin, function(provider) {
+    SocialService.getProvider(doc.nodePrincipal.origin, function(provider) {
       if (provider && provider.workerURL && provider.enabled) {
         attachToWindow(provider, window);
       }
@@ -145,6 +146,32 @@ function attachToWindow(provider, targetWindow) {
         if (!chromeWindow.SocialFlyout || !chromeWindow.SocialFlyout.panel)
           return;
         chromeWindow.SocialFlyout.panel.hidePopup();
+      }
+    },
+    // allow a provider to share to other providers through the browser
+    share: {
+      enumerable: true,
+      configurable: true,
+      writable: true,
+      value: function(data) {
+        let chromeWindow = getChromeWindow(targetWindow);
+        if (!chromeWindow.SocialShare || chromeWindow.SocialShare.shareButton.hidden)
+          throw new Error("Share is unavailable");
+        // ensure user action initates the share
+        let dwu = chromeWindow.QueryInterface(Ci.nsIInterfaceRequestor)
+                              .getInterface(Ci.nsIDOMWindowUtils);
+        if (!dwu.isHandlingUserInput)
+          throw new Error("Attempt to share without user input");
+
+        // limit to a few params we want to support for now
+        let dataOut = {};
+        for (let sub of ["url", "title", "description", "source"]) {
+          dataOut[sub] = data[sub];
+        }
+        if (data.image)
+          dataOut.previews = [data.image];
+
+        chromeWindow.SocialShare.sharePage(null, dataOut);
       }
     },
     getAttention: {
@@ -237,19 +264,16 @@ function getChromeWindow(contentWin) {
 function isWindowGoodForChats(win) {
   return win.SocialChatBar
          && win.SocialChatBar.isAvailable
-#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
-         && !PrivateBrowsingUtils.isWindowPrivate(win)
-#endif
-         ;
+         && !PrivateBrowsingUtils.isWindowPrivate(win);
 }
 
 function findChromeWindowForChats(preferredWindow) {
   if (preferredWindow && isWindowGoodForChats(preferredWindow))
     return preferredWindow;
-  // no good - so let's go hunting.  We are now looking for a navigator:browser
-  // window that is suitable and already has chats open, or failing that,
-  // any suitable navigator:browser window.
-  let first, best, enumerator;
+  // no good - we just use the "most recent" browser window which can host
+  // chats (we used to try and "group" all chats in the same browser window,
+  // but that didn't work out so well - see bug 835111
+  let topMost, enumerator;
   // *sigh* - getZOrderDOMWindowEnumerator is broken everywhere other than
   // Windows.  We use BROKEN_WM_Z_ORDER as that is what the c++ code uses
   // and a few bugs recommend searching mxr for this symbol to identify the
@@ -265,24 +289,28 @@ function findChromeWindowForChats(preferredWindow) {
   }
   while (enumerator.hasMoreElements()) {
     let win = enumerator.getNext();
-    if (win && isWindowGoodForChats(win)) {
-      first = win;
-      if (win.SocialChatBar.hasChats)
-        best = win;
-    }
+    if (win && isWindowGoodForChats(win))
+      topMost = win;
   }
-  return best || first;
+  return topMost;
 }
 
 this.openChatWindow =
  function openChatWindow(chromeWindow, provider, url, callback, mode) {
   chromeWindow = findChromeWindowForChats(chromeWindow);
-  if (!chromeWindow)
+  if (!chromeWindow) {
+    Cu.reportError("Failed to open a social chat window - no host window could be found.");
     return;
+  }
   let fullURI = provider.resolveUri(url);
-  if (!provider.isSameOrigin(fullURI))
+  if (!provider.isSameOrigin(fullURI)) {
+    Cu.reportError("Failed to open a social chat window - the requested URL is not the same origin as the provider.");
     return;
-  chromeWindow.SocialChatBar.openChat(provider, fullURI.spec, callback, mode);
+  }
+  if (!chromeWindow.SocialChatBar.openChat(provider, fullURI.spec, callback, mode)) {
+    Cu.reportError("Failed to open a social chat window - the chatbar is not available in the target window.");
+    return;
+  }
   // getAttention is ignored if the target window is already foreground, so
   // we can call it unconditionally.
   chromeWindow.getAttention();

@@ -36,14 +36,70 @@
 #include "cpr_stdlib.h"
 #include <cpr_stdio.h>
 #include <errno.h>
+#if defined(WEBRTC_GONK)
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <linux/msg.h>
+#include <linux/ipc.h>
+#else
 #include <sys/msg.h>
 #include <sys/ipc.h>
+#endif
 #include "plat_api.h"
 #include "CSFLog.h"
 
 static const char *logTag = "cpr_linux_ipc";
 
 #define STATIC static
+
+#if defined(WEBRTC_GONK)
+
+#if defined(__i386__)
+# include <asm-generic/ipc.h>
+#endif /* __i386__ */
+
+int msgsnd(int msqid, const void *msgp, size_t msgsz, int msgflg)
+{
+#if defined(__i386__)
+  return syscall(__NR_ipc, MSGSND, msqid, msgsz, msgflg, msgp);
+#else
+  return syscall(__NR_msgsnd, msqid, msgp, msgsz, msgflg);
+#endif
+}
+
+ssize_t msgrcv(int msqid, void *msgp, size_t msgsz, long msgtyp, int msgflg)
+{
+#if defined(__i386__)
+  struct ipc_kludge tmp = {
+    .msgp = msgp,
+    .msgtyp = msgtyp
+  };
+
+  return syscall(__NR_ipc, MSGRCV, msqid, msgsz, msgflg, &tmp);
+#else
+  return syscall(__NR_msgrcv, msqid, msgp, msgsz, msgtyp, msgflg);
+#endif
+}
+
+int msgctl(int msqid, int cmd, struct msqid_ds *buf)
+{
+#if defined(__i386__)
+  /* Android defines |struct ipc_perm| as old ABI. */
+  return syscall(__NR_ipc, MSGCTL, msqid, cmd | IPC_64, 0, buf);
+#else
+  return syscall(__NR_msgctl, msqid, cmd, buf);
+#endif
+}
+
+int msgget(key_t key, int msgflg)
+{
+#if defined(__i386__)
+  return syscall(__NR_ipc, MSGGET, key, msgflg, 0, NULL);
+#else
+  return syscall(__NR_msgget, key, msgflg);
+#endif
+}
+#endif
 
 /* @def The Message Queue depth */
 #define OS_MSGTQL 31
@@ -87,7 +143,6 @@ typedef struct cpr_msg_queue_s
     const char *name;
     pthread_t thread;
     int32_t queueId;
-    uint16_t maxCount;
     uint16_t currentCount;
     uint32_t totalCount;
     uint32_t sendErrors;
@@ -731,9 +786,6 @@ cprPegSendMessageStats (cpr_msg_queue_t *msgq, uint16_t numAttempts)
      * Collect statistics
      */
     msgq->totalCount++;
-    if (msgq->currentCount > msgq->maxCount) {
-        msgq->maxCount = msgq->currentCount;
-    }
 
     if (numAttempts > msgq->highAttempts) {
         msgq->highAttempts = numAttempts;

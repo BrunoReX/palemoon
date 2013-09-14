@@ -6,6 +6,7 @@
 #ifndef mozilla_dom_devicestorage_DeviceStorageRequestParent_h
 #define mozilla_dom_devicestorage_DeviceStorageRequestParent_h
 
+#include "mozilla/Attributes.h"
 #include "mozilla/dom/devicestorage/PDeviceStorageRequestParent.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
@@ -50,7 +51,7 @@ private:
     virtual ~CancelableRunnable() {
     }
 
-    NS_IMETHOD Run() {
+    NS_IMETHOD Run() MOZ_OVERRIDE {
       nsresult rv = NS_OK;
       if (!mCanceled) {
         rv = CancelableRun();
@@ -105,10 +106,15 @@ private:
   class PostEnumerationSuccessEvent : public CancelableRunnable
   {
     public:
-      PostEnumerationSuccessEvent(DeviceStorageRequestParent* aParent, InfallibleTArray<DeviceStorageFileValue>& aPaths);
+      PostEnumerationSuccessEvent(DeviceStorageRequestParent* aParent,
+                                  const nsAString& aStorageType,
+                                  const nsAString& aRelPath,
+                                  InfallibleTArray<DeviceStorageFileValue>& aPaths);
       virtual ~PostEnumerationSuccessEvent();
       virtual nsresult CancelableRun();
     private:
+      const nsString mStorageType;
+      const nsString mRelPath;
       InfallibleTArray<DeviceStorageFileValue> mPaths;
   };
 
@@ -133,15 +139,25 @@ private:
       nsRefPtr<DeviceStorageFile> mFile;
   };
 
-  class StatFileEvent : public CancelableRunnable
+  class FreeSpaceFileEvent : public CancelableRunnable
   {
     public:
-      StatFileEvent(DeviceStorageRequestParent* aParent, DeviceStorageFile* aFile);
-      virtual ~StatFileEvent();
+      FreeSpaceFileEvent(DeviceStorageRequestParent* aParent, DeviceStorageFile* aFile);
+      virtual ~FreeSpaceFileEvent();
       virtual nsresult CancelableRun();
      private:
        nsRefPtr<DeviceStorageFile> mFile;
-   };
+  };
+
+  class UsedSpaceFileEvent : public CancelableRunnable
+  {
+    public:
+      UsedSpaceFileEvent(DeviceStorageRequestParent* aParent, DeviceStorageFile* aFile);
+      virtual ~UsedSpaceFileEvent();
+      virtual nsresult CancelableRun();
+     private:
+       nsRefPtr<DeviceStorageFile> mFile;
+  };
 
   class ReadFileEvent : public CancelableRunnable
   {
@@ -176,17 +192,39 @@ private:
       nsString mPath;
   };
 
-  class PostStatResultEvent : public CancelableRunnable
+ class PostFreeSpaceResultEvent : public CancelableRunnable
  {
     public:
-      PostStatResultEvent(DeviceStorageRequestParent* aParent,
-                          int64_t aFreeBytes,
-                          int64_t aTotalBytes);
-      virtual ~PostStatResultEvent();
+      PostFreeSpaceResultEvent(DeviceStorageRequestParent* aParent,
+                               uint64_t aFreeSpace);
+      virtual ~PostFreeSpaceResultEvent();
       virtual nsresult CancelableRun();
     private:
-      int64_t mFreeBytes, mTotalBytes;
-   };
+      uint64_t mFreeSpace;
+ };
+
+ class PostUsedSpaceResultEvent : public CancelableRunnable
+ {
+    public:
+      PostUsedSpaceResultEvent(DeviceStorageRequestParent* aParent,
+                               const nsAString& aType,
+                               uint64_t aUsedSpace);
+      virtual ~PostUsedSpaceResultEvent();
+      virtual nsresult CancelableRun();
+    private:
+      nsString mType;
+      uint64_t mUsedSpace;
+ };
+
+ class PostAvailableResultEvent : public CancelableRunnable
+ {
+    public:
+      PostAvailableResultEvent(DeviceStorageRequestParent* aParent, DeviceStorageFile* aFile);
+      virtual ~PostAvailableResultEvent();
+      virtual nsresult CancelableRun();
+    private:
+      nsRefPtr<DeviceStorageFile> mFile;
+ };
 
 protected:
   bool AddRunnable(CancelableRunnable* aRunnable) {

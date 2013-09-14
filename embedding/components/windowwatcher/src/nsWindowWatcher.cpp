@@ -30,7 +30,6 @@
 #include "nsIScreen.h"
 #include "nsIScreenManager.h"
 #include "nsIScriptContext.h"
-#include "nsIJSContextStack.h"
 #include "nsIObserverService.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptSecurityManager.h"
@@ -48,30 +47,24 @@
 #include "nsIWindowProvider.h"
 #include "nsIMutableArray.h"
 #include "nsISupportsArray.h"
-#include "nsIDOMStorageObsolete.h"
 #include "nsIDOMStorage.h"
-#include "nsPIDOMStorage.h"
+#include "nsIDOMStorageManager.h"
 #include "nsIWidget.h"
 #include "nsFocusManager.h"
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsIPrefBranch.h"
 #include "nsIPrefService.h"
 #include "nsSandboxFlags.h"
 #include "mozilla/Preferences.h"
-
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-#include "nsIPrivateBrowsingService.h"
-#endif
 
 #ifdef USEWEAKREFS
 #include "nsIWeakReference.h"
 #endif
 
 using namespace mozilla;
-
-static const char *sJSStackContractID="@mozilla.org/js/xpc/ContextStack;1";
 
 /****************************************************************
  ******************** nsWatcherWindowEntry **********************
@@ -199,7 +192,7 @@ nsWatcherWindowEnumerator::GetNext(nsISupports **retval)
   if (!retval)
     return NS_ERROR_INVALID_ARG;
 
-  *retval = NULL;
+  *retval = nullptr;
 
 #ifdef USEWEAKREFS
   while (mCurrentPosition) {
@@ -241,60 +234,6 @@ void nsWatcherWindowEnumerator::WindowRemoved(nsWatcherWindowEntry *inInfo) {
 }
 
 /****************************************************************
- ********************** JSContextAutoPopper *********************
- ****************************************************************/
-
-class NS_STACK_CLASS JSContextAutoPopper {
-public:
-  JSContextAutoPopper();
-  ~JSContextAutoPopper();
-
-  nsresult   Push(JSContext *cx = nullptr);
-  JSContext *get() { return mContext; }
-
-protected:
-  nsCOMPtr<nsIThreadJSContextStack>  mService;
-  JSContext                         *mContext;
-  nsCOMPtr<nsIScriptContext>         mContextKungFuDeathGrip;
-};
-
-JSContextAutoPopper::JSContextAutoPopper() : mContext(nullptr)
-{
-}
-
-JSContextAutoPopper::~JSContextAutoPopper()
-{
-  JSContext *cx;
-  nsresult   rv;
-
-  if(mContext) {
-    rv = mService->Pop(&cx);
-    NS_ASSERTION(NS_SUCCEEDED(rv) && cx == mContext, "JSContext push/pop mismatch");
-  }
-}
-
-nsresult JSContextAutoPopper::Push(JSContext *cx)
-{
-  if (mContext) // only once
-    return NS_ERROR_FAILURE;
-
-  mService = do_GetService(sJSStackContractID);
-  if (mService) {
-    // Get the safe context if we're not provided one.
-    if (!cx) {
-      cx = mService->GetSafeJSContext();
-    }
-
-    // Save cx in mContext to indicate need to pop.
-    if (cx && NS_SUCCEEDED(mService->Push(cx))) {
-      mContext = cx;
-      mContextKungFuDeathGrip = nsJSUtils::GetDynamicScriptContext(cx);
-    }
-  }
-  return mContext ? NS_OK : NS_ERROR_FAILURE;
-}
-
-/****************************************************************
  *********************** nsWindowWatcher ************************
  ****************************************************************/
 
@@ -326,12 +265,12 @@ nsWindowWatcher::Init()
 }
 
 /**
- * Convert aArguments into either an nsIArray or NULL.
+ * Convert aArguments into either an nsIArray or nullptr.
  *
- *  - If aArguments is NULL, return NULL.
- *  - If aArguments is an nsArray, return NULL if it's empty, or otherwise
+ *  - If aArguments is nullptr, return nullptr.
+ *  - If aArguments is an nsArray, return nullptr if it's empty, or otherwise
  *    return the array.
- *  - If aArguments is an nsISupportsArray, return NULL if it's empty, or
+ *  - If aArguments is an nsISupportsArray, return nullptr if it's empty, or
  *    otherwise add its elements to an nsArray and return the new array.
  *  - Otherwise, return an nsIArray with one element: aArguments.
  */
@@ -339,7 +278,7 @@ static already_AddRefed<nsIArray>
 ConvertArgsToArray(nsISupports* aArguments)
 {
   if (!aArguments) {
-    return NULL;
+    return nullptr;
   }
 
   nsCOMPtr<nsIArray> array = do_QueryInterface(aArguments);
@@ -347,7 +286,7 @@ ConvertArgsToArray(nsISupports* aArguments)
     uint32_t argc = 0;
     array->GetLength(&argc);
     if (argc == 0)
-      return NULL;
+      return nullptr;
 
     return array.forget();
   }
@@ -357,18 +296,18 @@ ConvertArgsToArray(nsISupports* aArguments)
     uint32_t argc = 0;
     supArray->Count(&argc);
     if (argc == 0) {
-      return NULL;
+      return nullptr;
     }
 
     nsCOMPtr<nsIMutableArray> mutableArray =
       do_CreateInstance(NS_ARRAY_CONTRACTID);
-    NS_ENSURE_TRUE(mutableArray, NULL);
+    NS_ENSURE_TRUE(mutableArray, nullptr);
 
     for (uint32_t i = 0; i < argc; i++) {
       nsCOMPtr<nsISupports> elt;
       supArray->GetElementAt(i, getter_AddRefs(elt));
       nsresult rv = mutableArray->AppendElement(elt, /* aWeak = */ false);
-      NS_ENSURE_SUCCESS(rv, NULL);
+      NS_ENSURE_SUCCESS(rv, nullptr);
     }
 
     return mutableArray.forget();
@@ -376,10 +315,10 @@ ConvertArgsToArray(nsISupports* aArguments)
 
   nsCOMPtr<nsIMutableArray> singletonArray =
     do_CreateInstance(NS_ARRAY_CONTRACTID);
-  NS_ENSURE_TRUE(singletonArray, NULL);
+  NS_ENSURE_TRUE(singletonArray, nullptr);
 
   nsresult rv = singletonArray->AppendElement(aArguments, /* aWeak = */ false);
-  NS_ENSURE_SUCCESS(rv, NULL);
+  NS_ENSURE_SUCCESS(rv, nullptr);
 
   return singletonArray.forget();
 }
@@ -503,7 +442,7 @@ nsWindowWatcher::OpenWindowInternal(nsIDOMWindow *aParent,
   nsCOMPtr<nsIURI>                uriToLoad;        // from aUrl, if any
   nsCOMPtr<nsIDocShellTreeOwner>  parentTreeOwner;  // from the parent window, if any
   nsCOMPtr<nsIDocShellTreeItem>   newDocShellItem;  // from the new window
-  JSContextAutoPopper             callerContextGuard;
+  nsCxPusher                      callerContextGuard;
 
   NS_ENSURE_ARG_POINTER(_retval);
   *_retval = 0;
@@ -566,6 +505,12 @@ nsWindowWatcher::OpenWindowInternal(nsIDOMWindow *aParent,
       WinHasOption(features.get(), "-moz-internal-modal", 0, nullptr)) {
     windowIsModalContentDialog = true;
 
+    // CHROME_MODAL gets inherited by dependent windows, which affects various
+    // platform-specific window state (especially on OSX). So we need some way
+    // to determine that this window was actually opened by nsGlobalWindow::
+    // ShowModalDialog(), and that somebody is actually going to be watching
+    // for return values and all that.
+    chromeFlags |= nsIWebBrowserChrome::CHROME_MODAL_CONTENT_WINDOW;
     chromeFlags |= nsIWebBrowserChrome::CHROME_MODAL;
   }
 
@@ -575,20 +520,7 @@ nsWindowWatcher::OpenWindowInternal(nsIDOMWindow *aParent,
   nsCOMPtr<nsIScriptSecurityManager>
     sm(do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID));
 
-  NS_ENSURE_TRUE(sm, NS_ERROR_FAILURE);
-
-  // Remember who's calling us. This code used to assume a null
-  // subject principal if it failed to get the principal, but that's
-  // just not safe, so bail on errors here.
-  nsCOMPtr<nsIPrincipal> callerPrincipal;
-  rv = sm->GetSubjectPrincipal(getter_AddRefs(callerPrincipal));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  bool isCallerChrome = true;
-  if (callerPrincipal) {
-    rv = sm->IsSystemPrincipal(callerPrincipal, &isCallerChrome);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
+  bool isCallerChrome = nsContentUtils::IsCallerChrome();
 
   JSContext *cx = GetJSContextFromWindow(aParent);
 
@@ -704,6 +636,10 @@ nsWindowWatcher::OpenWindowInternal(nsIDOMWindow *aParent,
       nsCOMPtr<nsIWidget> parentWidget;
       if (parentWindow)
         parentWindow->GetMainWidget(getter_AddRefs(parentWidget));
+      // NOTE: the logic for this visibility check is duplicated in
+      // nsIDOMWindowUtils::isParentWindowMainWidgetVisible - if we change
+      // how a window is determined "visible" in this context then we should
+      // also adjust that attribute and/or any consumers of it...
       if (parentWidget && !parentWidget->IsVisible())
         return NS_ERROR_NOT_AVAILABLE;
     }
@@ -802,18 +738,20 @@ nsWindowWatcher::OpenWindowInternal(nsIDOMWindow *aParent,
     nsCOMPtr<nsPIDOMWindow> piwin(do_QueryInterface(*_retval));
     NS_ENSURE_TRUE(piwin, NS_ERROR_UNEXPECTED);
 
-    rv = piwin->SetArguments(argv, callerPrincipal);
+    rv = piwin->SetArguments(argv);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
   /* allow a window that we found by name to keep its name (important for cases
      like _self where the given name is different (and invalid)).  Also, _blank
      is not a window name. */
-  if (windowNeedsName)
-    newDocShellItem->SetName(nameSpecified &&
-                             !name.LowerCaseEqualsLiteral("_blank") ?
-                             name.get() : nullptr);
-
+  if (windowNeedsName) {
+    if (nameSpecified && !name.LowerCaseEqualsLiteral("_blank")) {
+      newDocShellItem->SetName(name);
+    } else {
+      newDocShellItem->SetName(EmptyString());
+    }
+  }
 
   // Inherit the right character set into the new window to use as a fallback
   // in the event the document being loaded does not specify a charset.  When
@@ -832,8 +770,7 @@ nsWindowWatcher::OpenWindowInternal(nsIDOMWindow *aParent,
       nsCOMPtr<nsIDocShellTreeItem> callerItem = GetCallerTreeItem(parentItem);
       nsCOMPtr<nsPIDOMWindow> callerWin = do_GetInterface(callerItem);
       if (callerWin) {
-        nsCOMPtr<nsIDocument> doc =
-          do_QueryInterface(callerWin->GetExtantDocument());
+        nsCOMPtr<nsIDocument> doc = callerWin->GetExtantDoc();
         if (doc) {
           newMuCV->SetDefaultCharacterSet(doc->GetDocumentCharacterSet());
         }
@@ -860,15 +797,6 @@ nsWindowWatcher::OpenWindowInternal(nsIDOMWindow *aParent,
         }
       }
     }
-  }
-
-  if (isNewToplevelWindow) {
-    // Notify observers that the window is open and ready.
-    // The window has not yet started to load a document.
-    nsCOMPtr<nsIObserverService> obsSvc =
-      mozilla::services::GetObserverService();
-    if (obsSvc)
-      obsSvc->NotifyObservers(*_retval, "toplevel-window-ready", nullptr);
   }
 
   // Now we have to set the right opener principal on the new window.  Note
@@ -911,16 +839,6 @@ nsWindowWatcher::OpenWindowInternal(nsIDOMWindow *aParent,
       (!!(chromeFlags & nsIWebBrowserChrome::CHROME_PRIVATE_WINDOW) &&
        !(chromeFlags & nsIWebBrowserChrome::CHROME_NON_PRIVATE_WINDOW));
 
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-  nsCOMPtr<nsIPrivateBrowsingService> pbs =
-      do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
-  if (pbs) {
-    bool inPrivateBrowsing = false;
-    pbs->GetPrivateBrowsingEnabled(&inPrivateBrowsing);
-    isPrivateBrowsingWindow |= inPrivateBrowsing;
-  }
-#endif
-
   // Otherwise, propagate the privacy status of the parent window, if
   // available, to the child.
   if (!isPrivateBrowsingWindow &&
@@ -947,22 +865,27 @@ nsWindowWatcher::OpenWindowInternal(nsIDOMWindow *aParent,
     }
   }
 
+  nsCOMPtr<nsIDocShellLoadInfo> loadInfo;
   if (uriToLoad && aNavigate) { // get the script principal and pass it to docshell
-    JSContextAutoPopper contextGuard;
 
-    cx = GetJSContextFromCallStack();
-
-    // get the security manager
-    if (!cx)
-      cx = GetJSContextFromWindow(aParent);
+    // The historical ordering of attempts here is:
+    // (1) Stack-top cx.
+    // (2) cx associated with aParent.
+    // (3) Safe JSContext.
+    //
+    // We could just use an AutoJSContext here if it weren't for (2), which
+    // is probably nonsensical anyway. But we preserve the old semantics for
+    // now, because this is part of a large patch where we don't want to risk
+    // subtle behavioral modifications.
+    cx = nsContentUtils::GetCurrentJSContext();
+    nsCxPusher pusher;
     if (!cx) {
-      rv = contextGuard.Push();
-      if (NS_FAILED(rv))
-        return rv;
-      cx = contextGuard.get();
+      cx = GetJSContextFromWindow(aParent);
+      if (!cx)
+        cx = nsContentUtils::GetSafeJSContext();
+      pusher.Push(cx);
     }
 
-    nsCOMPtr<nsIDocShellLoadInfo> loadInfo;
     newDocShell->CreateLoadInfo(getter_AddRefs(loadInfo));
     NS_ENSURE_TRUE(loadInfo, NS_ERROR_FAILURE);
 
@@ -972,13 +895,9 @@ nsWindowWatcher::OpenWindowInternal(nsIDOMWindow *aParent,
 
     // Set the new window's referrer from the calling context's document:
 
-    // get the calling context off the JS context stack
-    nsCOMPtr<nsIJSContextStack> stack = do_GetService(sJSStackContractID);
-
-    JSContext* ccx = nullptr;
-
     // get its document, if any
-    if (stack && NS_SUCCEEDED(stack->Peek(&ccx)) && ccx) {
+    JSContext* ccx = nsContentUtils::GetCurrentJSContext();
+    if (ccx) {
       nsIScriptGlobalObject *sgo = nsJSUtils::GetDynamicScriptGlobal(ccx);
 
       nsCOMPtr<nsPIDOMWindow> w(do_QueryInterface(sgo));
@@ -989,14 +908,25 @@ nsWindowWatcher::OpenWindowInternal(nsIDOMWindow *aParent,
            Also using GetDocument to force document creation seems to
            screw up focus in the hidden window; see bug 36016.
         */
-        nsCOMPtr<nsIDocument> doc(do_QueryInterface(w->GetExtantDocument()));
-        if (doc) { 
+        nsCOMPtr<nsIDocument> doc = w->GetExtantDoc();
+        if (doc) {
           // Set the referrer
           loadInfo->SetReferrer(doc->GetDocumentURI());
         }
       }
     }
+  }
 
+  if (isNewToplevelWindow) {
+    // Notify observers that the window is open and ready.
+    // The window has not yet started to load a document.
+    nsCOMPtr<nsIObserverService> obsSvc =
+      mozilla::services::GetObserverService();
+    if (obsSvc)
+      obsSvc->NotifyObservers(*_retval, "toplevel-window-ready", nullptr);
+  }
+
+  if (uriToLoad && aNavigate) {
     newDocShell->LoadURI(uriToLoad,
                          loadInfo,
                          windowIsNew
@@ -1012,17 +942,14 @@ nsWindowWatcher::OpenWindowInternal(nsIDOMWindow *aParent,
     parentDocShell = piWindow->GetDocShell();
 
   if (subjectPrincipal && parentDocShell) {
-    nsCOMPtr<nsIDOMStorage> storage;
-    parentDocShell->GetSessionStorageForPrincipal(subjectPrincipal,
-                                                  EmptyString(), false,
-                                                  getter_AddRefs(storage));
-    nsCOMPtr<nsPIDOMStorage> piStorage =
-      do_QueryInterface(storage);
-    if (piStorage){
-      storage = piStorage->Clone();
-      newDocShell->AddSessionStorage(
-        piStorage->Principal(),
-        storage);
+    nsCOMPtr<nsIDOMStorageManager> parentStorageManager = do_QueryInterface(parentDocShell);
+    nsCOMPtr<nsIDOMStorageManager> newStorageManager = do_QueryInterface(newDocShell);
+
+    if (parentStorageManager && newStorageManager) {
+      nsCOMPtr<nsIDOMStorage> storage;
+      parentStorageManager->GetStorage(subjectPrincipal, isPrivateBrowsingWindow, getter_AddRefs(storage));
+      if (storage)
+        newStorageManager->CloneStorage(storage);
     }
   }
 
@@ -1426,7 +1353,7 @@ nsWindowWatcher::URIfromURL(const char *aURL,
   /* build the URI relative to the calling JS Context, if any.
      (note this is the same context used to make the security check
      in nsGlobalWindow.cpp.) */
-  JSContext *cx = GetJSContextFromCallStack();
+  JSContext *cx = nsContentUtils::GetCurrentJSContext();
   if (cx) {
     nsIScriptContext *scriptcx = nsJSUtils::GetDynamicScriptContext(cx);
     if (scriptcx) {
@@ -1461,8 +1388,8 @@ nsWindowWatcher::URIfromURL(const char *aURL,
 
 #define NS_CALCULATE_CHROME_FLAG_FOR(feature, flag)               \
     prefBranch->GetBoolPref(feature, &forceEnable);               \
-    if (forceEnable && !(aDialog && isChrome) &&                  \
-        !(isChrome && aHasChromeParent) && !aChromeURL) {         \
+    if (forceEnable && !(aDialog && isCallerChrome) &&            \
+        !(isCallerChrome && aHasChromeParent) && !aChromeURL) {   \
       chromeFlags |= flag;                                        \
     } else {                                                      \
       chromeFlags |= WinHasOption(aFeatures, feature,             \
@@ -1513,25 +1440,17 @@ uint32_t nsWindowWatcher::CalculateChromeFlags(nsIDOMWindow *aParent,
 
   /* Next, allow explicitly named options to override the initial settings */
 
-  nsCOMPtr<nsIScriptSecurityManager>
-    securityManager(do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID));
-
-  bool isChrome = false;
-  nsresult rv;
-  if (securityManager) {
-    rv = securityManager->SubjectPrincipalIsSystem(&isChrome);
-    if (NS_FAILED(rv)) {
-      isChrome = false;
-    }
-  }
+  bool isCallerChrome = nsContentUtils::IsCallerChrome();
 
   // Determine whether the window is a private browsing window
-  if (isChrome) {
+  if (isCallerChrome) {
     chromeFlags |= WinHasOption(aFeatures, "private", 0, &presenceFlag) ?
       nsIWebBrowserChrome::CHROME_PRIVATE_WINDOW : 0;
     chromeFlags |= WinHasOption(aFeatures, "non-private", 0, &presenceFlag) ?
       nsIWebBrowserChrome::CHROME_NON_PRIVATE_WINDOW : 0;
   }
+
+  nsresult rv;
 
   nsCOMPtr<nsIPrefBranch> prefBranch;
   nsCOMPtr<nsIPrefService> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID, &rv);
@@ -1614,6 +1533,17 @@ uint32_t nsWindowWatcher::CalculateChromeFlags(nsIDOMWindow *aParent,
   bool disableDialogFeature = false;
   nsCOMPtr<nsIPrefBranch> branch = do_QueryInterface(prefs);
   branch->GetBoolPref("dom.disable_window_open_dialog_feature", &disableDialogFeature);
+
+  bool isFullScreen = false;
+  if (aParent) {
+    aParent->GetFullScreen(&isFullScreen);
+  }
+  if (isFullScreen && !isCallerChrome) {
+    // If the parent window is in fullscreen & the caller context is content,
+    // dialog feature is disabled. (see bug 803675)
+    disableDialogFeature = true;
+  }
+
   if (!disableDialogFeature) {
     chromeFlags |= WinHasOption(aFeatures, "dialog", 0, nullptr) ?
       nsIWebBrowserChrome::CHROME_OPENAS_DIALOG : 0;
@@ -1633,7 +1563,7 @@ uint32_t nsWindowWatcher::CalculateChromeFlags(nsIDOMWindow *aParent,
    */
 
   // Check security state for use in determing window dimensions
-  if (!nsContentUtils::IsCallerChrome() || (isChrome && !aHasChromeParent)) {
+  if (!isCallerChrome || !aHasChromeParent) {
     // If priv check fails (or if we're called from chrome, but the
     // parent is not a chrome window), set all elements to minimum
     // reqs., else leave them alone.
@@ -1785,31 +1715,21 @@ nsWindowWatcher::FindItemWithName(const PRUnichar* aName,
 already_AddRefed<nsIDocShellTreeItem>
 nsWindowWatcher::GetCallerTreeItem(nsIDocShellTreeItem* aParentItem)
 {
-  nsCOMPtr<nsIJSContextStack> stack =
-    do_GetService(sJSStackContractID);
-
-  JSContext *cx = nullptr;
-
-  if (stack) {
-    stack->Peek(&cx);
-  }
-
-  nsIDocShellTreeItem* callerItem = nullptr;
+  JSContext *cx = nsContentUtils::GetCurrentJSContext();
+  nsCOMPtr<nsIDocShellTreeItem> callerItem;
 
   if (cx) {
     nsCOMPtr<nsIWebNavigation> callerWebNav =
       do_GetInterface(nsJSUtils::GetDynamicScriptGlobal(cx));
 
-    if (callerWebNav) {
-      CallQueryInterface(callerWebNav, &callerItem);
-    }
+    callerItem = do_QueryInterface(callerWebNav);
   }
 
   if (!callerItem) {
-    NS_IF_ADDREF(callerItem = aParentItem);
+    callerItem = aParentItem;
   }
 
-  return callerItem;
+  return callerItem.forget();
 }
 
 nsresult
@@ -1874,8 +1794,7 @@ nsWindowWatcher::ReadyOpenedDocShellItem(nsIDocShellTreeItem *aOpenedItem,
         NS_ASSERTION(!chan, "Why is there a document channel?");
 #endif
 
-        nsCOMPtr<nsIDocument> doc =
-          do_QueryInterface(piOpenedWindow->GetExtantDocument());
+        nsCOMPtr<nsIDocument> doc = piOpenedWindow->GetExtantDoc();
         if (doc) {
           doc->SetIsInitialDocument(true);
         }
@@ -2169,18 +2088,6 @@ nsWindowWatcher::GetWindowTreeOwner(nsIDOMWindow *inWindow,
   GetWindowTreeItem(inWindow, getter_AddRefs(treeItem));
   if (treeItem)
     treeItem->GetTreeOwner(outTreeOwner);
-}
-
-JSContext *
-nsWindowWatcher::GetJSContextFromCallStack()
-{
-  JSContext *cx = 0;
-
-  nsCOMPtr<nsIThreadJSContextStack> cxStack(do_GetService(sJSStackContractID));
-  if (cxStack)
-    cxStack->Peek(&cx);
-
-  return cx;
 }
 
 JSContext *

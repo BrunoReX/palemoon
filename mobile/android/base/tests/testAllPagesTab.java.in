@@ -1,27 +1,19 @@
 #filter substitution
 package @ANDROID_PACKAGE_NAME@.tests;
 
-import android.app.Activity;
 import android.view.View;
 import android.widget.ListView;
-import android.widget.ExpandableListView;
-import android.widget.LinearLayout;
 import android.widget.TabHost;
 import android.widget.TextView;
 import android.widget.ImageView;
-import android.widget.TabHost;
 import android.widget.TabWidget;
 import android.text.TextUtils;
 
-import android.content.ContentValues;
 import android.content.ContentResolver;
-import android.database.Cursor;
 import android.net.Uri;
 
 import java.util.Arrays;
 import java.util.ArrayList;
-import java.io.File;
-
 import @ANDROID_PACKAGE_NAME@.*;
 
 /* Tests opening the all pages tab, that items look correct, clicking on an item
@@ -32,11 +24,11 @@ public class testAllPagesTab extends BaseTest {
     private static final String ABOUT_HOME_URL = "about:home";
     private static ListView listview = null;
 
-    private String[] bookmarks = new String[] {
-        "about:firefox",
-        "about:home",
-        "http://support.mozilla.org/en-US/products/mobile",
-        "https://addons.mozilla.org/en-US/android/"
+    private String[] mBookmarks = new String[] {
+        "Firefox: About your browser",
+        "Firefox Start",
+        "Firefox: Support",
+        "Firefox: Customize with add-ons"
     };
 
     @Override
@@ -52,13 +44,12 @@ public class testAllPagesTab extends BaseTest {
         loadUrl(url);
 
         testList(url);
-        testClick(url);
+        testClick("about:firefox");
         testContextMenu(url);
     }
 
     private void testList(String url) {
-        final ListView list = getAllPagesList(url);
-        mSolo.waitForText(bookmarks[0]);
+        final ListView list = getAllPagesList(mBookmarks[0], 5);
 
         // some basic checks for the tab strip
         TabWidget tabwidget = (TabWidget)mSolo.getView(TabWidget.class, 0);
@@ -70,14 +61,18 @@ public class testAllPagesTab extends BaseTest {
         // This test fails, only when we're running tests
         // mAsserter.is(host.getCurrentTab(), 0, "All pages tab is selected in tab strip");
 
-        mAsserter.isnot(list, null, "checking that all pages list exists");
-        mAsserter.is(list.getChildCount(), 5, "all pages list has 5 children (the default bookmarks)");
+        mAsserter.isnot(list, null, "checking that all pages list exists and has 5 children (the default bookmarks)");
+        final int count = list.getAdapter().getCount();
 
-        final int count = list.getChildCount();
         String loadUrl = "";
         for (int i = count - 1; i >= 0; i--) {
             View child = list.getChildAt(i);
-
+            if (child == null) {
+                // this may simply indicate that the item is not visible
+                Object item = list.getAdapter().getItem(i);
+                mAsserter.ok(item != null, "adapter item is set", item != null ? item.toString() : "null!");
+                continue;
+            }
             ArrayList<View> views = mSolo.getViews(child);
             ArrayList<ImageView> imageViews = new ArrayList<ImageView>();
 
@@ -92,8 +87,7 @@ public class testAllPagesTab extends BaseTest {
                         loadUrl = string;
                     }
 
-                    int index = Arrays.binarySearch(bookmarks, string);
-                    if (index > -1) {
+                    if (isBookmark(mBookmarks, string)) {
                         expectedImages = 2;
                     }
                 } else if (v instanceof ImageView) {
@@ -114,15 +108,15 @@ public class testAllPagesTab extends BaseTest {
     }
 
     private void testContextMenu(String url) {
-        ListView list = getAllPagesList(url);
-        mSolo.waitForText(bookmarks[0]);
+        ListView list = getAllPagesList(mBookmarks[0], 5);
 
         View child = list.getChildAt(0);
+        mAsserter.ok(child != null, "first list item can be retrieved", child != null ? child.toString() : "null!");
         mSolo.clickLongOnView(child);
 
         // TODO: Test clicking these does the right thing
-        mAsserter.ok(mSolo.waitForText("Open in New Tab"), "Context menu has New Tab option", "Open in New Tab");
-        mAsserter.ok(mSolo.searchText("Share", true), "Context menu has Share option", "Share");
+        mAsserter.ok(mSolo.waitForText("Open in New Tab"), "Context menu has Open in New Tab option", "Open in New Tab");
+        mAsserter.ok(mSolo.waitForText("Share"), "Context menu has Share option", "Share");
         mAsserter.ok(mSolo.searchText("Remove", true), "Context menu has Remove option", "Remove");
         mAsserter.ok(mSolo.searchText("Add to Home Screen", true), "Context menu has Add to Home Screen option", "Add to Home Screen");
 
@@ -131,37 +125,31 @@ public class testAllPagesTab extends BaseTest {
     }
 
     private void testClick(String url) {
-        ListView list = getAllPagesList(url);
-        mSolo.waitForText(bookmarks[0]);
+        ListView list = getAllPagesList(mBookmarks[0], 5);
 
         Actions.EventExpecter contentEventExpecter = mActions.expectGeckoEvent("DOMContentLoaded");
-        View child = list.getChildAt(0);
+
+        // Avoid clicking the first item. Its the first item because its in an open tab, and will just switch to it
+        View child = list.getChildAt(1);
+        mAsserter.ok(child != null, "first list item can be retrieved", child != null ? child.toString() : "null!");
+        // dump text for this child, to be sure of which list item is clicked
+        ArrayList<View> views = mSolo.getViews(child);
+        for (int j = 0; j < views.size(); j++) {
+            View v = views.get(j);
+            if (v instanceof TextView) {
+                TextView t = (TextView)v;
+                String string = t.getText().toString();
+                mAsserter.dumpLog("first list item has text: " + string);
+            }
+        }
         mSolo.clickOnView(child);
         contentEventExpecter.blockForEvent();
+        contentEventExpecter.unregisterListener();
+        mSolo.sleep(500);
         verifyUrl(url);
     }
 
-    private ListView getAllPagesList(String url) {
-        Activity awesomeBarActivity = clickOnAwesomeBar();
-        mSolo.waitForText(bookmarks[0]);
-
-        final ArrayList<ListView> views = mSolo.getCurrentListViews();
-
-        listview = null;
-        boolean success = waitForTest(new BooleanTest() {
-            public boolean test() {
-               for (ListView view : views) {
-                   if (view.getTag().equals("allPages")) {
-                       listview = view;
-                       return true;
-                   }
-               }
-               return false;
-            }
-        }, MAX_WAIT_MS);
-        return listview;
-    }
-
+    @Override
     public void tearDown() throws Exception {
         ContentResolver resolver = getActivity().getContentResolver();
         Uri uri = Uri.parse("content://@ANDROID_PACKAGE_NAME@.db.browser/history");

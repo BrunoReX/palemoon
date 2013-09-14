@@ -9,11 +9,12 @@
 // Keep others in (case-insensitive) order:
 #include "gfxContext.h"
 #include "nsGkAtoms.h"
-#include "nsIDOMSVGClipPathElement.h"
 #include "nsRenderingContext.h"
-#include "nsSVGClipPathElement.h"
+#include "mozilla/dom/SVGClipPathElement.h"
 #include "nsSVGEffects.h"
 #include "nsSVGUtils.h"
+
+using namespace mozilla::dom;
 
 //----------------------------------------------------------------------
 // Implementation
@@ -259,14 +260,16 @@ nsSVGClipPathFrame::IsValid()
         nsIAtom *type = grandKid->GetType();
 
         if (type != nsGkAtoms::svgPathGeometryFrame &&
-            type != nsGkAtoms::svgTextFrame) {
+            type != nsGkAtoms::svgTextFrame &&
+            type != nsGkAtoms::svgTextFrame2) {
           return false;
         }
       }
       continue;
     }
     if (type != nsGkAtoms::svgPathGeometryFrame &&
-        type != nsGkAtoms::svgTextFrame) {
+        type != nsGkAtoms::svgTextFrame &&
+        type != nsGkAtoms::svgTextFrame2) {
       return false;
     }
   }
@@ -293,18 +296,16 @@ nsSVGClipPathFrame::AttributeChanged(int32_t         aNameSpaceID,
                                                   aAttribute, aModType);
 }
 
-NS_IMETHODIMP
+void
 nsSVGClipPathFrame::Init(nsIContent* aContent,
                          nsIFrame* aParent,
                          nsIFrame* aPrevInFlow)
 {
-#ifdef DEBUG
-  nsCOMPtr<nsIDOMSVGClipPathElement> clipPath = do_QueryInterface(aContent);
-  NS_ASSERTION(clipPath, "Content is not an SVG clipPath!");
-#endif
+  NS_ASSERTION(aContent->IsSVG(nsGkAtoms::clipPath),
+               "Content is not an SVG clipPath!");
 
   AddStateBits(NS_STATE_SVG_CLIPPATH_CHILD);
-  return nsSVGClipPathFrameBase::Init(aContent, aParent, aPrevInFlow);
+  nsSVGClipPathFrameBase::Init(aContent, aParent, aPrevInFlow);
 }
 
 nsIAtom *
@@ -316,13 +317,13 @@ nsSVGClipPathFrame::GetType() const
 gfxMatrix
 nsSVGClipPathFrame::GetCanvasTM(uint32_t aFor)
 {
-  nsSVGClipPathElement *content = static_cast<nsSVGClipPathElement*>(mContent);
+  SVGClipPathElement *content = static_cast<SVGClipPathElement*>(mContent);
 
   gfxMatrix tm =
     content->PrependLocalTransformsTo(mClipParentMatrix ?
                                       *mClipParentMatrix : gfxMatrix());
 
   return nsSVGUtils::AdjustMatrixForUnits(tm,
-                                          &content->mEnumAttributes[nsSVGClipPathElement::CLIPPATHUNITS],
+                                          &content->mEnumAttributes[SVGClipPathElement::CLIPPATHUNITS],
                                           mClipParent);
 }

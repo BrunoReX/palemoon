@@ -7,7 +7,6 @@
 #define mozilla_dom_SVGRectElement_h
 
 #include "nsSVGPathGeometryElement.h"
-#include "nsIDOMSVGRectElement.h"
 #include "nsSVGLength2.h"
 
 nsresult NS_NewSVGRectElement(nsIContent **aResult,
@@ -18,48 +17,35 @@ typedef nsSVGPathGeometryElement SVGRectElementBase;
 namespace mozilla {
 namespace dom {
 
-class SVGRectElement MOZ_FINAL : public SVGRectElementBase,
-                                 public nsIDOMSVGRectElement
+class SVGRectElement MOZ_FINAL : public SVGRectElementBase
 {
 protected:
   SVGRectElement(already_AddRefed<nsINodeInfo> aNodeInfo);
-  virtual JSObject* WrapNode(JSContext *cx, JSObject *scope, bool *triedToWrap) MOZ_OVERRIDE;
+  virtual JSObject* WrapNode(JSContext *cx,
+                             JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
   friend nsresult (::NS_NewSVGRectElement(nsIContent **aResult,
                                           already_AddRefed<nsINodeInfo> aNodeInfo));
 
 public:
-  // interfaces:
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIDOMSVGRECTELEMENT
-
-  // xxx I wish we could use virtual inheritance
-  NS_FORWARD_NSIDOMNODE_TO_NSINODE
-  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
-  NS_FORWARD_NSIDOMSVGELEMENT(SVGRectElementBase::)
-
   // nsSVGSVGElement methods:
-  virtual bool HasValidDimensions() const;
+  virtual bool HasValidDimensions() const MOZ_OVERRIDE;
 
   // nsSVGPathGeometryElement methods:
-  virtual void ConstructPath(gfxContext *aCtx);
+  virtual void ConstructPath(gfxContext *aCtx) MOZ_OVERRIDE;
 
-  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
-
-  virtual nsXPCClassInfo* GetClassInfo();
-
-  virtual nsIDOMNode* AsDOMNode() { return this; }
+  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const MOZ_OVERRIDE;
 
   // WebIDL
-  already_AddRefed<nsIDOMSVGAnimatedLength> X();
-  already_AddRefed<nsIDOMSVGAnimatedLength> Y();
-  already_AddRefed<nsIDOMSVGAnimatedLength> Height();
-  already_AddRefed<nsIDOMSVGAnimatedLength> Width();
-  already_AddRefed<nsIDOMSVGAnimatedLength> Rx();
-  already_AddRefed<nsIDOMSVGAnimatedLength> Ry();
+  already_AddRefed<SVGAnimatedLength> X();
+  already_AddRefed<SVGAnimatedLength> Y();
+  already_AddRefed<SVGAnimatedLength> Height();
+  already_AddRefed<SVGAnimatedLength> Width();
+  already_AddRefed<SVGAnimatedLength> Rx();
+  already_AddRefed<SVGAnimatedLength> Ry();
 
 protected:
 
-  virtual LengthAttributesInfo GetLengthInfo();
+  virtual LengthAttributesInfo GetLengthInfo() MOZ_OVERRIDE;
 
   enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT, ATTR_RX, ATTR_RY };
   nsSVGLength2 mLengthAttributes[6];

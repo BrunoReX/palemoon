@@ -48,8 +48,10 @@ public:
    * be called on the parent.
    */
   void AddFrame(nsIFrame* aFrame) {
-    if (!mEntryList.contains(Entry(aFrame, true))) {
-      mEntryList.insert(new Entry(aFrame, true));
+    uint32_t depth = aFrame->GetDepthInFrameTree();
+    if (mEntryList.empty() ||
+        !mEntryList.contains(Entry(aFrame, depth, true))) {
+      mEntryList.insert(new Entry(aFrame, depth, true));
     }
   }
 
@@ -57,8 +59,13 @@ public:
    * Remove a frame.
    */
   void RemoveFrame(nsIFrame* aFrame) {
-    if (mEntryList.contains(Entry(aFrame, 0, false))) {
-      delete mEntryList.remove(Entry(aFrame, 0, false));
+    if (mEntryList.empty()) {
+      return;
+    }
+
+    uint32_t depth = aFrame->GetDepthInFrameTree();
+    if (mEntryList.contains(Entry(aFrame, depth, false))) {
+      delete mEntryList.remove(Entry(aFrame, depth, false));
     }
   }
 
@@ -126,11 +133,15 @@ private:
     }
  
     /**
-     * Sort by the frame pointer.
+     * Sort by *reverse* depth in the tree, and break ties with
+     * the frame pointer.
      */
     bool operator<(const Entry& aOther) const
     {
-      return mFrame < aOther.mFrame;
+      if (mDepth == aOther.mDepth) {
+        return mFrame < aOther.mFrame;
+      }
+      return mDepth > aOther.mDepth; /* reverse, want "min" to be deepest */
     }
 
     static int compare(const Entry& aOne, const Entry& aTwo)
@@ -162,9 +173,8 @@ class RestyleTracker {
 public:
   typedef mozilla::dom::Element Element;
 
-  RestyleTracker(uint32_t aRestyleBits,
-                 nsCSSFrameConstructor* aFrameConstructor) :
-    mRestyleBits(aRestyleBits), mFrameConstructor(aFrameConstructor),
+  RestyleTracker(uint32_t aRestyleBits) :
+    mRestyleBits(aRestyleBits),
     mHaveLaterSiblingRestyles(false)
   {
     NS_PRECONDITION((mRestyleBits & ~ELEMENT_ALL_RESTYLE_FLAGS) == 0,
@@ -181,7 +191,8 @@ public:
                     "Shouldn't have both root flags");
   }
 
-  void Init() {
+  void Init(nsCSSFrameConstructor* aFrameConstructor) {
+    mFrameConstructor = aFrameConstructor;
     mPendingRestyles.Init();
   }
 

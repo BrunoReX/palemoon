@@ -4,14 +4,11 @@
 
 package org.mozilla.gecko.background.announcements;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-
-import org.mozilla.gecko.background.BackgroundConstants;
-import org.mozilla.gecko.sync.Logger;
+import org.mozilla.gecko.background.BackgroundService;
+import org.mozilla.gecko.background.common.GlobalConstants;
+import org.mozilla.gecko.background.common.log.Logger;
 
 import android.app.AlarmManager;
-import android.app.IntentService;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
@@ -23,7 +20,7 @@ import android.content.SharedPreferences.Editor;
  * browser, registering or unregistering the main
  * {@link AnnouncementsStartReceiver} with the {@link AlarmManager}.
  */
-public class AnnouncementsBroadcastService extends IntentService {
+public class AnnouncementsBroadcastService extends BackgroundService {
   private static final String WORKER_THREAD_NAME = "AnnouncementsBroadcastServiceWorker";
   private static final String LOG_TAG = "AnnounceBrSvc";
 
@@ -33,24 +30,16 @@ public class AnnouncementsBroadcastService extends IntentService {
 
   private void toggleAlarm(final Context context, boolean enabled) {
     Logger.info(LOG_TAG, (enabled ? "R" : "Unr") + "egistering announcements broadcast receiver...");
-    final AlarmManager alarm = getAlarmManager(context);
 
-    final Intent service = new Intent(context, AnnouncementsStartReceiver.class);
-    final PendingIntent pending = PendingIntent.getBroadcast(context, 0, service, PendingIntent.FLAG_CANCEL_CURRENT);
+    final PendingIntent pending = createPendingIntent(context, AnnouncementsStartReceiver.class);
 
     if (!enabled) {
-      alarm.cancel(pending);
+      cancelAlarm(pending);
       return;
     }
 
-    final long firstEvent = System.currentTimeMillis();
     final long pollInterval = getPollInterval(context);
-    Logger.info(LOG_TAG, "Setting inexact repeating alarm for interval " + pollInterval);
-    alarm.setInexactRepeating(AlarmManager.RTC, firstEvent, pollInterval, pending);
-  }
-
-  private static AlarmManager getAlarmManager(Context context) {
-    return (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+    scheduleAlarm(pollInterval, pending);
   }
 
   /**
@@ -62,17 +51,54 @@ public class AnnouncementsBroadcastService extends IntentService {
    */
   public static void recordLastLaunch(final Context context) {
     final long now = System.currentTimeMillis();
-    final SharedPreferences preferences = context.getSharedPreferences(AnnouncementsConstants.PREFS_BRANCH, BackgroundConstants.SHARED_PREFERENCES_MODE);
+    final SharedPreferences preferences = context.getSharedPreferences(AnnouncementsConstants.PREFS_BRANCH, GlobalConstants.SHARED_PREFERENCES_MODE);
+
+    // One of several things might be true, according to our logs:
+    //
+    // * The new current time is older than the last
+    // * … or way in the future
+    // * … or way in the distant past
+    // * … or it's reasonable.
+    //
+    // Furthermore, when we come to calculate idle we might find that the clock
+    // is dramatically different — that the current time is thirteen years older
+    // than our saved timestamp (system clock resets to 2000 on battery change),
+    // or it's thirty years in the future (previous timestamp was saved as 0).
+    //
+    // We should try to do something vaguely sane in these situations.
+    long previous = preferences.getLong(AnnouncementsConstants.PREF_LAST_LAUNCH, -1);
+    if (previous == -1) {
+      Logger.debug(LOG_TAG, "No previous launch recorded.");
+    }
+
+    if (now < GlobalConstants.BUILD_TIMESTAMP_MSEC) {
+      Logger.warn(LOG_TAG, "Current time " + now + " is older than build date " +
+                           GlobalConstants.BUILD_TIMESTAMP_MSEC + ". Ignoring until clock is corrected.");
+      return;
+    }
+
+    if (now > AnnouncementsConstants.LATEST_ACCEPTED_LAUNCH_TIMESTAMP_MSEC) {
+      Logger.warn(LOG_TAG, "Launch time " + now + " is later than max sane launch timestamp " +
+                           AnnouncementsConstants.LATEST_ACCEPTED_LAUNCH_TIMESTAMP_MSEC +
+                           ". Ignoring until clock is corrected.");
+      return;
+    }
+
+    if (previous > now) {
+      Logger.debug(LOG_TAG, "Previous launch " + previous + " later than current time " +
+                            now + ", but new time is sane. Accepting new time.");
+    }
+
     preferences.edit().putLong(AnnouncementsConstants.PREF_LAST_LAUNCH, now).commit();
   }
 
   public static long getPollInterval(final Context context) {
-    SharedPreferences preferences = context.getSharedPreferences(AnnouncementsConstants.PREFS_BRANCH, BackgroundConstants.SHARED_PREFERENCES_MODE);
+    SharedPreferences preferences = context.getSharedPreferences(AnnouncementsConstants.PREFS_BRANCH, GlobalConstants.SHARED_PREFERENCES_MODE);
     return preferences.getLong(AnnouncementsConstants.PREF_ANNOUNCE_FETCH_INTERVAL_MSEC, AnnouncementsConstants.DEFAULT_ANNOUNCE_FETCH_INTERVAL_MSEC);
   }
 
   public static void setPollInterval(final Context context, long interval) {
-    SharedPreferences preferences = context.getSharedPreferences(AnnouncementsConstants.PREFS_BRANCH, BackgroundConstants.SHARED_PREFERENCES_MODE);
+    SharedPreferences preferences = context.getSharedPreferences(AnnouncementsConstants.PREFS_BRANCH, GlobalConstants.SHARED_PREFERENCES_MODE);
     preferences.edit().putLong(AnnouncementsConstants.PREF_ANNOUNCE_FETCH_INTERVAL_MSEC, interval).commit();
   }
 
@@ -89,47 +115,14 @@ public class AnnouncementsBroadcastService extends IntentService {
 
     if (Intent.ACTION_BOOT_COMPLETED.equals(action) ||
         Intent.ACTION_EXTERNAL_APPLICATIONS_AVAILABLE.equals(action)) {
-      handleSystemLifetimeIntent();
+      BackgroundService.reflectContextToFennec(this,
+          GlobalConstants.GECKO_PREFERENCES_CLASS,
+          GlobalConstants.GECKO_BROADCAST_ANNOUNCEMENTS_PREF_METHOD);
       return;
     }
 
     // Failure case.
     Logger.warn(LOG_TAG, "Unknown intent " + action);
-  }
-
-  /**
-   * Handle one of the system intents to which we listen to launch our service
-   * without the browser being opened.
-   *
-   * To avoid tight coupling to Fennec, we use reflection to find
-   * <code>GeckoPreferences</code>, invoking the same code path that
-   * <code>GeckoApp</code> uses on startup to send the <i>other</i>
-   * notification to which we listen.
-   *
-   * All of this is neatly wrapped in <code>try…catch</code>, so this code
-   * will run safely without a Firefox build installed.
-   */
-  protected void handleSystemLifetimeIntent() {
-    // Ask the browser to tell us the current state of the preference.
-    try {
-      Class<?> geckoPreferences = Class.forName(BackgroundConstants.GECKO_PREFERENCES_CLASS);
-      Method broadcastSnippetsPref = geckoPreferences.getMethod(BackgroundConstants.GECKO_BROADCAST_METHOD, Context.class);
-      broadcastSnippetsPref.invoke(null, this);
-      return;
-    } catch (ClassNotFoundException e) {
-      Logger.error(LOG_TAG, "Class " + BackgroundConstants.GECKO_PREFERENCES_CLASS + " not found!");
-      return;
-    } catch (NoSuchMethodException e) {
-      Logger.error(LOG_TAG, "Method " + BackgroundConstants.GECKO_PREFERENCES_CLASS + "/" + BackgroundConstants.GECKO_BROADCAST_METHOD + " not found!");
-      return;
-    } catch (IllegalArgumentException e) {
-      // Fall through.
-    } catch (IllegalAccessException e) {
-      // Fall through.
-    } catch (InvocationTargetException e) {
-      // Fall through.
-    }
-    Logger.error(LOG_TAG, "Got exception invoking " + BackgroundConstants.GECKO_BROADCAST_METHOD + ".");
   }
 
   /**
@@ -154,7 +147,7 @@ public class AnnouncementsBroadcastService extends IntentService {
     if (!enabled) {
       Logger.info(LOG_TAG, "!enabled: clearing last fetch.");
       final SharedPreferences sharedPreferences = this.getSharedPreferences(AnnouncementsConstants.PREFS_BRANCH,
-                                                                            BackgroundConstants.SHARED_PREFERENCES_MODE);
+                                                                            GlobalConstants.SHARED_PREFERENCES_MODE);
       final Editor editor = sharedPreferences.edit();
       editor.remove(AnnouncementsConstants.PREF_LAST_FETCH_LOCAL_TIME);
       editor.remove(AnnouncementsConstants.PREF_EARLIEST_NEXT_ANNOUNCE_FETCH);

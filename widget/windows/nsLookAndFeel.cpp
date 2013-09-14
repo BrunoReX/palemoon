@@ -10,6 +10,7 @@
 #include "nsUXThemeData.h"
 #include "nsUXThemeConstants.h"
 #include "gfxFont.h"
+#include "gfxWindowsPlatform.h"
 #include "WinUtils.h"
 #include "mozilla/Telemetry.h"
 
@@ -396,6 +397,11 @@ nsLookAndFeel::GetIntImpl(IntID aID, int32_t &aResult)
     case eIntID_DWMCompositor:
         aResult = nsUXThemeData::CheckForCompositor();
         break;
+    case eIntID_WindowsGlass:
+        // Aero Glass is only available prior to Windows 8 when DWM is used.
+        aResult = (nsUXThemeData::CheckForCompositor() &&
+                   WinUtils::GetWindowsVersion() < WinUtils::WIN8_VERSION);
+        break;
     case eIntID_AlertNotificationOrigin:
         aResult = 0;
         {
@@ -447,6 +453,9 @@ nsLookAndFeel::GetIntImpl(IntID aID, int32_t &aResult)
         aResult = NS_STYLE_TEXT_DECORATION_STYLE_WAVY;
         break;
     case eIntID_ScrollbarButtonAutoRepeatBehavior:
+        aResult = 0;
+        break;
+    case eIntID_SwipeAnimationEnabled:
         aResult = 0;
         break;
     default:
@@ -550,18 +559,19 @@ GetSysFontInfo(HDC aHDC, LookAndFeel::FontID anID,
     break;
   }
 
-  // FIXME?: mPixelScale is currently hardcoded to 1.
-  float mPixelScale = 1.0f;
+  // Get scaling factor from physical to logical pixels
+  float pixelScale = 1.0f / gfxWindowsPlatform::GetPlatform()->GetDPIScale();
 
   // The lfHeight is in pixels, and it needs to be adjusted for the
   // device it will be displayed on.
   // Screens and Printers will differ in DPI
   //
   // So this accounts for the difference in the DeviceContexts
-  // The mPixelScale will be a "1" for the screen and could be
-  // any value when going to a printer, for example mPixleScale is
+  // The pixelScale will typically be 1.0 for the screen
+  // (though larger for hi-dpi screens where the Windows resolution
+  // scale factor is 125% or 150% or even more), and could be
+  // any value when going to a printer, for example pixelScale is
   // 6.25 when going to a 600dpi printer.
-  // round, but take into account whether it is negative
   float pixelHeight = -ptrLogFont->lfHeight;
   if (pixelHeight < 0) {
     HFONT hFont = ::CreateFontIndirectW(ptrLogFont);
@@ -574,7 +584,7 @@ GetSysFontInfo(HDC aHDC, LookAndFeel::FontID anID,
     ::DeleteObject(hFont);
     pixelHeight = tm.tmAscent;
   }
-  pixelHeight *= mPixelScale;
+  pixelHeight *= pixelScale;
 
   // we have problem on Simplified Chinese system because the system
   // report the default font size is 8 points. but if we use 8, the text
@@ -614,6 +624,8 @@ nsLookAndFeel::GetFontImpl(FontID anID, nsString &aFontName,
   HDC tdc = GetDC(NULL);
   bool status = GetSysFontInfo(tdc, anID, aFontName, aFontStyle);
   ReleaseDC(NULL, tdc);
+  // now convert the logical font size from GetSysFontInfo into device pixels for layout
+  aFontStyle.size *= aDevPixPerCSSPixel;
   return status;
 }
 

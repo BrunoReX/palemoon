@@ -7,48 +7,39 @@
 #include "nsUnicharUtils.h"
 #include "mozilla/dom/ProcessingInstruction.h"
 #include "mozilla/dom/ProcessingInstructionBinding.h"
-#include "nsContentCreatorFunctions.h"
+#include "mozilla/dom/XMLStylesheetProcessingInstruction.h"
 #include "nsContentUtils.h"
 
-nsresult
-NS_NewXMLProcessingInstruction(nsIContent** aInstancePtrResult,
-                               nsNodeInfoManager *aNodeInfoManager,
+already_AddRefed<mozilla::dom::ProcessingInstruction>
+NS_NewXMLProcessingInstruction(nsNodeInfoManager *aNodeInfoManager,
                                const nsAString& aTarget,
                                const nsAString& aData)
 {
   using mozilla::dom::ProcessingInstruction;
+  using mozilla::dom::XMLStylesheetProcessingInstruction;
 
   NS_PRECONDITION(aNodeInfoManager, "Missing nodeinfo manager");
 
   nsCOMPtr<nsIAtom> target = do_GetAtom(aTarget);
-  NS_ENSURE_TRUE(target, NS_ERROR_OUT_OF_MEMORY);
+  MOZ_ASSERT(target);
 
   if (target == nsGkAtoms::xml_stylesheet) {
-    return NS_NewXMLStylesheetProcessingInstruction(aInstancePtrResult,
-                                                    aNodeInfoManager, aData);
+    nsRefPtr<XMLStylesheetProcessingInstruction> pi =
+      new XMLStylesheetProcessingInstruction(aNodeInfoManager, aData);
+    return pi.forget();
   }
-
-  *aInstancePtrResult = nullptr;
 
   nsCOMPtr<nsINodeInfo> ni;
   ni = aNodeInfoManager->GetNodeInfo(nsGkAtoms::processingInstructionTagName,
                                      nullptr, kNameSpaceID_None,
                                      nsIDOMNode::PROCESSING_INSTRUCTION_NODE,
                                      target);
-  NS_ENSURE_TRUE(ni, NS_ERROR_OUT_OF_MEMORY);
 
-  ProcessingInstruction *instance =
+  nsRefPtr<ProcessingInstruction> instance =
     new ProcessingInstruction(ni.forget(), aData);
-  if (!instance) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
 
-  NS_ADDREF(*aInstancePtrResult = instance);
-
-  return NS_OK;
+  return instance.forget();
 }
-
-DOMCI_NODE_DATA(ProcessingInstruction, mozilla::dom::ProcessingInstruction)
 
 namespace mozilla {
 namespace dom {
@@ -72,26 +63,14 @@ ProcessingInstruction::~ProcessingInstruction()
 {
 }
 
-// QueryInterface implementation for ProcessingInstruction
-NS_INTERFACE_TABLE_HEAD(ProcessingInstruction)
-  NS_NODE_OFFSET_AND_INTERFACE_TABLE_BEGIN(ProcessingInstruction)
-    NS_INTERFACE_TABLE_ENTRY(ProcessingInstruction, nsIDOMNode)
-    NS_INTERFACE_TABLE_ENTRY(ProcessingInstruction, nsIDOMCharacterData)
-    NS_INTERFACE_TABLE_ENTRY(ProcessingInstruction,
+NS_IMPL_ISUPPORTS_INHERITED3(ProcessingInstruction, nsGenericDOMDataNode,
+                             nsIDOMNode, nsIDOMCharacterData,
                              nsIDOMProcessingInstruction)
-  NS_OFFSET_AND_INTERFACE_TABLE_END
-  NS_OFFSET_AND_INTERFACE_TABLE_TO_MAP_SEGUE
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(ProcessingInstruction)
-NS_INTERFACE_MAP_END_INHERITING(nsGenericDOMDataNode)
-
-
-NS_IMPL_ADDREF_INHERITED(ProcessingInstruction, nsGenericDOMDataNode)
-NS_IMPL_RELEASE_INHERITED(ProcessingInstruction, nsGenericDOMDataNode)
 
 JSObject*
-ProcessingInstruction::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+ProcessingInstruction::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return ProcessingInstructionBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return ProcessingInstructionBinding::Wrap(aCx, aScope, this);
 }
 
 NS_IMETHODIMP

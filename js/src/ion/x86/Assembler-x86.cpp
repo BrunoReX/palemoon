@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +9,33 @@
 
 using namespace js;
 using namespace js::ion;
+
+ABIArgGenerator::ABIArgGenerator()
+  : stackOffset_(0),
+    current_()
+{}
+
+ABIArg
+ABIArgGenerator::next(MIRType type)
+{
+    current_ = ABIArg(stackOffset_);
+    switch (type) {
+      case MIRType_Int32:
+      case MIRType_Pointer:
+        stackOffset_ += sizeof(uint32_t);
+        break;
+      case MIRType_Double:
+        stackOffset_ += sizeof(uint64_t);
+        break;
+      default:
+        JS_NOT_REACHED("Unexpected argument type");
+    }
+    return current_;
+}
+
+const Register ABIArgGenerator::NonArgReturnVolatileReg0 = ecx;
+const Register ABIArgGenerator::NonArgReturnVolatileReg1 = edx;
+const Register ABIArgGenerator::NonVolatileReg = ebx;
 
 void
 Assembler::executableCopy(uint8_t *buffer)

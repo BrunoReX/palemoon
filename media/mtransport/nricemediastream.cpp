@@ -44,6 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string>
 #include <vector>
 
+#include "logging.h"
 #include "nsError.h"
 
 // nICEr includes
@@ -64,7 +65,6 @@ extern "C" {
 }
 
 // Local includes
-#include "logging.h"
 #include "nricectx.h"
 #include "nricemediastream.h"
 
@@ -133,7 +133,8 @@ nsresult NrIceMediaStream::ParseTrickleCandidate(const std::string& candidate) {
   r = nr_ice_peer_ctx_parse_trickle_candidate(ctx_->peer(),
                                               stream_,
                                               const_cast<char *>(
-                                                  candidate.c_str()));
+                                                candidate.c_str())
+                                              );
   if (r) {
     if (r == R_ALREADY) {
       MOZ_MTLOG(PR_LOG_ERROR, "Trickle candidates are redundant for stream '"

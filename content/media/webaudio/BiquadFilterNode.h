@@ -9,25 +9,12 @@
 
 #include "AudioNode.h"
 #include "AudioParam.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/BiquadFilterNodeBinding.h"
 
 namespace mozilla {
 namespace dom {
 
 class AudioContext;
-
-MOZ_BEGIN_ENUM_CLASS(BiquadTypeEnum, uint16_t)
-  LOWPASS = 0,
-  HIGHPASS = 1,
-  BANDPASS = 2,
-  LOWSHELF = 3,
-  HIGHSHELF = 4,
-  PEAKING = 5,
-  NOTCH = 6,
-  ALLPASS = 7,
-  Max = 7
-MOZ_END_ENUM_CLASS(BiquadTypeEnum)
 
 class BiquadFilterNode : public AudioNode
 {
@@ -37,35 +24,23 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(BiquadFilterNode, AudioNode)
 
-  virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope,
-                               bool* aTriedToWrap);
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
-  virtual uint32_t MaxNumberOfInputs() const MOZ_FINAL MOZ_OVERRIDE
+  BiquadFilterType Type() const
   {
-    return 1;
+    return mType;
   }
-  virtual uint32_t MaxNumberOfOutputs() const MOZ_FINAL MOZ_OVERRIDE
-  {
-    return 1;
-  }
-
-  uint16_t Type() const
-  {
-    return static_cast<uint16_t> (mType);
-  }
-  void SetType(uint16_t aType, ErrorResult& aRv)
-  {
-    BiquadTypeEnum type = static_cast<BiquadTypeEnum> (aType);
-    if (type > BiquadTypeEnum::Max) {
-      aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
-    } else {
-      mType = type;
-    }
-  }
+  void SetType(BiquadFilterType aType);
 
   AudioParam* Frequency() const
   {
     return mFrequency;
+  }
+
+  AudioParam* Detune() const
+  {
+    return mDetune;
   }
 
   AudioParam* Q() const
@@ -78,9 +53,20 @@ public:
     return mGain;
   }
 
+  void GetFrequencyResponse(const Float32Array& aFrequencyHz,
+                            Float32Array& aMagResponse,
+                            Float32Array& aPhaseResponse);
+
 private:
-  BiquadTypeEnum mType;
+  static void SendFrequencyToStream(AudioNode* aNode);
+  static void SendDetuneToStream(AudioNode* aNode);
+  static void SendQToStream(AudioNode* aNode);
+  static void SendGainToStream(AudioNode* aNode);
+
+private:
+  BiquadFilterType mType;
   nsRefPtr<AudioParam> mFrequency;
+  nsRefPtr<AudioParam> mDetune;
   nsRefPtr<AudioParam> mQ;
   nsRefPtr<AudioParam> mGain;
 };

@@ -107,7 +107,7 @@ public class DoCommand {
     String ffxProvider = "org.mozilla.ffxcp";
     String fenProvider = "org.mozilla.fencp";
 
-    private final String prgVersion = "SUTAgentAndroid Version 1.15";
+    private final String prgVersion = "SUTAgentAndroid Version 1.18";
 
     public enum Command
         {
@@ -124,6 +124,7 @@ public class DoCommand {
         ID ("id"),
         UPTIME ("uptime"),
         UPTIMEMILLIS ("uptimemillis"),
+        SUTUPTIMEMILLIS ("sutuptimemillis"),
         SETTIME ("settime"),
         SYSTIME ("systime"),
         SCREEN ("screen"),
@@ -131,6 +132,8 @@ public class DoCommand {
         MEMORY ("memory"),
         POWER ("power"),
         PROCESS ("process"),
+        SUTUSERINFO ("sutuserinfo"),
+        TEMPERATURE ("temperature"),
         GETAPPROOT ("getapproot"),
         TESTROOT ("testroot"),
         ALRT ("alrt"),
@@ -176,6 +179,7 @@ public class DoCommand {
         TZSET ("tzset"),
         ADB ("adb"),
         CHMOD ("chmod"),
+        TOPACTIVITY ("activity"),
         UNKNOWN ("unknown");
 
         private final String theCmd;
@@ -426,6 +430,8 @@ public class DoCommand {
                     strReturn += "\n";
                     strReturn += GetUptimeMillis();
                     strReturn += "\n";
+                    strReturn += GetSutUptimeMillis();
+                    strReturn += "\n";
                     strReturn += GetScreenInfo();
                     strReturn += "\n";
                     strReturn += GetRotationInfo();
@@ -434,7 +440,17 @@ public class DoCommand {
                     strReturn += "\n";
                     strReturn += GetPowerInfo();
                     strReturn += "\n";
+                    strReturn += GetTemperatureInfo();
+                    strReturn += "\n";
                     strReturn += GetProcessInfo();
+                    strReturn += "\n";
+                    strReturn += GetSutUserInfo();
+                    strReturn += "\n";
+                    strReturn += GetDiskInfo("/data");
+                    strReturn += "\n";
+                    strReturn += GetDiskInfo("/system");
+                    strReturn += "\n";
+                    strReturn += GetDiskInfo("/mnt/sdcard");
                     }
                 else
                     {
@@ -473,12 +489,33 @@ public class DoCommand {
                             strReturn = GetUptimeMillis();
                             break;
 
+                        case SUTUPTIMEMILLIS:
+                            strReturn = GetSutUptimeMillis();
+                            break;
+
                         case MEMORY:
                             strReturn = GetMemoryInfo();
                             break;
 
                         case POWER:
                             strReturn += GetPowerInfo();
+                            break;
+
+                        case SUTUSERINFO:
+                            strReturn += GetSutUserInfo();
+                            break;
+
+                        case TEMPERATURE:
+                            strReturn += GetTemperatureInfo();
+                            break;
+
+                        case DISK:
+                            strReturn += "\n";
+                            strReturn += GetDiskInfo("/data");
+                            strReturn += "\n";
+                            strReturn += GetDiskInfo("/system");
+                            strReturn += "\n";
+                            strReturn += GetDiskInfo("/mnt/sdcard");
                             break;
 
                         default:
@@ -793,6 +830,10 @@ public class DoCommand {
                     strReturn = ChmodDir(Argv[1]);
                 else
                     strReturn = sErrorPrefix + "Wrong number of arguments for chmod command!";
+                break;
+
+            case TOPACTIVITY:
+                strReturn = TopActivity();
                 break;
 
             case HELP:
@@ -1312,20 +1353,29 @@ private void CancelNotification()
         return(sRet);
         }
 
+    public void FixDataLocalPermissions()
+        {
+        String chmodResult;
+        File localDir = new java.io.File("/data/local");
+        if (!localDir.canWrite()) {
+            chmodResult = ChmodDir("/data/local");
+            Log.i("SUTAgentAndroid", "Changed permissions on /data/local to make it writable: " + chmodResult);
+        }
+        File tmpDir = new java.io.File("/data/local/tmp");
+        if (tmpDir.exists() && !tmpDir.isDirectory()) {
+            if (!tmpDir.delete()) {
+                Log.e("SUTAgentAndroid", "Could not delete file /data/local/tmp");
+            }
+        }
+        if (!tmpDir.exists() && !tmpDir.mkdirs()) {
+            Log.e("SUTAgentAndroid", "Could not create directory /data/local/tmp");
+        }
+        chmodResult = ChmodDir("/data/local/tmp");
+        Log.i("SUTAgentAndroid", "Changed permissions on /data/local/tmp to make it writable: " + chmodResult);
+        }
+
     public String GetTestRoot()
         {
-
-        // According to all the docs this should work, but I keep getting an
-        // exception when I attempt to create the file because I don't have
-        // permission, although /data/local/tmp is supposed to be world
-        // writeable/readable
-        File tmpFile = new java.io.File("/data/local/tmp/tests");
-        try{
-            tmpFile.createNewFile();
-        } catch (IOException e){
-            Log.i("SUTAgentAndroid", "Caught exception creating file in /data/local/tmp: " + e.getMessage());
-        }
-   
         String state = Environment.getExternalStorageState();
         // Ensure sdcard is mounted and NOT read only
         if (state.equalsIgnoreCase(Environment.MEDIA_MOUNTED) &&
@@ -1333,8 +1383,15 @@ private void CancelNotification()
             {
             return(Environment.getExternalStorageDirectory().getAbsolutePath());
             }
-        if (tmpFile.exists()) 
+        File tmpFile = new java.io.File("/data/local/tmp/tests");
+        try{
+            tmpFile.createNewFile();
+        } catch (IOException e){
+            Log.i("SUTAgentAndroid", "Caught exception creating file in /data/local/tmp: " + e.getMessage());
+        }
+        if (tmpFile.exists())
             {
+            tmpFile.delete();
             return("/data/local");
             }
         Log.e("SUTAgentAndroid", "ERROR: Cannot access world writeable test root");
@@ -2607,18 +2664,68 @@ private void CancelNotification()
         return (sRet);
         }
 
-    // todo
+    public String GetSutUserInfo()
+        {
+        String sRet = "";
+        try {
+            // based on patch in https://bugzilla.mozilla.org/show_bug.cgi?id=811763
+            Context context = contextWrapper.getApplicationContext();
+            Object userManager = context.getSystemService("user");
+            if (userManager != null) {
+                // if userManager is non-null that means we're running on 4.2+ and so the rest of this
+                // should just work
+                Object userHandle = android.os.Process.class.getMethod("myUserHandle", (Class[])null).invoke(null);
+                Object userSerial = userManager.getClass().getMethod("getSerialNumberForUser", userHandle.getClass()).invoke(userManager, userHandle);
+                sRet += "User Serial:" + userSerial.toString();
+            }
+        } catch (Exception e) {
+            // Guard against any unexpected failures
+            e.printStackTrace();
+        }
+
+        return sRet;
+        }
+
+    public String GetTemperatureInfo()
+        {
+        String sTempVal = "unknown";
+        String sDeviceFile = "/sys/bus/platform/devices/temp_sensor_hwmon.0/temp1_input";
+        try {
+            pProc = Runtime.getRuntime().exec(this.getSuArgs("cat " + sDeviceFile));
+            RedirOutputThread outThrd = new RedirOutputThread(pProc, null);
+            outThrd.start();
+            outThrd.joinAndStopRedirect(5000);
+            String output = outThrd.strOutput;
+            // this only works on pandas (with the temperature sensors turned
+            // on), other platforms we just get a file not found error... we'll
+            // just return "unknown" for that case
+            try {
+                sTempVal = String.valueOf(Integer.parseInt(output.trim()) / 1000.0);
+            } catch (NumberFormatException e) {
+                // not parsed! probably not a panda
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        return "Temperature: " + sTempVal;
+        }
+
     public String GetDiskInfo(String sPath)
         {
         String sRet = "";
         StatFs statFS = new StatFs(sPath);
 
-        int nBlockCount = statFS.getBlockCount();
-        int nBlockSize = statFS.getBlockSize();
-        int nBlocksAvail = statFS.getAvailableBlocks();
-        int nBlocksFree = statFS.getFreeBlocks();
+        long nBlockCount = statFS.getBlockCount();
+        long nBlockSize = statFS.getBlockSize();
+        long nBlocksAvail = statFS.getAvailableBlocks();
+        // Free is often the same as Available, but can include reserved
+        // blocks that are not available to normal applications.
+        // long nBlocksFree = statFS.getFreeBlocks();
 
-        sRet = "total:     " + (nBlockCount * nBlockSize) + "\nfree:      " + (nBlocksFree * nBlockSize) + "\navailable: " + (nBlocksAvail * nBlockSize);
+        sRet = sPath + ": " + (nBlockCount * nBlockSize) + " total, " + (nBlocksAvail * nBlockSize) + " available";
 
         return (sRet);
         }
@@ -2982,6 +3089,12 @@ private void CancelNotification()
         return Long.toString(SystemClock.uptimeMillis());
         }
  
+    public String GetSutUptimeMillis()
+        {
+        long now = System.currentTimeMillis();
+        return "SUTagent running for "+Long.toString(now - SUTAgentAndroid.nCreateTimeMillis)+" ms";
+        }
+ 
     public String NewKillProc(String sProcId, OutputStream out)
         {
         String sRet = "";
@@ -3254,7 +3367,16 @@ private void CancelNotification()
 
         try
             {
-            pProc = Runtime.getRuntime().exec(this.getSuArgs("pm install -r " + sApp + " Cleanup;exit"));
+            // on android 4.2 and above, we want to pass the "-d" argument to pm so that version
+            // downgrades are allowed... (option unsupported in earlier versions)
+            String sPmCmd;
+
+            if (android.os.Build.VERSION.SDK_INT >= 17) { // JELLY_BEAN_MR1
+                sPmCmd = "pm install -r -d " + sApp + " Cleanup;exit";
+            } else {
+                sPmCmd = "pm install -r " + sApp + " Cleanup;exit";
+            }
+            pProc = Runtime.getRuntime().exec(this.getSuArgs(sPmCmd));
             RedirOutputThread outThrd3 = new RedirOutputThread(pProc, out);
             outThrd3.start();
             try {
@@ -3414,7 +3536,7 @@ private void CancelNotification()
             else
                 prgIntent.setAction(Intent.ACTION_MAIN);
 
-            if (sArgs[0].contains("fennec"))
+            if (sArgs[0].contains("fennec") || sArgs[0].contains("firefox"))
                 {
                 sArgList = "";
                 sUrl = "";
@@ -3722,7 +3844,7 @@ private void CancelNotification()
                         else {
                             // set the new file's permissions to rwxrwxrwx, if possible
                             try {
-                                Process pProc = Runtime.getRuntime().exec("chmod 777 "+files[lcv]);
+                                Process pProc = Runtime.getRuntime().exec(this.getSuArgs("chmod 777 "+files[lcv]));
                                 RedirOutputThread outThrd = new RedirOutputThread(pProc, null);
                                 outThrd.start();
                                 outThrd.joinAndStopRedirect(5000);
@@ -3742,7 +3864,7 @@ private void CancelNotification()
 
         // set the new directory's (or file's) permissions to rwxrwxrwx, if possible
         try {
-            Process pProc = Runtime.getRuntime().exec("chmod 777 "+sTmpDir);
+            Process pProc = Runtime.getRuntime().exec(this.getSuArgs("chmod 777 "+sTmpDir));
             RedirOutputThread outThrd = new RedirOutputThread(pProc, null);
             outThrd.start();
             outThrd.joinAndStopRedirect(5000);
@@ -3753,6 +3875,29 @@ private void CancelNotification()
             sRet += "\n\tunable to chmod " + sTmpDir;
         }
 
+        return(sRet);
+        }
+
+    public String TopActivity()
+        {
+        String sRet = "";
+        ActivityManager aMgr = (ActivityManager) contextWrapper.getSystemService(Activity.ACTIVITY_SERVICE);
+        List< ActivityManager.RunningTaskInfo > taskInfo = null;
+        ComponentName componentInfo = null;
+        if (aMgr != null)
+            {
+            taskInfo = aMgr.getRunningTasks(1);
+            }
+        if (taskInfo != null)
+            {
+            // topActivity: "The activity component at the top of the history stack of the task.
+            // This is what the user is currently doing."
+            componentInfo = taskInfo.get(0).topActivity;
+            }
+        if (componentInfo != null)
+            {
+            sRet = componentInfo.getPackageName();
+            }
         return(sRet);
         }
 
@@ -3773,6 +3918,7 @@ private void CancelNotification()
             "        [id]                    - unique identifier for device\n" +
             "        [uptime]                - uptime for device\n" +
             "        [uptimemillis]          - uptime for device in milliseconds\n" +
+            "        [sutuptimemillis]       - uptime for SUT in milliseconds\n" +
             "        [systime]               - current system time\n" +
             "        [screen]                - width, height and bits per pixel for device\n" +
             "        [memory]                - physical, free, available, storage memory\n" +
@@ -3817,6 +3963,7 @@ private void CancelNotification()
             "tzget                           - returns the current timezone set on the device\n" +
             "rebt                            - reboot device\n" +
             "adb ip|usb                      - set adb to use tcp/ip on port 5555 or usb\n" +
+            "activity                        - print package name of top (foreground) activity\n" +
             "quit                            - disconnect SUTAgent\n" +
             "exit                            - close SUTAgent\n" +
             "ver                             - SUTAgent version\n" +

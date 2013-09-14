@@ -91,8 +91,6 @@ nsPlaintextEditor::~nsPlaintextEditor()
     mRules->DetachEditor();
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsPlaintextEditor)
-
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsPlaintextEditor, nsEditor)
   if (tmp->mRules)
     tmp->mRules->DetachEditor();
@@ -640,8 +638,6 @@ nsPlaintextEditor::DeleteSelection(EDirection aAction,
 
   nsresult result;
 
-  HandlingTrustedAction trusted(this, aAction != eNone);
-
   // delete placeholder txns merge.
   nsAutoPlaceHolderBatch batch(this, nsGkAtoms::DeleteTxnName);
   nsAutoRules beginRulesSniffing(this, EditAction::deleteSelection, aAction);
@@ -834,7 +830,7 @@ nsresult
 nsPlaintextEditor::UpdateIMEComposition(const nsAString& aCompositionString,
                                         nsIPrivateTextRangeList* aTextRangeList)
 {
-  NS_ABORT_IF_FALSE(aTextRangeList, "aTextRangeList must not be NULL");
+  NS_ABORT_IF_FALSE(aTextRangeList, "aTextRangeList must not be nullptr");
 
   nsCOMPtr<nsIPresShell> ps = GetPresShell();
   NS_ENSURE_TRUE(ps, NS_ERROR_NOT_INITIALIZED);
@@ -1080,8 +1076,6 @@ nsPlaintextEditor::Undo(uint32_t aCount)
   // Protect the edit rules object from dying
   nsCOMPtr<nsIEditRules> kungFuDeathGrip(mRules);
 
-  HandlingTrustedAction trusted(this);
-
   nsAutoUpdateViewBatch beginViewBatching(this);
 
   ForceCompositionEnd();
@@ -1108,8 +1102,6 @@ nsPlaintextEditor::Redo(uint32_t aCount)
 {
   // Protect the edit rules object from dying
   nsCOMPtr<nsIEditRules> kungFuDeathGrip(mRules);
-
-  HandlingTrustedAction trusted(this);
 
   nsAutoUpdateViewBatch beginViewBatching(this);
 
@@ -1165,8 +1157,6 @@ nsPlaintextEditor::FireClipboardEvent(int32_t aType)
 
 NS_IMETHODIMP nsPlaintextEditor::Cut()
 {
-  HandlingTrustedAction trusted(this);
-
   if (FireClipboardEvent(NS_CUT))
     return DeleteSelection(eNone, eStrip);
   return NS_OK;

@@ -67,7 +67,7 @@ Cu.import("resource://gre/modules/NetUtil.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/PlacesUtils.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/commonjs/promise/core.js");
+Cu.import("resource://gre/modules/commonjs/sdk/core/promise.js");
 
 const Container_Normal = 0;
 const Container_Toolbar = 1;
@@ -534,12 +534,8 @@ BookmarkImporter.prototype = {
 
     // Import last charset.
     if (lastCharset) {
-      try {
-        PlacesUtils.history.setCharsetForURI(frame.previousLink, lastCharset);
-      } catch(e) {
-      }
+      PlacesUtils.setCharsetForURI(frame.previousLink, lastCharset);
     }
-
   },
 
   _handleContainerBegin: function handleContainerBegin() {
@@ -1120,7 +1116,7 @@ BookmarkExporter.prototype = {
     }
 
     try {
-      let lastCharset = PlacesUtils.history.getCharsetForURI(itemUri);
+      let lastCharset = yield PlacesUtils.getCharsetForURI(itemUri);
       if (lastCharset) {
         this._write(" LAST_CHARSET=\"" + this.escapeHtml(lastCharset) + "\"");
       }

@@ -14,9 +14,9 @@
 #include "nsIDOMCameraManager.h"
 #include "CameraCommon.h"
 #include "AudioChannelAgent.h"
+#include "nsProxyRelease.h"
 
 namespace mozilla {
-
 
 // Main camera control.
 class nsDOMCameraControl : public nsICameraControl
@@ -26,8 +26,14 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS(nsDOMCameraControl)
   NS_DECL_NSICAMERACONTROL
 
-  nsDOMCameraControl(uint32_t aCameraId, nsIThread* aCameraThread, nsICameraGetCameraCallback* onSuccess, nsICameraErrorCallback* onError, uint64_t aWindowId);
-  nsresult Result(nsresult aResult, nsICameraGetCameraCallback* onSuccess, nsICameraErrorCallback* onError, uint64_t aWindowId);
+  nsDOMCameraControl(uint32_t aCameraId, nsIThread* aCameraThread,
+                     nsICameraGetCameraCallback* onSuccess,
+                     nsICameraErrorCallback* onError, uint64_t aWindowId);
+  nsresult Result(nsresult aResult,
+                  const nsMainThreadPtrHandle<nsICameraGetCameraCallback>& onSuccess,
+                  const nsMainThreadPtrHandle<nsICameraErrorCallback>& onError,
+                  uint64_t aWindowId);
+  nsRefPtr<ICameraControl> GetNativeCameraControl();
 
   void Shutdown();
 

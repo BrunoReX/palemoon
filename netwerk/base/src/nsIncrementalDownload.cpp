@@ -24,6 +24,7 @@
 #include "nsChannelProperties.h"
 #include "prio.h"
 #include "prprf.h"
+#include <algorithm>
 
 // Default values used to initialize a nsIncrementalDownload object.
 #define DEFAULT_CHUNK_SIZE (4096 * 16)  // bytes
@@ -40,7 +41,30 @@ static nsresult
 WriteToFile(nsIFile *lf, const char *data, uint32_t len, int32_t flags)
 {
   PRFileDesc *fd;
-  nsresult rv = lf->OpenNSPRFileDesc(flags, 0600, &fd);
+  int32_t mode = 0600;
+  nsresult rv;
+#if defined(MOZ_WIDGET_GONK)
+  // The sdcard on a B2G phone looks like:
+  // d---rwx--- system   sdcard_rw          1970-01-01 01:00:00 sdcard
+  // On the emulator, xpcshell fails when using 0600 mode to open the file,
+  // and 0660 works.
+  nsCOMPtr<nsIFile> parent;
+  rv = lf->GetParent(getter_AddRefs(parent));
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  uint32_t  parentPerm;
+  rv = parent->GetPermissions(&parentPerm);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  if ((parentPerm & 0700) == 0) {
+    // Parent directory has no owner-write, so try to use group permissions
+    // instead of owner permissions.
+    mode = 0660;
+  }
+#endif
+  rv = lf->OpenNSPRFileDesc(flags, mode, &fd);
   if (NS_FAILED(rv))
     return rv;
 
@@ -653,7 +677,7 @@ nsIncrementalDownload::OnDataAvailable(nsIRequest *request,
 {
   while (count) {
     uint32_t space = mChunkSize - mChunkLen;
-    uint32_t n, len = NS_MIN(space, count);
+    uint32_t n, len = std::min(space, count);
 
     nsresult rv = input->Read(mChunk + mChunkLen, len, &n);
     if (NS_FAILED(rv))

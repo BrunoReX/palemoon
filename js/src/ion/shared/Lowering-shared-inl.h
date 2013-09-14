@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_ion_lowering_inl_h__
-#define jsion_ion_lowering_inl_h__
+#ifndef ion_shared_Lowering_shared_inl_h
+#define ion_shared_Lowering_shared_inl_h
 
 #include "ion/MIR.h"
 #include "ion/MIRGraph.h"
@@ -114,8 +113,8 @@ LIRGeneratorShared::defineBox(LInstructionHelper<BOX_PIECES, Ops, Temps> *lir, M
     return add(lir);
 }
 
-template <size_t Defs, size_t Ops, size_t Temps> bool
-LIRGeneratorShared::defineReturn(LInstructionHelper<Defs, Ops, Temps> *lir, MDefinition *mir)
+bool
+LIRGeneratorShared::defineReturn(LInstruction *lir, MDefinition *mir)
 {
     lir->setMir(mir);
 
@@ -276,6 +275,16 @@ LIRGeneratorShared::useAnyOrConstant(MDefinition *mir)
 {
     return useRegisterOrConstant(mir);
 }
+LAllocation
+LIRGeneratorShared::useStorable(MDefinition *mir)
+{
+    return useRegister(mir);
+}
+LAllocation
+LIRGeneratorShared::useStorableAtStart(MDefinition *mir)
+{
+    return useRegisterAtStart(mir);
+}
 
 LAllocation
 LIRGeneratorShared::useAny(MDefinition *mir)
@@ -294,6 +303,17 @@ LIRGeneratorShared::useAny(MDefinition *mir)
 {
     return use(mir);
 }
+LAllocation
+LIRGeneratorShared::useStorable(MDefinition *mir)
+{
+    return useRegisterOrConstant(mir);
+}
+LAllocation
+LIRGeneratorShared::useStorableAtStart(MDefinition *mir)
+{
+    return useRegisterOrConstantAtStart(mir);
+}
+
 #endif
 
 LAllocation
@@ -314,6 +334,12 @@ LUse
 LIRGeneratorShared::useFixed(MDefinition *mir, FloatRegister reg)
 {
     return use(mir, LUse(reg));
+}
+
+LUse
+LIRGeneratorShared::useFixed(MDefinition *mir, AnyRegister reg)
+{
+    return reg.isFloat() ? use(mir, reg.fpu()) : use(mir, reg.gpr());
 }
 
 LDefinition
@@ -380,6 +406,8 @@ VirtualRegisterOfPayload(MDefinition *mir)
         if (!inner->isConstant() && inner->type() != MIRType_Double)
             return inner->virtualRegister();
     }
+    if (mir->isTypeBarrier())
+        return VirtualRegisterOfPayload(mir->getOperand(0));
     return mir->virtualRegister() + VREG_DATA_OFFSET;
 }
 
@@ -429,5 +457,4 @@ LIRGeneratorShared::fillBoxUses(LInstruction *lir, size_t n, MDefinition *mir)
 } // namespace ion
 } // namespace js
 
-#endif // jsion_ion_lowering_inl_h__
-
+#endif /* ion_shared_Lowering_shared_inl_h */

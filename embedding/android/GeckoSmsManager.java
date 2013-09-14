@@ -298,14 +298,16 @@ public class GeckoSmsManager
 
   /*
    * Make sure that the following error codes are in sync with the ones
-   * defined in dom/sms/interfaces/nsISmsRequestManager.idl. They are owned
+   * defined in dom/mobilemessage/interfaces/nsISmsRequestManager.idl. They are owned
    * owned by the interface.
    */
-  public final static int kNoError       = 0;
-  public final static int kNoSignalError = 1;
-  public final static int kNotFoundError = 2;
-  public final static int kUnknownError  = 3;
-  public final static int kInternalError = 4;
+  public final static int kNoError                = 0;
+  public final static int kNoSignalError          = 1;
+  public final static int kNotFoundError          = 2;
+  public final static int kUnknownError           = 3;
+  public final static int kInternalError          = 4;
+  public final static int kNoSimCardError         = 5;
+  public final static int kRadioDisabledError     = 6;
 
   private final static int kMaxMessageSize    = 160;
 
@@ -317,16 +319,19 @@ public class GeckoSmsManager
 
   /*
    * Keep the following state codes in syng with |DeliveryState| in:
-   * dom/sms/src/Types.h
+   * dom/mobilemessage/src/Types.h
    */
-  private final static int kDeliveryStateSent     = 0;
-  private final static int kDeliveryStateReceived = 1;
-  private final static int kDeliveryStateUnknown  = 2;
-  private final static int kDeliveryStateEndGuard = 3;
+  private final static int kDeliveryStateSent          = 0;
+  private final static int kDeliveryStateReceived      = 1;
+  private final static int kDeliveryStateSending       = 2;
+  private final static int kDeliveryStateError         = 3;
+  private final static int kDeliveryStateUnknown       = 4;
+  private final static int kDeliveryStateNotDownloaded = 5;
+  private final static int kDeliveryStateEndGuard      = 6;
 
   /*
    * Keep the following status codes in sync with |DeliveryStatus| in:
-   * dom/sms/src/Types.h
+   * dom/mobilemessage/src/Types.h
    */
   private final static int kDeliveryStatusNotApplicable = 0;
   private final static int kDeliveryStatusSuccess       = 1;
@@ -344,7 +349,7 @@ public class GeckoSmsManager
 
   /*
    * Keep the following values in sync with |MessageClass| in:
-   * dom/sms/src/Types.h
+   * dom/mobilemessage/src/Types.h
    */
   private final static int kMessageClassNormal  = 0;
   private final static int kMessageClassClass0  = 1;

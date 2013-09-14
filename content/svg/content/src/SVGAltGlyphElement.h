@@ -6,8 +6,6 @@
 #ifndef mozilla_dom_SVGAltGlyphElement_h
 #define mozilla_dom_SVGAltGlyphElement_h
 
-#include "nsIDOMSVGAltGlyphElement.h"
-#include "nsIDOMSVGURIReference.h"
 #include "mozilla/dom/SVGTextPositioningElement.h"
 #include "nsSVGString.h"
 
@@ -19,49 +17,32 @@ namespace dom {
 
 typedef SVGTextPositioningElement SVGAltGlyphElementBase;
 
-class SVGAltGlyphElement MOZ_FINAL : public SVGAltGlyphElementBase, // = nsIDOMSVGTextPositioningElement
-                                     public nsIDOMSVGAltGlyphElement,
-                                     public nsIDOMSVGURIReference
+class SVGAltGlyphElement MOZ_FINAL : public SVGAltGlyphElementBase
 {
 protected:
   friend nsresult (::NS_NewSVGAltGlyphElement(nsIContent **aResult,
                                               already_AddRefed<nsINodeInfo> aNodeInfo));
   SVGAltGlyphElement(already_AddRefed<nsINodeInfo> aNodeInfo);
-  virtual JSObject* WrapNode(JSContext *cx, JSObject *scope, bool *triedToWrap) MOZ_OVERRIDE;
+  virtual JSObject* WrapNode(JSContext *cx,
+                             JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
 public:
-  // interfaces:
-
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIDOMSVGALTGLYPHELEMENT
-  NS_DECL_NSIDOMSVGURIREFERENCE
-
-  // xxx If xpcom allowed virtual inheritance we wouldn't need to
-  // forward here :-(
-  NS_FORWARD_NSIDOMNODE_TO_NSINODE
-  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
-  NS_FORWARD_NSIDOMSVGELEMENT(SVGAltGlyphElementBase::)
-  NS_FORWARD_NSIDOMSVGTEXTCONTENTELEMENT(SVGAltGlyphElementBase::)
-  NS_FORWARD_NSIDOMSVGTEXTPOSITIONINGELEMENT(SVGAltGlyphElementBase::)
-
   // nsIContent interface
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const MOZ_OVERRIDE;
 
-  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
-
-  virtual nsXPCClassInfo* GetClassInfo();
-
-  virtual nsIDOMNode* AsDOMNode() { return this; }
+  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const MOZ_OVERRIDE;
 
   // WebIDL
-  already_AddRefed<nsIDOMSVGAnimatedString> Href();
+  already_AddRefed<SVGAnimatedString> Href();
+  void GetGlyphRef(nsAString & aGlyphRef);
+  void SetGlyphRef(const nsAString & aGlyphRef, ErrorResult& rv);
+  void GetFormat(nsAString & aFormat);
+  void SetFormat(const nsAString & aFormat, ErrorResult& rv);
 
 protected:
 
   // nsSVGElement overrides
-  virtual StringAttributesInfo GetStringInfo();
-
-  virtual bool IsEventName(nsIAtom* aName);
+  virtual StringAttributesInfo GetStringInfo() MOZ_OVERRIDE;
 
   enum { HREF };
   nsSVGString mStringAttributes[1];

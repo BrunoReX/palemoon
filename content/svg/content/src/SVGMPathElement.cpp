@@ -6,14 +6,11 @@
 #include "mozilla/Util.h"
 
 #include "mozilla/dom/SVGMPathElement.h"
-#include "nsAutoPtr.h"
 #include "nsDebug.h"
-#include "nsSVGPathElement.h"
 #include "mozilla/dom/SVGAnimateMotionElement.h"
+#include "mozilla/dom/SVGPathElement.h"
 #include "nsContentUtils.h"
 #include "mozilla/dom/SVGMPathElementBinding.h"
-
-DOMCI_NODE_DATA(SVGMpathElement, mozilla::dom::SVGMPathElement)
 
 NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(MPath)
 
@@ -21,9 +18,9 @@ namespace mozilla {
 namespace dom {
 
 JSObject*
-SVGMPathElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+SVGMPathElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return SVGMPathElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return SVGMPathElementBinding::Wrap(aCx, aScope, this);
 }
 
 nsSVGElement::StringInfo SVGMPathElement::sStringInfo[1] =
@@ -32,7 +29,6 @@ nsSVGElement::StringInfo SVGMPathElement::sStringInfo[1] =
 };
 
 // Cycle collection magic -- based on nsSVGUseElement
-NS_IMPL_CYCLE_COLLECTION_CLASS(SVGMPathElement)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(SVGMPathElement,
                                                 SVGMPathElementBase)
   tmp->UnlinkHrefTarget(false);
@@ -50,11 +46,10 @@ NS_IMPL_ADDREF_INHERITED(SVGMPathElement,SVGMPathElementBase)
 NS_IMPL_RELEASE_INHERITED(SVGMPathElement,SVGMPathElementBase)
 
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(SVGMPathElement)
-  NS_NODE_INTERFACE_TABLE6(SVGMPathElement, nsIDOMNode, nsIDOMElement,
-                           nsIDOMSVGElement,  nsIDOMSVGURIReference,
-                           nsIDOMSVGMpathElement, nsIMutationObserver)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGMpathElement)
-NS_INTERFACE_MAP_END_INHERITING(SVGMPathElementBase)
+  NS_INTERFACE_TABLE_INHERITED4(SVGMPathElement, nsIDOMNode, nsIDOMElement,
+                                nsIDOMSVGElement,
+                                nsIMutationObserver)
+NS_INTERFACE_TABLE_TAIL_INHERITING(SVGMPathElementBase)
 
 // Constructor
 #ifdef _MSC_VER
@@ -71,7 +66,6 @@ SVGMPathElement::SVGMPathElement(already_AddRefed<nsINodeInfo> aNodeInfo)
 #pragma warning(pop)
 #endif
 {
-  SetIsDOMBinding();
 }
 
 SVGMPathElement::~SVGMPathElement()
@@ -84,23 +78,10 @@ SVGMPathElement::~SVGMPathElement()
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGMPathElement)
 
-//----------------------------------------------------------------------
-// nsIDOMSVGURIReference methods
-
-/* readonly attribute nsIDOMSVGAnimatedString href; */
-already_AddRefed<nsIDOMSVGAnimatedString>
+already_AddRefed<SVGAnimatedString>
 SVGMPathElement::Href()
 {
-  nsCOMPtr<nsIDOMSVGAnimatedString> href;
-  mStringAttributes[HREF].ToDOMAnimatedString(getter_AddRefs(href), this);
-  return href.forget();
-}
-
-NS_IMETHODIMP
-SVGMPathElement::GetHref(nsIDOMSVGAnimatedString** aHref)
-{
-  *aHref = Href().get();
-  return NS_OK;
+  return mStringAttributes[HREF].ToDOMAnimatedString(this);
 }
 
 //----------------------------------------------------------------------
@@ -203,7 +184,7 @@ SVGMPathElement::AttributeChanged(nsIDocument* aDocument,
 //----------------------------------------------------------------------
 // Public helper methods
 
-nsSVGPathElement*
+SVGPathElement*
 SVGMPathElement::GetReferencedPath()
 {
   if (!HasAttr(kNameSpaceID_XLink, nsGkAtoms::href)) {
@@ -215,7 +196,7 @@ SVGMPathElement::GetReferencedPath()
 
   nsIContent* genericTarget = mHrefTarget.get();
   if (genericTarget && genericTarget->IsSVG(nsGkAtoms::path)) {
-    return static_cast<nsSVGPathElement*>(genericTarget);
+    return static_cast<SVGPathElement*>(genericTarget);
   }
   return nullptr;
 }

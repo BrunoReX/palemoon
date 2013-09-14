@@ -6,8 +6,8 @@
 #include "nsAccUtils.h"
 
 #include "Accessible-inl.h"
+#include "ARIAMap.h"
 #include "nsAccessibilityService.h"
-#include "nsARIAMap.h"
 #include "nsCoreUtils.h"
 #include "DocAccessible.h"
 #include "HyperTextAccessible.h"
@@ -136,15 +136,14 @@ nsAccUtils::SetLiveContainerAttributes(nsIPersistentProperties *aAttributes,
 
     // container-relevant attribute
     if (relevant.IsEmpty() &&
-        nsAccUtils::HasDefinedARIAToken(ancestor, nsGkAtoms::aria_relevant) &&
+        HasDefinedARIAToken(ancestor, nsGkAtoms::aria_relevant) &&
         ancestor->GetAttr(kNameSpaceID_None, nsGkAtoms::aria_relevant, relevant))
       SetAccAttr(aAttributes, nsGkAtoms::containerRelevant, relevant);
 
     // container-live, and container-live-role attributes
     if (live.IsEmpty()) {
       nsRoleMapEntry* role = aria::GetRoleMap(ancestor);
-      if (nsAccUtils::HasDefinedARIAToken(ancestor,
-                                          nsGkAtoms::aria_live)) {
+      if (HasDefinedARIAToken(ancestor, nsGkAtoms::aria_live)) {
         ancestor->GetAttr(kNameSpaceID_None, nsGkAtoms::aria_live,
                           live);
       } else if (role) {
@@ -153,21 +152,21 @@ nsAccUtils::SetLiveContainerAttributes(nsIPersistentProperties *aAttributes,
       if (!live.IsEmpty()) {
         SetAccAttr(aAttributes, nsGkAtoms::containerLive, live);
         if (role) {
-          nsAccUtils::SetAccAttr(aAttributes, nsGkAtoms::containerLiveRole,
-                                 role->ARIARoleString());
+          SetAccAttr(aAttributes, nsGkAtoms::containerLiveRole,
+                     role->ARIARoleString());
         }
       }
     }
 
     // container-atomic attribute
     if (atomic.IsEmpty() &&
-        nsAccUtils::HasDefinedARIAToken(ancestor, nsGkAtoms::aria_atomic) &&
+        HasDefinedARIAToken(ancestor, nsGkAtoms::aria_atomic) &&
         ancestor->GetAttr(kNameSpaceID_None, nsGkAtoms::aria_atomic, atomic))
       SetAccAttr(aAttributes, nsGkAtoms::containerAtomic, atomic);
 
     // container-busy attribute
     if (busy.IsEmpty() &&
-        nsAccUtils::HasDefinedARIAToken(ancestor, nsGkAtoms::aria_busy) &&
+        HasDefinedARIAToken(ancestor, nsGkAtoms::aria_busy) &&
         ancestor->GetAttr(kNameSpaceID_None, nsGkAtoms::aria_busy, busy))
       SetAccAttr(aAttributes, nsGkAtoms::containerBusy, busy);
 
@@ -198,7 +197,7 @@ nsAccUtils::HasDefinedARIAToken(nsIContent *aContent, nsIAtom *aAtom)
 nsIAtom*
 nsAccUtils::GetARIAToken(dom::Element* aElement, nsIAtom* aAttr)
 {
-  if (!nsAccUtils::HasDefinedARIAToken(aElement, aAttr))
+  if (!HasDefinedARIAToken(aElement, aAttr))
     return nsGkAtoms::_empty;
 
   static nsIContent::AttrValuesArray tokens[] =
@@ -240,7 +239,7 @@ nsAccUtils::GetSelectableContainer(Accessible* aAccessible, uint64_t aState)
 
   Accessible* parent = aAccessible;
   while ((parent = parent->Parent()) && !parent->IsSelect()) {
-    if (Role(parent) == nsIAccessibleRole::ROLE_PANE)
+    if (parent->Role() == roles::PANE)
       return nullptr;
   }
   return parent;
@@ -370,16 +369,6 @@ nsAccUtils::GetScreenCoordsForParent(Accessible* aAccessible)
     ToNearestPixels(parentFrame->PresContext()->AppUnitsPerDevPixel());
 }
 
-uint8_t
-nsAccUtils::GetAttributeCharacteristics(nsIAtom* aAtom)
-{
-    for (uint32_t i = 0; i < nsARIAMap::gWAIUnivAttrMapLength; i++)
-      if (*nsARIAMap::gWAIUnivAttrMap[i].attributeName == aAtom)
-        return nsARIAMap::gWAIUnivAttrMap[i].characteristics;
-
-    return 0;
-}
-
 bool
 nsAccUtils::GetLiveAttrValue(uint32_t aRule, nsAString& aValue)
 {
@@ -409,7 +398,7 @@ nsAccUtils::IsTextInterfaceSupportCorrect(Accessible* aAccessible)
   uint32_t childCount = aAccessible->ChildCount();
   for (uint32_t childIdx = 0; childIdx < childCount; childIdx++) {
     Accessible* child = aAccessible->GetChildAt(childIdx);
-    if (IsText(child)) {
+    if (!IsEmbeddedObject(child)) {
       foundText = true;
       break;
     }
@@ -429,7 +418,7 @@ nsAccUtils::IsTextInterfaceSupportCorrect(Accessible* aAccessible)
 uint32_t
 nsAccUtils::TextLength(Accessible* aAccessible)
 {
-  if (!IsText(aAccessible))
+  if (IsEmbeddedObject(aAccessible))
     return 1;
 
   TextLeafAccessible* textLeaf = aAccessible->AsTextLeaf();
@@ -450,18 +439,21 @@ nsAccUtils::MustPrune(Accessible* aAccessible)
 { 
   roles::Role role = aAccessible->Role();
 
-  // We don't prune buttons any more however AT don't expect children inside of
-  // button in general, we allow menu buttons to have children to make them
-  // accessible.
-  return role == roles::MENUITEM || 
-    role == roles::COMBOBOX_OPTION ||
-    role == roles::OPTION ||
-    role == roles::ENTRY ||
-    role == roles::FLAT_EQUATION ||
-    role == roles::PASSWORD_TEXT ||
-    role == roles::TOGGLE_BUTTON ||
-    role == roles::GRAPHIC ||
-    role == roles::SLIDER ||
-    role == roles::PROGRESSBAR ||
-    role == roles::SEPARATOR;
+  // Don't prune the tree for certain roles if the tree is more complex than
+  // a single text leaf.
+  return
+    (role == roles::MENUITEM ||
+     role == roles::COMBOBOX_OPTION ||
+     role == roles::OPTION ||
+     role == roles::ENTRY ||
+     role == roles::FLAT_EQUATION ||
+     role == roles::PASSWORD_TEXT ||
+     role == roles::PUSHBUTTON ||
+     role == roles::TOGGLE_BUTTON ||
+     role == roles::GRAPHIC ||
+     role == roles::SLIDER ||
+     role == roles::PROGRESSBAR ||
+     role == roles::SEPARATOR) &&
+    aAccessible->ContentChildCount() == 1 &&
+    aAccessible->ContentChildAt(0)->IsTextLeaf();
 }

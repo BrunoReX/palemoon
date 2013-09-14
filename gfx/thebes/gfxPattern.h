@@ -20,7 +20,7 @@ class gfxASurface;
 typedef struct _cairo_pattern cairo_pattern_t;
 
 
-class THEBES_API gfxPattern {
+class gfxPattern {
     NS_INLINE_DECL_REFCOUNTING(gfxPattern)
 
 public:
@@ -37,9 +37,11 @@ public:
 
     cairo_pattern_t *CairoPattern();
     void AddColorStop(gfxFloat offset, const gfxRGBA& c);
+    void SetColorStops(mozilla::RefPtr<mozilla::gfx::GradientStops> aStops);
 
     void SetMatrix(const gfxMatrix& matrix);
     gfxMatrix GetMatrix() const;
+    gfxMatrix GetInverseMatrix() const;
 
     /* Get an Azure Pattern for the current Cairo pattern. aPattern transform
      * specifies the transform that was set on the DrawTarget when the pattern
@@ -100,6 +102,10 @@ public:
 
     already_AddRefed<gfxASurface> GetSurface();
 
+    bool IsAzure() { return !mPattern; }
+
+    mozilla::TemporaryRef<mozilla::gfx::SourceSurface> GetAzureSurface() { return mSourceSurface; }
+
 protected:
     cairo_pattern_t *mPattern;
 
@@ -130,7 +136,7 @@ protected:
     mozilla::RefPtr<mozilla::gfx::SourceSurface> mSourceSurface;
     mozilla::gfx::Matrix mTransform;
     mozilla::RefPtr<mozilla::gfx::GradientStops> mStops;
-    mozilla::gfx::ExtendMode mExtend;
+    GraphicsExtend mExtend;
     mozilla::gfx::Filter mFilter;
 };
 

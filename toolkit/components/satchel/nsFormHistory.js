@@ -10,10 +10,16 @@ const Cr = Components.results;
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "Deprecated",
+                                  "resource://gre/modules/Deprecated.jsm");
+
 const DB_VERSION = 4;
 const DAY_IN_MS  = 86400000; // 1 day in milliseconds
 
 function FormHistory() {
+    Deprecated.warning(
+        "nsIFormHistory2 is deprecated and will be removed in a future version",
+        "https://bugzilla.mozilla.org/show_bug.cgi?id=879118");
     this.init();
 }
 
@@ -27,7 +33,6 @@ FormHistory.prototype = {
 
     debug          : true,
     enabled        : true,
-    saveHttpsForms : true,
 
     // The current database schema.
     dbSchema : {
@@ -82,42 +87,13 @@ FormHistory.prototype = {
 
 
     init : function init() {
-        Services.prefs.addObserver("browser.formfill.", this, true);
-
         this.updatePrefs();
 
         this.dbStmts = {};
 
-        this.messageManager = Cc["@mozilla.org/globalmessagemanager;1"].
-                              getService(Ci.nsIMessageListenerManager);
-        this.messageManager.loadFrameScript("chrome://satchel/content/formSubmitListener.js", true);
-        this.messageManager.addMessageListener("FormHistory:FormSubmitEntries", this);
-
-        // Add observers
+        // Add observer
         Services.obs.addObserver(this, "profile-before-change", true);
-        Services.obs.addObserver(this, "idle-daily", true);
-        Services.obs.addObserver(this, "formhistory-expire-now", true);
     },
-
-    /* ---- message listener ---- */
-
-
-    receiveMessage: function receiveMessage(message) {
-        // Open a transaction so multiple adds happen in one commit
-        this.dbConnection.beginTransaction();
-
-        try {
-            let entries = message.json;
-            for (let i = 0; i < entries.length; i++) {
-                this.addEntry(entries[i].name, entries[i].value);
-            }
-        } finally {
-            // Don't need it to be atomic if there was an error.  Commit what
-            // we managed to put in the table.
-            this.dbConnection.commitTransaction();
-        }
-    },
-
 
     /* ---- nsIFormHistory2 interfaces ---- */
 
@@ -434,10 +410,6 @@ FormHistory.prototype = {
         case "nsPref:changed":
             this.updatePrefs();
             break;
-        case "idle-daily":
-        case "formhistory-expire-now":
-            this.expireOldEntries();
-            break;
         case "profile-before-change":
             this._dbClose(false);
             break;
@@ -569,56 +541,9 @@ FormHistory.prototype = {
     },
 
 
-    expireOldEntries : function () {
-        this.log("expireOldEntries");
-
-        // Determine how many days of history we're supposed to keep.
-        let expireDays = 180;
-        try {
-            expireDays = Services.prefs.getIntPref("browser.formfill.expire_days");
-        } catch (e) { /* ignore */ }
-
-        let expireTime = Date.now() - expireDays * DAY_IN_MS;
-        expireTime *= 1000; // switch to microseconds
-
-        this.sendIntNotification("before-expireOldEntries", expireTime);
-
-        let beginningCount = this.countAllEntries();
-
-        // Purge the form history...
-        let stmt;
-        let query = "DELETE FROM moz_formhistory WHERE lastUsed <= :expireTime";
-        let params = { expireTime : expireTime };
-
-        try {
-            stmt = this.dbCreateStatement(query, params);
-            stmt.execute();
-        } catch (e) {
-            this.log("expireOldEntries failed: " + e);
-            throw e;
-        } finally {
-            if (stmt) {
-                stmt.reset();
-            }
-        }
-
-        let endingCount = this.countAllEntries();
-
-        // If we expired a large batch of entries, shrink the DB to reclaim wasted
-        // space. This is expected to happen when entries predating timestamps
-        // (added in the v.1 schema) expire in mass, 180 days after the DB was
-        // upgraded -- entries not used since then expire all at once.
-        if (beginningCount - endingCount > 500)
-            this.dbConnection.executeSimpleSQL("VACUUM");
-
-        this.sendIntNotification("expireOldEntries", expireTime);
-    },
-
-
     updatePrefs : function () {
         this.debug          = Services.prefs.getBoolPref("browser.formfill.debug");
         this.enabled        = Services.prefs.getBoolPref("browser.formfill.enable");
-        this.saveHttpsForms = Services.prefs.getBoolPref("browser.formfill.saveHttpsForms");
     },
 
 //**************************************************************************//

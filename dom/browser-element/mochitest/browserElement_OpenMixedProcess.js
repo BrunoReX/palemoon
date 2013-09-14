@@ -19,17 +19,16 @@
 "use strict";
 
 SimpleTest.waitForExplicitFinish();
+browserElementTestHelpers.setEnabledPref(true);
+browserElementTestHelpers.addPermission();
 
 function runTest() {
-  browserElementTestHelpers.setEnabledPref(true);
-  browserElementTestHelpers.addPermission();
-
   // We're going to open a remote frame if OOP off by default.  If OOP is on by
   // default, we're going to open an in-process frame.
   var remote = !browserElementTestHelpers.getOOPByDefaultPref();
 
   var iframe = document.createElement('iframe');
-  iframe.mozbrowser = true;
+  SpecialPowers.wrap(iframe).mozbrowser = true;
   iframe.setAttribute('remote', remote);
 
   // The page we load does window.open, then checks some things and reports
@@ -104,4 +103,4 @@ function test2(popup, blankScreenshotArrayBuffer) {
   };
 }
 
-runTest();
+addEventListener('testready', runTest);

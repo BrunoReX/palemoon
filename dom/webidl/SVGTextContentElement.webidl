@@ -10,7 +10,6 @@
  * liability, trademark and document use rules apply.
  */
 
-interface SVGRect;
 interface SVGAnimatedEnumeration;
 
 interface SVGTextContentElement : SVGGraphicsElement {
@@ -20,10 +19,8 @@ interface SVGTextContentElement : SVGGraphicsElement {
   const unsigned short LENGTHADJUST_SPACING = 1;
   const unsigned short LENGTHADJUST_SPACINGANDGLYPHS = 2;
 
-  [Throws] // because not implemented
-  readonly attribute SVGAnimatedLength textLength;
-  [Throws] // because not implemented
-  readonly attribute SVGAnimatedEnumeration lengthAdjust;
+  // readonly attribute SVGAnimatedLength textLength;
+  // readonly attribute SVGAnimatedEnumeration lengthAdjust;
 
   long getNumberOfChars();
   float getComputedTextLength();
@@ -33,12 +30,13 @@ interface SVGTextContentElement : SVGGraphicsElement {
   SVGPoint getStartPositionOfChar(unsigned long charnum);
   [Throws]
   SVGPoint getEndPositionOfChar(unsigned long charnum);
-  [Throws]
+  [Creator, Throws]
   SVGRect getExtentOfChar(unsigned long charnum);
   [Throws]
   float getRotationOfChar(unsigned long charnum);
   long getCharNumAtPosition(SVGPoint point);
-  [Throws]
+  [Throws, Pref="svg.text.css-frames.enabled"]
   void selectSubString(unsigned long charnum, unsigned long nchars);
 };
+
 

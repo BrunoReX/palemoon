@@ -18,10 +18,9 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 function test() {
   let inspector;
-  let tempScope = {}
-  Cu.import("resource:///modules/devtools/CssRuleView.jsm", tempScope);
-
-  let inplaceEditor = tempScope._getInplaceEditorForSpan;
+  let {
+    getInplaceEditorForSpan: inplaceEditor
+  } = devtools.require("devtools/shared/inplace-editor");
 
   waitForExplicitFinish();
 
@@ -37,18 +36,33 @@ function test() {
   function editField(aField, aValue)
   {
     aField.focus();
-    EventUtils.sendKey("return");
+    EventUtils.sendKey("return", inspector.panelWin);
     let input = inplaceEditor(aField).input;
     input.value = aValue;
-    input.blur();
+    EventUtils.sendKey("return", inspector.panelWin);
   }
 
+  /**
+   * Check that the appropriate attributes are assigned to a node.
+   *
+   * @param  {HTMLNode} aElement
+   *         The node to check.
+   * @param  {Object} aAttributes
+   *         An object containing the arguments to check.
+   *         e.g. {id="id1",class="someclass"}
+   *
+   * NOTE: When checking attribute values bare in mind that node.getAttribute()
+   *       returns attribute values provided by the HTML parser. The parser only
+   *       provides unescaped entities so &amp; will return &.
+   */
   function assertAttributes(aElement, aAttributes)
   {
     let attrs = Object.getOwnPropertyNames(aAttributes);
-    is(aElement.attributes.length, attrs.length, "Node has the correct number of attributes");
+    is(aElement.attributes.length, attrs.length,
+      "Node has the correct number of attributes");
     for (let attr of attrs) {
-      is(aElement.getAttribute(attr), aAttributes[attr], "Node has the correct " + attr + " attribute.");
+      is(aElement.getAttribute(attr), aAttributes[attr],
+        "Node has the correct " + attr + " attribute.");
     }
   }
 
@@ -62,7 +76,8 @@ function test() {
           class: "node1"
         });
       },
-      execute: function() {
+      execute: function(after) {
+        inspector.once("markupmutation", after);
         let editor = markup.getContainer(doc.querySelector("#node1")).editor;
         let attr = editor.attrs["class"].querySelector(".editable");
         editField(attr, 'class="changednode1"');
@@ -76,22 +91,24 @@ function test() {
     },
 
     {
-      desc: "Try change an attribute to a badly formed string",
+      desc: 'Try changing an attribute to a quote (") - this should result ' +
+            'in it being set to an empty string',
       before: function() {
         assertAttributes(doc.querySelector("#node22"), {
           id: "node22",
           class: "unchanged"
         });
       },
-      execute: function() {
+      execute: function(after) {
         let editor = markup.getContainer(doc.querySelector("#node22")).editor;
         let attr = editor.attrs["class"].querySelector(".editable");
         editField(attr, 'class="""');
+        executeSoon(after);
       },
       after: function() {
         assertAttributes(doc.querySelector("#node22"), {
           id: "node22",
-          class: "unchanged"
+          class: ""
         });
       }
     },
@@ -104,7 +121,8 @@ function test() {
           class: "node4"
         });
       },
-      execute: function() {
+      execute: function(after) {
+        inspector.once("markupmutation", after);
         let editor = markup.getContainer(doc.querySelector("#node4")).editor;
         let attr = editor.attrs["class"].querySelector(".editable");
         editField(attr, '');
@@ -123,7 +141,8 @@ function test() {
           id: "node14",
         });
       },
-      execute: function() {
+      execute: function(after) {
+        inspector.once("markupmutation", after);
         let editor = markup.getContainer(doc.querySelector("#node14")).editor;
         let attr = editor.newAttr;
         editField(attr, 'class="newclass" style="color:green"');
@@ -138,20 +157,25 @@ function test() {
     },
 
     {
-      desc: "Try add a badly formed attribute by clicking the empty space after a node",
+      desc: 'Try add an attribute containing a quote (") attribute by ' +
+            'clicking the empty space after a node - this should result ' +
+            'in it being set to an empty string',
       before: function() {
         assertAttributes(doc.querySelector("#node23"), {
           id: "node23",
         });
       },
-      execute: function() {
+      execute: function(after) {
         let editor = markup.getContainer(doc.querySelector("#node23")).editor;
         let attr = editor.newAttr;
         editField(attr, 'class="newclass" style="""');
+        executeSoon(after);
       },
       after: function() {
         assertAttributes(doc.querySelector("#node23"), {
           id: "node23",
+          class: "newclass",
+          style: ""
         });
       }
     },
@@ -163,14 +187,16 @@ function test() {
           id: "node24",
         });
       },
-      execute: function() {
+      execute: function(after) {
         let editor = markup.getContainer(doc.querySelector("#node24")).editor;
         let attr = editor.attrs["id"].querySelector(".editable");
         editField(attr, attr.textContent + ' class="""');
+        executeSoon(after);
       },
       after: function() {
         assertAttributes(doc.querySelector("#node24"), {
           id: "node24",
+          class: ""
         });
       }
     },
@@ -181,7 +207,8 @@ function test() {
         let node = doc.querySelector('.node6').firstChild;
         is(node.nodeValue, "line6", "Text should be unchanged");
       },
-      execute: function() {
+      execute: function(after) {
+        inspector.once("markupmutation", after);
         let node = doc.querySelector('.node6').firstChild;
         let editor = markup.getContainer(node).editor;
         let field = editor.elt.querySelector("pre");
@@ -191,6 +218,27 @@ function test() {
         let node = doc.querySelector('.node6').firstChild;
         is(node.nodeValue, "New text", "Text should be changed.");
       },
+    },
+
+    {
+      desc: "Add an attribute value containing < > &uuml; \" & '",
+      before: function() {
+        assertAttributes(doc.querySelector("#node25"), {
+          id: "node25",
+        });
+      },
+      execute: function(after) {
+        inspector.once("markupmutation", after);
+        let editor = markup.getContainer(doc.querySelector("#node25")).editor;
+        let attr = editor.newAttr;
+        editField(attr, 'src="somefile.html?param1=<a>&param2=&uuml;"bl\'ah"');
+      },
+      after: function() {
+        assertAttributes(doc.querySelector("#node25"), {
+          id: "node25",
+          src: "somefile.html?param1=&lt;a&gt;&param2=&uuml;&quot;bl&apos;ah"
+        });
+      }
     },
   ];
 
@@ -207,14 +255,7 @@ function test() {
     var target = TargetFactory.forTab(gBrowser.selectedTab);
     gDevTools.showToolbox(target, "inspector").then(function(toolbox) {
       inspector = toolbox.getCurrentPanel();
-      runTests();
-    });
-  }
-
-  function runTests() {
-    inspector.selection.once("new-node", startTests);
-    executeSoon(function() {
-      inspector.selection.setNode(doc.body);
+      startTests();
     });
   }
 
@@ -222,23 +263,37 @@ function test() {
     let startNode = doc.documentElement.cloneNode();
     markup = inspector.markup;
     markup.expandAll();
-    for (let step of edits) {
-      info("START " + step.desc);
-      if (step.setup) {
-        step.setup();
-      }
-      step.before();
-      step.execute();
-      step.after();
-      ok(markup.undo.canUndo(), "Should be able to undo.");
-      markup.undo.undo();
-      step.before();
-      ok(markup.undo.canRedo(), "Should be able to redo.");
-      markup.undo.redo();
-      step.after();
-      info("END " + step.desc);
+
+    let cursor = 0;
+
+    function nextEditTest() {
+      executeSoon(function() {
+        if (cursor >= edits.length) {
+          addAttributes();
+        } else {
+          let step = edits[cursor++];
+          info("START " + step.desc);
+          if (step.setup) {
+            step.setup();
+          }
+          step.before();
+          info("before execute");
+          step.execute(function() {
+            info("after execute");
+            step.after();
+            ok(markup.undo.canUndo(), "Should be able to undo.");
+            markup.undo.undo();
+            step.before();
+            ok(markup.undo.canRedo(), "Should be able to redo.");
+            markup.undo.redo();
+            step.after();
+            info("END " + step.desc);
+            nextEditTest();
+          });
+        }
+      });
     }
-    addAttributes();
+    nextEditTest();
   }
 
   function addAttributes() {
@@ -255,7 +310,12 @@ function test() {
         is(inspector.highlighter.nodeInfo.classesBox.textContent, "",
           "No classes in the infobar before edit.");
       },
-      execute: function() {
+      execute: function(after) {
+        inspector.once("markupmutation", function() {
+          // needed because we need to make sure the infobar is updated
+          // not just the markupview (which happens in this event loop)
+          executeSoon(after);
+        });
         let editor = markup.getContainer(doc.querySelector("#node18")).editor;
         let attr = editor.attrs["id"].querySelector(".editable");
         editField(attr, attr.textContent + ' class="newclass" style="color:green"');
@@ -289,7 +349,8 @@ function test() {
         is(doc.querySelector("#retag-me-2").parentNode, node,
           "retag-me-2 should be a child of the old element.");
       },
-      execute: function() {
+      execute: function(after) {
+        inspector.once("markupmutation", after);
         let node = doc.querySelector("#retag-me");
         let editor = markup.getContainer(node).editor;
         let field = editor.tag;
@@ -318,7 +379,7 @@ function test() {
         inspector.selection.setNode(doc.querySelector("#node18"));
       },
       executeCont: function() {
-        EventUtils.sendKey("delete");
+        EventUtils.sendKey("delete", inspector.panelWin);
       },
       after: function() {
         ok(!doc.querySelector("#node18"), "Node 18 should not exist.")
@@ -346,9 +407,10 @@ function test() {
 
     inspector.selection.once("new-node", function BIMET_testAsyncSetupNewNode() {
       test.before();
-      test.execute();
-      test.after();
-      undoRedo(test, callback);
+      test.execute(function() {
+        test.after();
+        undoRedo(test, callback);
+      });
     });
     executeSoon(function BIMET_setNode2() {
       test.setup();

@@ -36,12 +36,7 @@ dictionary CameraPosition {
     double timestamp;
 };
 
-/* Select a camera to use. */
-dictionary CameraSelector {
-    DOMString camera = "back";
-};
-
-[scriptable, uuid(64196840-0d03-4b65-a955-790f43a4b810)]
+[scriptable, uuid(177472c9-f83d-48b5-8782-03b43b27f25d)]
 interface nsICameraCapabilities : nsISupports
 {
     /* an array of objects with 'height' and 'width' properties
@@ -115,43 +110,6 @@ interface nsICameraCapabilities : nsISupports
     readonly attribute jsval        recorderProfiles;
 };
 
-/* These properties only affect the captured image;
-   invalid property settings are ignored. */
-dictionary CameraPictureOptions
-{
-    /* an object with a combination of 'height' and 'width' properties
-       chosen from nsICameraCapabilities.pictureSizes */
-    jsval     pictureSize;
-
-    /* one of the file formats chosen from
-       nsICameraCapabilities.fileFormats */
-    DOMString fileFormat;
-
-    /* the rotation of the image in degrees, from 0 to 270 in
-       steps of 90; this doesn't affect the image, only the
-       rotation recorded in the image header.*/
-    long      rotation;
-
-    /* an object containing any or all of 'latitude', 'longitude',
-       'altitude', and 'timestamp', used to record when and where
-       the image was taken.  e.g.
-        {
-            latitude:  43.647118,
-            longitude: -79.3943,
-            altitude:  500
-            // timestamp not specified, in this case, and
-            // won't be included in the image header
-        }
-
-        can be null in the case where position information isn't
-        available/desired.
-
-        'altitude' is in metres; 'timestamp' is UTC, in seconds from
-        January 1, 1970.
-    */
-    jsval     position;
-};
-
 /* These properties affect the video recording preview, e.g.
       {
          profile: "1080p",
@@ -163,7 +121,7 @@ dictionary CameraPictureOptions
    an arbitrary profile will be chosen.
 
    'rotation' is the degrees clockwise to rotate the preview; if
-   this options is not supported, it will be ignored; if this option
+   this option is not supported, it will be ignored; if this option
    is missing, the default is 0.
 */
 dictionary CameraRecorderOptions
@@ -414,23 +372,4 @@ interface nsICameraControl : nsISupports
 interface nsICameraGetCameraCallback : nsISupports
 {
     void handleEvent(in nsICameraControl camera);
-};
-
-[scriptable, uuid(671ee624-0336-441a-a24e-26b5319f14fe)]
-interface nsIDOMCameraManager : nsISupports
-{
-    /* get a camera instance; options will be used to specify which
-       camera to get from the list returned by getListOfCameras(), e.g.:
-        {
-            camera: front
-        }
-    */
-    [implicit_jscontext]
-    void getCamera([optional] in jsval aOptions, in nsICameraGetCameraCallback onSuccess, [optional] in nsICameraErrorCallback onError);
-
-    /* return a JSON array of camera   identifiers, e.g.
-        [ "front", "back" ]
-    */
-    [implicit_jscontext]
-    jsval getListOfCameras();
 };

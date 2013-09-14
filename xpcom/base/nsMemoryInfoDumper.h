@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 50; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=50 et cin tw=80 : */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,9 +29,14 @@ public:
 public:
   static void Initialize();
 
-private:
-  static nsresult
-  DumpMemoryReportsToFileImpl(const nsAString& aIdentifier);
+  /**
+   * This function creates a new unique file based on |aFilename| in a
+   * world-readable temp directory. This is the system temp directory
+   * or, in the case of Android, the downloads directory. If |aFile| is
+   * non-null, it is assumed to point to a folder, and that folder is used
+   * instead.
+   */
+  static nsresult OpenTempFile(const nsACString &aFilename, nsIFile* *aFile);
 };
 
 #define NS_MEMORY_INFO_DUMPER_CID \

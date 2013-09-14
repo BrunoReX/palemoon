@@ -9,6 +9,7 @@
 #include "nsSMILCSSValueType.h"
 #include "nsSMILValue.h"
 #include "nsComputedDOMStyle.h"
+#include "nsCSSProps.h"
 #include "nsStyleAnimation.h"
 #include "mozilla/dom/Element.h"
 #include "nsIDOMElement.h"
@@ -122,7 +123,7 @@ nsSMILCSSProperty::GetBaseValue() const
 
 nsresult
 nsSMILCSSProperty::ValueFromString(const nsAString& aStr,
-                                   const nsISMILAnimationElement* aSrcElement,
+                                   const SVGAnimationElement* aSrcElement,
                                    nsSMILValue& aValue,
                                    bool& aPreventCachingOfSandwich) const
 {

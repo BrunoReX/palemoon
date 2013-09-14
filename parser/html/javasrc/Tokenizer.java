@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2005-2007 Henri Sivonen
- * Copyright (c) 2007-2010 Mozilla Foundation
+ * Copyright (c) 2007-2013 Mozilla Foundation
  * Portions of comments Copyright 2004-2010 Apple Computer, Inc., Mozilla 
  * Foundation, and Opera Software ASA.
  *
@@ -270,22 +270,24 @@ public class Tokenizer implements Locator {
     /**
      * "CDATA[" as <code>char[]</code>
      */
-    private static final @NoLength char[] CDATA_LSQB = "CDATA[".toCharArray();
+    private static final @NoLength char[] CDATA_LSQB = { 'C', 'D', 'A', 'T',
+            'A', '[' };
 
     /**
      * "octype" as <code>char[]</code>
      */
-    private static final @NoLength char[] OCTYPE = "octype".toCharArray();
+    private static final @NoLength char[] OCTYPE = { 'o', 'c', 't', 'y', 'p',
+            'e' };
 
     /**
      * "ublic" as <code>char[]</code>
      */
-    private static final @NoLength char[] UBLIC = "ublic".toCharArray();
+    private static final @NoLength char[] UBLIC = { 'u', 'b', 'l', 'i', 'c' };
 
     /**
      * "ystem" as <code>char[]</code>
      */
-    private static final @NoLength char[] YSTEM = "ystem".toCharArray();
+    private static final @NoLength char[] YSTEM = { 'y', 's', 't', 'e', 'm' };
 
     private static final char[] TITLE_ARR = { 't', 'i', 't', 'l', 'e' };
 
@@ -6542,19 +6544,6 @@ public class Tokenizer implements Locator {
             throws SAXException {
         return buf[pos];
     }
-
-    // [NOCPP[
-
-    /**
-     * Returns the alreadyComplainedAboutNonAscii.
-     * 
-     * @return the alreadyComplainedAboutNonAscii
-     */
-    public boolean isAlreadyComplainedAboutNonAscii() {
-        return true;
-    }
-
-    // ]NOCPP]
 
     public boolean internalEncodingDeclaration(String internalCharset)
             throws SAXException {

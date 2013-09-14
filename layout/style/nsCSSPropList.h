@@ -32,10 +32,12 @@
   -. 'method' is designed to be as input for CSS2Properties and similar
   callers.  It must always be the same as 'name' except it must use
   InterCaps and all hyphens ('-') must be removed.  Callers using this
-  parameter must also define the CSS_PROP_DOMPROP_PREFIXED(prop) macro,
-  either to be Moz ## prop or to just be prop, depending on whether they
-  want Moz prefixes or not (i.e., whether the use is for internal use
-  such as nsRuleData::ValueFor* or external use).
+  parameter must also define the CSS_PROP_PUBLIC_OR_PRIVATE(publicname_,
+  privatename_) macro to yield either publicname_ or privatename_.
+  The names differ in that publicname_ has Moz prefixes where they are
+  used, and also in CssFloat vs. Float.  The caller's choice depends on
+  whether the use is for internal use such as eCSSProperty_* or
+  nsRuleData::ValueFor* or external use such as exposing DOM properties.
 
   -. 'pref' is the name of a pref that controls whether the property
   is enabled.  The property is enabled if 'pref' is an empty string,
@@ -75,6 +77,9 @@
 #define CSS_PROP_SHORTHAND(name_, id_, method_, flags_, pref_) /* nothing */
 #define DEFINED_CSS_PROP_SHORTHAND
 #endif
+
+#define CSS_PROP_DOMPROP_PREFIXED(name_) \
+  CSS_PROP_PUBLIC_OR_PRIVATE(Moz ## name_, name_)
 
 #define CSS_PROP_NO_OFFSET (-1)
 
@@ -1403,6 +1408,16 @@ CSS_PROP_COLUMN(
     offsetof(nsStyleColumn, mColumnCount),
     eStyleAnimType_Custom)
 CSS_PROP_COLUMN(
+    -moz-column-fill,
+    _moz_column_fill,
+    CSS_PROP_DOMPROP_PREFIXED(ColumnFill),
+    CSS_PROPERTY_PARSE_VALUE,
+    "",
+    VARIANT_HK,
+    kColumnFillKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
+CSS_PROP_COLUMN(
     -moz-column-width,
     _moz_column_width,
     CSS_PROP_DOMPROP_PREFIXED(ColumnWidth),
@@ -1540,7 +1555,6 @@ CSS_PROP_TABLEBORDER(
     kEmptyCellsKTable,
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)
-#ifdef MOZ_FLEXBOX
 CSS_PROP_POSITION(
     align-items,
     align_items,
@@ -1640,11 +1654,10 @@ CSS_PROP_POSITION(
     kJustifyContentKTable,
     offsetof(nsStylePosition, mJustifyContent),
     eStyleAnimType_EnumU8)
-#endif // MOZ_FLEXBOX
 CSS_PROP_DISPLAY(
     float,
     float,
-    CssFloat,
+    CSS_PROP_PUBLIC_OR_PRIVATE(CssFloat, Float),
     CSS_PROPERTY_PARSE_VALUE |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER,
     "",
@@ -1692,6 +1705,18 @@ CSS_PROP_FONT(
     "",
     0,
     nullptr,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
+CSS_PROP_FONT(
+    font-kerning,
+    font_kerning,
+    FontKerning,
+    CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
+        CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
+    "layout.css.font-features.enabled",
+    VARIANT_HK,
+    kFontKerningKTable,
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)
 CSS_PROP_FONT(
@@ -1759,6 +1784,19 @@ CSS_PROP_FONT(
     kFontStyleKTable,
     offsetof(nsStyleFont, mFont.style),
     eStyleAnimType_EnumU8)
+ CSS_PROP_FONT(
+    font-synthesis,
+    font_synthesis,
+    FontSynthesis,
+    CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_VALUE_PARSER_FUNCTION |
+        CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
+        CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
+    "layout.css.font-features.enabled",
+    0,
+    kFontSynthesisKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
 CSS_PROP_FONT(
     font-variant,
     font_variant,
@@ -1771,6 +1809,82 @@ CSS_PROP_FONT(
     kFontVariantKTable,
     offsetof(nsStyleFont, mFont.variant),
     eStyleAnimType_EnumU8)
+CSS_PROP_FONT(
+    font-variant-alternates,
+    font_variant_alternates,
+    FontVariantAlternates,
+    CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_VALUE_PARSER_FUNCTION |
+        CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
+        CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
+    "layout.css.font-features.enabled",
+    VARIANT_HK,
+    kFontVariantAlternatesKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
+CSS_PROP_FONT(
+    font-variant-caps,
+    font_variant_caps,
+    FontVariantCaps,
+    CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
+        CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
+    "layout.css.font-features.enabled",
+    VARIANT_HMK,
+    kFontVariantCapsKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
+CSS_PROP_FONT(
+    font-variant-east-asian,
+    font_variant_east_asian,
+    FontVariantEastAsian,
+    CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_VALUE_PARSER_FUNCTION |
+        CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
+        CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
+    "layout.css.font-features.enabled",
+    0,
+    kFontVariantEastAsianKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
+CSS_PROP_FONT(
+    font-variant-ligatures,
+    font_variant_ligatures,
+    FontVariantLigatures,
+    CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_VALUE_PARSER_FUNCTION |
+        CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
+        CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
+    "layout.css.font-features.enabled",
+    0,
+    kFontVariantLigaturesKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
+CSS_PROP_FONT(
+    font-variant-numeric,
+    font_variant_numeric,
+    FontVariantNumeric,
+    CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_VALUE_PARSER_FUNCTION |
+        CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
+        CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
+    "layout.css.font-features.enabled",
+    0,
+    kFontVariantNumericKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
+CSS_PROP_FONT(
+    font-variant-position,
+    font_variant_position,
+    FontVariantPosition,
+    CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
+        CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
+    "layout.css.font-features.enabled",
+    VARIANT_HMK,
+    kFontVariantPositionKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
 CSS_PROP_FONT(
     font-weight,
     font_weight,
@@ -2135,7 +2249,7 @@ CSS_PROP_POSITION(
         CSS_PROPERTY_VALUE_NONNEGATIVE |
         CSS_PROPERTY_STORES_CALC,
     "",
-    VARIANT_AHLP | VARIANT_CALC,
+    VARIANT_HLP | VARIANT_CALC,
     nullptr,
     offsetof(nsStylePosition, mMinHeight),
     eStyleAnimType_Coord)
@@ -2147,7 +2261,7 @@ CSS_PROP_POSITION(
         CSS_PROPERTY_VALUE_NONNEGATIVE |
         CSS_PROPERTY_STORES_CALC,
     "",
-    VARIANT_AHKLP | VARIANT_CALC,
+    VARIANT_HKLP | VARIANT_CALC,
     kWidthKTable,
     offsetof(nsStylePosition, mMinWidth),
     eStyleAnimType_Coord)
@@ -2486,6 +2600,16 @@ CSS_PROP_DISPLAY(
     kPageBreakInsideKTable,
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)
+CSS_PROP_SVG(
+    paint-order,
+    paint_order,
+    PaintOrder,
+    CSS_PROPERTY_PARSE_FUNCTION,
+    "svg.paint-order.enabled",
+    0,
+    nullptr,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
 CSS_PROP_VISIBILITY(
     pointer-events,
     pointer_events,
@@ -2496,6 +2620,16 @@ CSS_PROP_VISIBILITY(
     VARIANT_HK,
     kPointerEventsKTable,
     offsetof(nsStyleVisibility, mPointerEvents),
+    eStyleAnimType_EnumU8)
+CSS_PROP_VISIBILITY(
+    writing-mode,
+    writing_mode,
+    WritingMode,
+    CSS_PROPERTY_PARSE_VALUE,
+    "layout.css.vertical-text.enabled",
+    VARIANT_HK,
+    kWritingModeKTable,
+    offsetof(nsStyleVisibility, mWritingMode),
     eStyleAnimType_EnumU8)
 CSS_PROP_DISPLAY(
     position,
@@ -2655,7 +2789,8 @@ CSS_PROP_TEXTRESET(
     text_overflow,
     TextOverflow,
     CSS_PROPERTY_PARSE_VALUE |
-        CSS_PROPERTY_VALUE_PARSER_FUNCTION,
+        CSS_PROPERTY_VALUE_PARSER_FUNCTION |
+        CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
     "",
     0,
     kTextOverflowKTable,
@@ -3459,22 +3594,11 @@ CSS_PROP_SHORTHAND(
 #ifdef CSS_PROP_STUB_NOT_CSS
 CSS_PROP_STUB_NOT_CSS
 CSS_PROP_STUB_NOT_CSS
-CSS_PROP_STUB_NOT_CSS
 #else
 CSS_PROP_FONT(
     -x-lang,
     _x_lang,
     Lang,
-    CSS_PROPERTY_PARSE_INACCESSIBLE,
-    "",
-    0,
-    nullptr,
-    CSS_PROP_NO_OFFSET,
-    eStyleAnimType_None)
-CSS_PROP_TABLE(
-    -x-cols,
-    _x_cols,
-    Cols,
     CSS_PROPERTY_PARSE_INACCESSIBLE,
     "",
     0,
@@ -3630,3 +3754,5 @@ CSS_PROP_TABLE(
 #undef CSS_PROP_SHORTHAND
 #undef DEFINED_CSS_PROP_SHORTHAND
 #endif
+
+#undef CSS_PROP_DOMPROP_PREFIXED

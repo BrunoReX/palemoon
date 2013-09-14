@@ -3,9 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/DebugOnly.h"
-
 #include "HTMLTableAccessible.h"
+
+#include "mozilla/DebugOnly.h"
 
 #include "Accessible-inl.h"
 #include "nsAccessibilityService.h"
@@ -18,6 +18,7 @@
 #include "States.h"
 #include "TreeWalker.h"
 
+#include "mozilla/dom/HTMLTableElement.h"
 #include "nsIDOMElement.h"
 #include "nsIDOMDocument.h"
 #include "nsIDOMRange.h"
@@ -25,10 +26,6 @@
 #include "nsINameSpaceManager.h"
 #include "nsIDOMNodeList.h"
 #include "nsIDOMHTMLCollection.h"
-#include "nsIDOMHTMLTableCellElement.h"
-#include "nsIDOMHTMLTableElement.h"
-#include "nsIDOMHTMLTableRowElement.h"
-#include "nsIDOMHTMLTableSectionElement.h"
 #include "nsIDocument.h"
 #include "nsIMutableArray.h"
 #include "nsIPresShell.h"
@@ -216,9 +213,18 @@ void
 HTMLTableCellAccessible::ColHeaderCells(nsTArray<Accessible*>* aCells)
 {
   IDRefsIterator itr(mDoc, mContent, nsGkAtoms::headers);
-  while (Accessible* cell = itr.Next())
-    if (cell->Role() == roles::COLUMNHEADER)
+  while (Accessible* cell = itr.Next()) {
+    a11y::role cellRole = cell->Role();
+    if (cellRole == roles::COLUMNHEADER) {
       aCells->AppendElement(cell);
+    } else if (cellRole != roles::ROWHEADER) {
+      // If referred table cell is at the same column then treat it as a column
+      // header.
+      TableCellAccessible* tableCell = cell->AsTableCell();
+      if (tableCell && tableCell->ColIdx() == ColIdx())
+        aCells->AppendElement(cell);
+    }
+  }
 
   if (aCells->IsEmpty())
     TableCellAccessible::ColHeaderCells(aCells);
@@ -228,9 +234,18 @@ void
 HTMLTableCellAccessible::RowHeaderCells(nsTArray<Accessible*>* aCells)
 {
   IDRefsIterator itr(mDoc, mContent, nsGkAtoms::headers);
-  while (Accessible* cell = itr.Next())
-    if (cell->Role() == roles::ROWHEADER)
+  while (Accessible* cell = itr.Next()) {
+    a11y::role cellRole = cell->Role();
+    if (cellRole == roles::ROWHEADER) {
       aCells->AppendElement(cell);
+    } else if (cellRole != roles::COLUMNHEADER) {
+      // If referred table cell is at the same row then treat it as a column
+      // header.
+      TableCellAccessible* tableCell = cell->AsTableCell();
+      if (tableCell && tableCell->RowIdx() == RowIdx())
+        aCells->AppendElement(cell);
+    }
+  }
 
   if (aCells->IsEmpty())
     TableCellAccessible::RowHeaderCells(aCells);
@@ -297,7 +312,7 @@ HTMLTableHeaderCellAccessible::NativeRole()
       return roles::ROWHEADER;
   }
 
-  // Assume it's columnheader if there are headers in siblings, oterwise
+  // Assume it's columnheader if there are headers in siblings, otherwise
   // rowheader.
   nsIContent* parentContent = mContent->GetParent();
   if (!parentContent) {
@@ -309,7 +324,7 @@ HTMLTableHeaderCellAccessible::NativeRole()
        siblingContent = siblingContent->GetPreviousSibling()) {
     if (siblingContent->IsElement()) {
       return nsCoreUtils::IsHTMLTableHeader(siblingContent) ?
-	     roles::COLUMNHEADER : roles::ROWHEADER;
+        roles::COLUMNHEADER : roles::ROWHEADER;
     }
   }
 
@@ -317,7 +332,7 @@ HTMLTableHeaderCellAccessible::NativeRole()
        siblingContent = siblingContent->GetNextSibling()) {
     if (siblingContent->IsElement()) {
       return nsCoreUtils::IsHTMLTableHeader(siblingContent) ?
-	     roles::COLUMNHEADER : roles::ROWHEADER;
+       roles::COLUMNHEADER : roles::ROWHEADER;
     }
   }
 
@@ -455,7 +470,7 @@ HTMLTableAccessible::Caption()
 void
 HTMLTableAccessible::Summary(nsString& aSummary)
 {
-  nsCOMPtr<nsIDOMHTMLTableElement> table(do_QueryInterface(mContent));
+  dom::HTMLTableElement* table = dom::HTMLTableElement::FromContent(mContent);
 
   if (table)
     table->GetSummary(aSummary);
@@ -716,7 +731,7 @@ HTMLTableAccessible::IsCellSelected(uint32_t aRowIdx, uint32_t aColIdx)
 void
 HTMLTableAccessible::SelectRow(uint32_t aRowIdx)
 {
-  nsresult rv =
+  DebugOnly<nsresult> rv =
     RemoveRowsOrColumnsFromSelection(aRowIdx,
                                      nsISelectionPrivate::TABLESELECTION_ROW,
                                      true);
@@ -729,7 +744,7 @@ HTMLTableAccessible::SelectRow(uint32_t aRowIdx)
 void
 HTMLTableAccessible::SelectCol(uint32_t aColIdx)
 {
-  nsresult rv =
+  DebugOnly<nsresult> rv =
     RemoveRowsOrColumnsFromSelection(aColIdx,
                                      nsISelectionPrivate::TABLESELECTION_COLUMN,
                                      true);
@@ -1052,7 +1067,7 @@ HTMLTableAccessible::IsProbablyLayoutTable()
     if (child->Role() == roles::ROW) {
       prevRowColor = rowColor;
       nsIFrame* rowFrame = child->GetFrame();
-      rowColor = rowFrame->GetStyleBackground()->mBackgroundColor;
+      rowColor = rowFrame->StyleBackground()->mBackgroundColor;
 
       if (childIdx > 0 && prevRowColor != rowColor)
         RETURN_LAYOUT_ANSWER(false, "2 styles of row background color, non-bordered");

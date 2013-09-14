@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,7 +13,6 @@
 #include "jsanalyze.h"
 #include "jsbool.h"
 #include "jsnum.h"
-#include "jsobjinlines.h"
 #include "shared/Lowering-shared-inl.h"
 #include "mozilla/DebugOnly.h"
 
@@ -37,14 +35,14 @@ LIRGenerator::visitParameter(MParameter *param)
     offset *= sizeof(Value);
 #if defined(JS_NUNBOX32)
 # if defined(IS_BIG_ENDIAN)
-    ins->getDef(0)->setOutput(LArgument(offset));
-    ins->getDef(1)->setOutput(LArgument(offset + 4));
+    ins->getDef(0)->setOutput(LArgument(LAllocation::INT_ARGUMENT, offset));
+    ins->getDef(1)->setOutput(LArgument(LAllocation::INT_ARGUMENT, offset + 4));
 # else
-    ins->getDef(0)->setOutput(LArgument(offset + 4));
-    ins->getDef(1)->setOutput(LArgument(offset));
+    ins->getDef(0)->setOutput(LArgument(LAllocation::INT_ARGUMENT, offset + 4));
+    ins->getDef(1)->setOutput(LArgument(LAllocation::INT_ARGUMENT, offset));
 # endif
 #elif defined(JS_PUNBOX64)
-    ins->getDef(0)->setOutput(LArgument(offset));
+    ins->getDef(0)->setOutput(LArgument(LAllocation::INT_ARGUMENT, offset));
 #endif
 
     return true;
@@ -103,13 +101,26 @@ LIRGenerator::visitTableSwitch(MTableSwitch *tableswitch)
 bool
 LIRGenerator::visitCheckOverRecursed(MCheckOverRecursed *ins)
 {
-    LCheckOverRecursed *lir = new LCheckOverRecursed(temp());
+    LCheckOverRecursed *lir = new LCheckOverRecursed();
 
     if (!add(lir))
         return false;
     if (!assignSafepoint(lir, ins))
         return false;
 
+    return true;
+}
+
+bool
+LIRGenerator::visitParCheckOverRecursed(MParCheckOverRecursed *ins)
+{
+    LParCheckOverRecursed *lir = new LParCheckOverRecursed(
+        useRegister(ins->parSlice()),
+        temp());
+    if (!add(lir, ins))
+        return false;
+    if (!assignSafepoint(lir, ins))
+        return false;
     return true;
 }
 
@@ -141,6 +152,13 @@ LIRGenerator::visitNewSlots(MNewSlots *ins)
     if (!assignSnapshot(lir))
         return false;
     return defineReturn(lir, ins);
+}
+
+bool
+LIRGenerator::visitNewParallelArray(MNewParallelArray *ins)
+{
+    LNewParallelArray *lir = new LNewParallelArray();
+    return define(lir, ins) && assignSafepoint(lir, ins);
 }
 
 bool
@@ -184,12 +202,50 @@ LIRGenerator::visitNewCallObject(MNewCallObject *ins)
 }
 
 bool
+LIRGenerator::visitParNewCallObject(MParNewCallObject *ins)
+{
+    const LAllocation &parThreadContext = useRegister(ins->parSlice());
+    const LDefinition &temp1 = temp();
+    const LDefinition &temp2 = temp();
+
+    LParNewCallObject *lir;
+    if (ins->slots()->type() == MIRType_Slots) {
+        const LAllocation &slots = useRegister(ins->slots());
+        lir = LParNewCallObject::NewWithSlots(parThreadContext, slots,
+                                              temp1, temp2);
+    } else {
+        lir = LParNewCallObject::NewSansSlots(parThreadContext, temp1, temp2);
+    }
+
+    return define(lir, ins);
+}
+
+bool
 LIRGenerator::visitNewStringObject(MNewStringObject *ins)
 {
     JS_ASSERT(ins->input()->type() == MIRType_String);
 
     LNewStringObject *lir = new LNewStringObject(useRegister(ins->input()), temp());
     return define(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
+LIRGenerator::visitParBailout(MParBailout *ins)
+{
+    LParBailout *lir = new LParBailout();
+    return add(lir, ins);
+}
+
+bool
+LIRGenerator::visitInitElem(MInitElem *ins)
+{
+    LInitElem *lir = new LInitElem(useRegisterAtStart(ins->getObject()));
+    if (!useBoxAtStart(lir, LInitElem::IdIndex, ins->getId()))
+        return false;
+    if (!useBoxAtStart(lir, LInitElem::ValueIndex, ins->getValue()))
+        return false;
+
+    return add(lir, ins) && assignSafepoint(lir, ins);
 }
 
 bool
@@ -206,6 +262,12 @@ bool
 LIRGenerator::visitPrepareCall(MPrepareCall *ins)
 {
     allocateArguments(ins->argc());
+
+#ifdef DEBUG
+    if (!prepareCallStack_.append(ins))
+        return false;
+#endif
+
     return true;
 }
 
@@ -230,8 +292,7 @@ LIRGenerator::visitPassArg(MPassArg *arg)
 
     // Known types can move constant types and/or payloads.
     LStackArgT *stack = new LStackArgT(argslot, useRegisterOrConstant(opd));
-    stack->setMir(arg);
-    return add(stack);
+    return add(stack, arg);
 }
 
 bool
@@ -258,6 +319,34 @@ LIRGenerator::visitCreateThis(MCreateThis *ins)
 }
 
 bool
+LIRGenerator::visitCreateArgumentsObject(MCreateArgumentsObject *ins)
+{
+    // LAllocation callObj = useRegisterAtStart(ins->getCallObject());
+    LAllocation callObj = useFixed(ins->getCallObject(), CallTempReg0);
+    LCreateArgumentsObject *lir = new LCreateArgumentsObject(callObj, tempFixed(CallTempReg1));
+    return defineReturn(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
+LIRGenerator::visitGetArgumentsObjectArg(MGetArgumentsObjectArg *ins)
+{
+    LAllocation argsObj = useRegister(ins->getArgsObject());
+    LGetArgumentsObjectArg *lir = new LGetArgumentsObjectArg(argsObj, temp());
+    return defineBox(lir, ins);
+}
+
+bool
+LIRGenerator::visitSetArgumentsObjectArg(MSetArgumentsObjectArg *ins)
+{
+    LAllocation argsObj = useRegister(ins->getArgsObject());
+    LSetArgumentsObjectArg *lir = new LSetArgumentsObjectArg(argsObj, temp());
+    if (!useBox(lir, LSetArgumentsObjectArg::ValueIndex, ins->getValue()))
+        return false;
+
+    return add(lir, ins);
+}
+
+bool
 LIRGenerator::visitReturnFromCtor(MReturnFromCtor *ins)
 {
     LReturnFromCtor *lir = new LReturnFromCtor(useRegister(ins->getObject()));
@@ -279,30 +368,43 @@ LIRGenerator::visitCall(MCall *call)
     uint32_t argslot = getArgumentSlotForCall();
     freeArguments(call->numStackArgs());
 
+    // Check MPrepareCall/MCall nesting.
+    JS_ASSERT(prepareCallStack_.popCopy() == call->getPrepareCall());
+
     JSFunction *target = call->getSingleTarget();
 
     // Call DOM functions.
     if (call->isDOMFunction()) {
         JS_ASSERT(target && target->isNative());
-        Register cxReg, objReg, privReg, argcReg, valueReg;
+        Register cxReg, objReg, privReg, argsReg;
         GetTempRegForIntArg(0, 0, &cxReg);
         GetTempRegForIntArg(1, 0, &objReg);
         GetTempRegForIntArg(2, 0, &privReg);
-        GetTempRegForIntArg(3, 0, &argcReg);
-        mozilla::DebugOnly<bool> ok = GetTempRegForIntArg(4, 0, &valueReg);
-        MOZ_ASSERT(ok, "How can we not have five temp registers?");
+        mozilla::DebugOnly<bool> ok = GetTempRegForIntArg(3, 0, &argsReg);
+        MOZ_ASSERT(ok, "How can we not have four temp registers?");
         LCallDOMNative *lir = new LCallDOMNative(argslot, tempFixed(cxReg),
                                                  tempFixed(objReg), tempFixed(privReg),
-                                                 tempFixed(argcReg), tempFixed(valueReg));
+                                                 tempFixed(argsReg));
         return (defineReturn(lir, call) && assignSafepoint(lir, call));
     }
 
     // Call known functions.
     if (target) {
         if (target->isNative()) {
-            LCallNative *lir = new LCallNative(argslot, tempFixed(CallTempReg0),
-                                               tempFixed(CallTempReg1), tempFixed(CallTempReg2),
-                                               tempFixed(CallTempReg3));
+            Register cxReg, numReg, vpReg, tmpReg;
+            GetTempRegForIntArg(0, 0, &cxReg);
+            GetTempRegForIntArg(1, 0, &numReg);
+            GetTempRegForIntArg(2, 0, &vpReg);
+
+            // Even though this is just a temp reg, use the same API to avoid
+            // register collisions.
+            mozilla::DebugOnly<bool> ok = GetTempRegForIntArg(3, 0, &tmpReg);
+            MOZ_ASSERT(ok, "How can we not have four temp registers?");
+
+            LCallNative *lir = new LCallNative(argslot, tempFixed(cxReg),
+                                               tempFixed(numReg),
+                                               tempFixed(vpReg),
+                                               tempFixed(tmpReg));
             return (defineReturn(lir, call) && assignSafepoint(lir, call));
         }
 
@@ -321,8 +423,6 @@ bool
 LIRGenerator::visitApplyArgs(MApplyArgs *apply)
 {
     JS_ASSERT(apply->getFunction()->type() == MIRType_Object);
-
-    JSFunction *target = apply->getSingleTarget();
 
     // Assert if we cannot build a rectifier frame.
     JS_ASSERT(CallTempReg0 != ArgumentsRectifierReg);
@@ -343,7 +443,7 @@ LIRGenerator::visitApplyArgs(MApplyArgs *apply)
         return false;
 
     // Bailout is only needed in the case of possible non-JSFunction callee.
-    if (!target && !assignSnapshot(lir))
+    if (!apply->getSingleTarget() && !assignSnapshot(lir))
         return false;
 
     if (!defineReturn(lir, apply))
@@ -351,6 +451,57 @@ LIRGenerator::visitApplyArgs(MApplyArgs *apply)
     if (!assignSafepoint(lir, apply))
         return false;
     return true;
+}
+
+bool
+LIRGenerator::visitGetDynamicName(MGetDynamicName *ins)
+{
+    MDefinition *scopeChain = ins->getScopeChain();
+    JS_ASSERT(scopeChain->type() == MIRType_Object);
+
+    MDefinition *name = ins->getName();
+    JS_ASSERT(name->type() == MIRType_String);
+
+    LGetDynamicName *lir = new LGetDynamicName(useFixed(scopeChain, CallTempReg0),
+                                               useFixed(name, CallTempReg1),
+                                               tempFixed(CallTempReg2),
+                                               tempFixed(CallTempReg3),
+                                               tempFixed(CallTempReg4));
+
+    return assignSnapshot(lir) && defineReturn(lir, ins);
+}
+
+bool
+LIRGenerator::visitFilterArguments(MFilterArguments *ins)
+{
+    MDefinition *string = ins->getString();
+    JS_ASSERT(string->type() == MIRType_String);
+
+    LFilterArguments *lir = new LFilterArguments(useFixed(string, CallTempReg0),
+                                                 tempFixed(CallTempReg1),
+                                                 tempFixed(CallTempReg2));
+
+    return assignSnapshot(lir) && add(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
+LIRGenerator::visitCallDirectEval(MCallDirectEval *ins)
+{
+    MDefinition *scopeChain = ins->getScopeChain();
+    JS_ASSERT(scopeChain->type() == MIRType_Object);
+
+    MDefinition *string = ins->getString();
+    JS_ASSERT(string->type() == MIRType_String);
+
+    MDefinition *thisValue = ins->getThisValue();
+
+    LCallDirectEval *lir = new LCallDirectEval(useRegisterAtStart(scopeChain),
+                                               useRegisterAtStart(string));
+
+    if (!useBoxAtStart(lir, LCallDirectEval::ThisValueInput, thisValue))
+        return false;
+
+    return defineReturn(lir, ins) && assignSafepoint(lir, ins);
 }
 
 static JSOp
@@ -455,17 +606,17 @@ LIRGenerator::visitTest(MTest *test)
                 return add(lir, comp);
             }
 
-            LDefinition temp0, temp1;
+            LDefinition tmp, tmpToUnbox;
             if (comp->operandMightEmulateUndefined()) {
-                temp0 = temp();
-                temp1 = temp();
+                tmp = temp();
+                tmpToUnbox = tempToUnbox();
             } else {
-                temp0 = LDefinition::BogusTemp();
-                temp1 = LDefinition::BogusTemp();
+                tmp = LDefinition::BogusTemp();
+                tmpToUnbox = LDefinition::BogusTemp();
             }
 
             LIsNullOrLikeUndefinedAndBranch *lir =
-                new LIsNullOrLikeUndefinedAndBranch(ifTrue, ifFalse, temp0, temp1);
+                new LIsNullOrLikeUndefinedAndBranch(ifTrue, ifFalse, tmp, tmpToUnbox);
             if (!useBox(lir, LIsNullOrLikeUndefinedAndBranch::Value, left))
                 return false;
             return add(lir, comp);
@@ -485,19 +636,25 @@ LIRGenerator::visitTest(MTest *test)
 
         // Compare and branch Int32 or Object pointers.
         if (comp->compareType() == MCompare::Compare_Int32 ||
+            comp->compareType() == MCompare::Compare_UInt32 ||
             comp->compareType() == MCompare::Compare_Object)
         {
             JSOp op = ReorderComparison(comp->jsop(), &left, &right);
             LAllocation lhs = useRegister(left);
-            LAllocation rhs = useRegister(right);
-            if (comp->compareType() == MCompare::Compare_Int32)
+            LAllocation rhs;
+            if (comp->compareType() == MCompare::Compare_Int32 ||
+                comp->compareType() == MCompare::Compare_UInt32)
+            {
                 rhs = useAnyOrConstant(right);
+            } else {
+                rhs = useRegister(right);
+            }
             LCompareAndBranch *lir = new LCompareAndBranch(op, lhs, rhs, ifTrue, ifFalse);
             return add(lir, comp);
         }
 
         // Compare and branch doubles.
-        if (comp->compareType() == MCompare::Compare_Double) {
+        if (comp->isDoubleComparison()) {
             LAllocation lhs = useRegister(left);
             LAllocation rhs = useRegister(right);
             LCompareDAndBranch *lir = new LCompareDAndBranch(lhs, rhs, ifTrue, ifFalse);
@@ -523,10 +680,24 @@ LIRGenerator::visitTest(MTest *test)
 }
 
 bool
+LIRGenerator::visitFunctionDispatch(MFunctionDispatch *ins)
+{
+    LFunctionDispatch *lir = new LFunctionDispatch(useRegister(ins->input()));
+    return add(lir, ins);
+}
+
+bool
+LIRGenerator::visitTypeObjectDispatch(MTypeObjectDispatch *ins)
+{
+    LTypeObjectDispatch *lir = new LTypeObjectDispatch(useRegister(ins->input()), temp());
+    return add(lir, ins);
+}
+
+bool
 LIRGenerator::visitPolyInlineDispatch(MPolyInlineDispatch *ins)
 {
     LDefinition tempDef = LDefinition::BogusTemp();
-    if (ins->inlinePropertyTable())
+    if (ins->propTable())
         tempDef = temp();
     LPolyInlineDispatch *lir = new LPolyInlineDispatch(useRegister(ins->input()), tempDef);
     return add(lir, ins);
@@ -540,7 +711,7 @@ CanEmitCompareAtUses(MInstruction *ins)
 
     bool foundTest = false;
     for (MUseIterator iter(ins->usesBegin()); iter != ins->usesEnd(); iter++) {
-        MNode *node = iter->node();
+        MNode *node = iter->consumer();
         if (!node->isDefinition())
             return false;
         if (!node->toDefinition()->isTest())
@@ -568,6 +739,19 @@ LIRGenerator::visitCompare(MCompare *comp)
     // make sense and avoids confusion.
     if (comp->compareType() == MCompare::Compare_String) {
         LCompareS *lir = new LCompareS(useRegister(left), useRegister(right), temp());
+        if (!define(lir, comp))
+            return false;
+        return assignSafepoint(lir, comp);
+    }
+
+    // Strict compare between value and string
+    if (comp->compareType() == MCompare::Compare_StrictString) {
+        JS_ASSERT(left->type() == MIRType_Value);
+        JS_ASSERT(right->type() == MIRType_String);
+
+        LCompareStrictS *lir = new LCompareStrictS(useRegister(right), temp(), tempToUnbox());
+        if (!useBox(lir, LCompareStrictS::Lhs, left))
+            return false;
         if (!define(lir, comp))
             return false;
         return assignSafepoint(lir, comp);
@@ -601,16 +785,16 @@ LIRGenerator::visitCompare(MCompare *comp)
             return define(new LEmulatesUndefined(useRegister(left)), comp);
         }
 
-        LDefinition temp0, temp1;
+        LDefinition tmp, tmpToUnbox;
         if (comp->operandMightEmulateUndefined()) {
-            temp0 = temp();
-            temp1 = temp();
+            tmp = temp();
+            tmpToUnbox = tempToUnbox();
         } else {
-            temp0 = LDefinition::BogusTemp();
-            temp1 = LDefinition::BogusTemp();
+            tmp = LDefinition::BogusTemp();
+            tmpToUnbox = LDefinition::BogusTemp();
         }
 
-        LIsNullOrLikeUndefined *lir = new LIsNullOrLikeUndefined(temp0, temp1);
+        LIsNullOrLikeUndefined *lir = new LIsNullOrLikeUndefined(tmp, tmpToUnbox);
         if (!useBox(lir, LIsNullOrLikeUndefined::Value, left))
             return false;
         return define(lir, comp);
@@ -629,18 +813,24 @@ LIRGenerator::visitCompare(MCompare *comp)
 
     // Compare Int32 or Object pointers.
     if (comp->compareType() == MCompare::Compare_Int32 ||
+        comp->compareType() == MCompare::Compare_UInt32 ||
         comp->compareType() == MCompare::Compare_Object)
     {
         JSOp op = ReorderComparison(comp->jsop(), &left, &right);
         LAllocation lhs = useRegister(left);
-        LAllocation rhs = useRegister(right);
-        if (comp->compareType() == MCompare::Compare_Int32)
+        LAllocation rhs;
+        if (comp->compareType() == MCompare::Compare_Int32 ||
+            comp->compareType() == MCompare::Compare_UInt32)
+        {
             rhs = useAnyOrConstant(right);
+        } else {
+            rhs = useRegister(right);
+        }
         return define(new LCompare(op, lhs, rhs), comp);
     }
 
     // Compare doubles.
-    if (comp->compareType() == MCompare::Compare_Double)
+    if (comp->isDoubleComparison())
         return define(new LCompareD(useRegister(left), useRegister(right)), comp);
 
     // Compare values.
@@ -663,8 +853,16 @@ ReorderCommutative(MDefinition **lhsp, MDefinition **rhsp)
     MDefinition *lhs = *lhsp;
     MDefinition *rhs = *rhsp;
 
-    // Put the constant in the right-hand side, if there is one.
-    if (lhs->isConstant()) {
+    // Ensure that if there is a constant, then it is in rhs.
+    // In addition, since clobbering binary operations clobber the left
+    // operand, prefer a non-constant lhs operand with no further uses.
+
+    if (rhs->isConstant())
+        return;
+
+    if (lhs->isConstant() ||
+        (rhs->defUseCount() == 1 && lhs->defUseCount() > 1))
+    {
         *rhsp = lhs;
         *lhsp = rhs;
     }
@@ -705,14 +903,12 @@ LIRGenerator::visitTypeOf(MTypeOf *ins)
 bool
 LIRGenerator::visitToId(MToId *ins)
 {
-    LToIdV *lir = new LToIdV();
-    if (!useBoxAtStart(lir, LToIdV::Object, ins->lhs()))
+    LToIdV *lir = new LToIdV(tempFloat());
+    if (!useBox(lir, LToIdV::Object, ins->lhs()))
         return false;
-    if (!useBoxAtStart(lir, LToIdV::Index, ins->rhs()))
+    if (!useBox(lir, LToIdV::Index, ins->rhs()))
         return false;
-    if (!defineReturn(lir, ins))
-        return false;
-    return assignSafepoint(lir, ins);
+    return defineBox(lir, ins) && assignSafepoint(lir, ins);
 }
 
 bool
@@ -828,14 +1024,15 @@ LIRGenerator::visitMinMax(MMinMax *ins)
     MDefinition *first = ins->getOperand(0);
     MDefinition *second = ins->getOperand(1);
 
+    ReorderCommutative(&first, &second);
+
     if (ins->specialization() == MIRType_Int32) {
-        ReorderCommutative(&first, &second);
         LMinMaxI *lir = new LMinMaxI(useRegisterAtStart(first), useRegisterOrConstant(second));
         return defineReuseInput(lir, ins, 0);
-    } else {
-        LMinMaxD *lir = new LMinMaxD(useRegisterAtStart(first), useRegister(second));
-        return defineReuseInput(lir, ins, 0);
     }
+
+    LMinMaxD *lir = new LMinMaxD(useRegisterAtStart(first), useRegister(second));
+    return defineReuseInput(lir, ins, 0);
 }
 
 bool
@@ -863,6 +1060,19 @@ LIRGenerator::visitSqrt(MSqrt *ins)
     JS_ASSERT(num->type() == MIRType_Double);
     LSqrtD *lir = new LSqrtD(useRegisterAtStart(num));
     return defineReuseInput(lir, ins, 0);
+}
+
+bool
+LIRGenerator::visitAtan2(MAtan2 *ins)
+{
+    MDefinition *y = ins->y();
+    JS_ASSERT(y->type() == MIRType_Double);
+
+    MDefinition *x = ins->x();
+    JS_ASSERT(x->type() == MIRType_Double);
+
+    LAtan2D *lir = new LAtan2D(useRegisterAtStart(y), useRegisterAtStart(x), tempFixed(CallTempReg0));
+    return defineReturn(lir, ins);
 }
 
 bool
@@ -963,6 +1173,7 @@ LIRGenerator::visitAdd(MAdd *ins)
 
     if (ins->specialization() == MIRType_Double) {
         JS_ASSERT(lhs->type() == MIRType_Double);
+        ReorderCommutative(&lhs, &rhs);
         return lowerForFPU(new LMathD(JSOP_ADD), ins, lhs, rhs);
     }
 
@@ -1012,6 +1223,7 @@ LIRGenerator::visitMul(MMul *ins)
     }
     if (ins->specialization() == MIRType_Double) {
         JS_ASSERT(lhs->type() == MIRType_Double);
+        ReorderCommutative(&lhs, &rhs);
 
         // If our LHS is a constant -1.0, we can optimize to an LNegD.
         if (lhs->isConstant() && lhs->toConstant()->value() == DoubleValue(-1.0))
@@ -1098,9 +1310,15 @@ LIRGenerator::visitConcat(MConcat *ins)
 
     JS_ASSERT(lhs->type() == MIRType_String);
     JS_ASSERT(rhs->type() == MIRType_String);
+    JS_ASSERT(ins->type() == MIRType_String);
 
-    LConcat *lir = new LConcat(useRegisterAtStart(lhs), useRegisterAtStart(rhs));
-    if (!defineReturn(lir, ins))
+    LConcat *lir = new LConcat(useFixed(lhs, CallTempReg0),
+                               useFixed(rhs, CallTempReg1),
+                               tempFixed(CallTempReg2),
+                               tempFixed(CallTempReg3),
+                               tempFixed(CallTempReg4),
+                               tempFixed(CallTempReg5));
+    if (!defineFixed(lir, ins, LAllocation(AnyRegister(CallTempReg6))))
         return false;
     return assignSafepoint(lir, ins);
 }
@@ -1177,6 +1395,7 @@ bool
 LIRGenerator::visitToDouble(MToDouble *convert)
 {
     MDefinition *opd = convert->input();
+    mozilla::DebugOnly<MToDouble::ConversionKind> conversion = convert->conversion();
 
     switch (opd->type()) {
       case MIRType_Value:
@@ -1188,13 +1407,18 @@ LIRGenerator::visitToDouble(MToDouble *convert)
       }
 
       case MIRType_Null:
+        JS_ASSERT(conversion != MToDouble::NumbersOnly && conversion != MToDouble::NonNullNonStringPrimitives);
         return lowerConstantDouble(0, convert);
 
       case MIRType_Undefined:
+        JS_ASSERT(conversion != MToDouble::NumbersOnly);
         return lowerConstantDouble(js_NaN, convert);
 
-      case MIRType_Int32:
       case MIRType_Boolean:
+        JS_ASSERT(conversion != MToDouble::NumbersOnly);
+        /* FALLTHROUGH */
+
+      case MIRType_Int32:
       {
         LInt32ToDouble *lir = new LInt32ToDouble(useRegister(opd));
         return define(lir, convert);
@@ -1206,7 +1430,7 @@ LIRGenerator::visitToDouble(MToDouble *convert)
       default:
         // Objects might be effectful.
         // Strings are complicated - we don't handle them yet.
-        JS_ASSERT(!"unexpected type");
+        JS_NOT_REACHED("unexpected type");
         return false;
     }
 }
@@ -1253,7 +1477,7 @@ LIRGenerator::visitToInt32(MToInt32 *convert)
         return false;
 
       default:
-        JS_ASSERT(!"unexpected type");
+        JS_NOT_REACHED("unexpected type");
         return false;
     }
 }
@@ -1281,15 +1505,12 @@ LIRGenerator::visitTruncateToInt32(MTruncateToInt32 *truncate)
         return redefine(truncate, opd);
 
       case MIRType_Double:
-      {
-        LTruncateDToInt32 *lir = new LTruncateDToInt32(useRegister(opd), tempFloat());
-        return assignSnapshot(lir) && define(lir, truncate);
-      }
+        return lowerTruncateDToInt32(truncate);
 
       default:
         // Objects might be effectful.
         // Strings are complicated - we don't handle them yet.
-        JS_ASSERT(!"unexpected type");
+        JS_NOT_REACHED("unexpected type");
         return false;
     }
 }
@@ -1304,7 +1525,7 @@ LIRGenerator::visitToString(MToString *ins)
       case MIRType_Null:
       case MIRType_Undefined:
       case MIRType_Boolean:
-        JS_ASSERT(!"NYI: Lower MToString");
+        JS_NOT_REACHED("NYI: Lower MToString");
         return false;
 
       case MIRType_Int32: {
@@ -1317,7 +1538,7 @@ LIRGenerator::visitToString(MToString *ins)
 
       default:
         // Objects might be effectful. (see ToPrimitive)
-        JS_ASSERT(!"unexpected type");
+        JS_NOT_REACHED("unexpected type");
         return false;
     }
 }
@@ -1358,6 +1579,17 @@ LIRGenerator::visitLambda(MLambda *ins)
 }
 
 bool
+LIRGenerator::visitParLambda(MParLambda *ins)
+{
+    JS_ASSERT(!ins->fun()->hasSingletonType());
+    JS_ASSERT(!types::UseNewTypeForClone(ins->fun()));
+    LParLambda *lir = new LParLambda(useRegister(ins->parSlice()),
+                                     useRegister(ins->scopeChain()),
+                                     temp(), temp());
+    return define(lir, ins);
+}
+
+bool
 LIRGenerator::visitImplicitThis(MImplicitThis *ins)
 {
     JS_ASSERT(ins->callee()->type() == MIRType_Object);
@@ -1385,6 +1617,13 @@ LIRGenerator::visitConstantElements(MConstantElements *ins)
 }
 
 bool
+LIRGenerator::visitConvertElementsToDoubles(MConvertElementsToDoubles *ins)
+{
+    LInstruction *check = new LConvertElementsToDoubles(useRegister(ins->elements()));
+    return add(check, ins) && assignSafepoint(check, ins);
+}
+
+bool
 LIRGenerator::visitLoadSlot(MLoadSlot *ins)
 {
     switch (ins->type()) {
@@ -1393,7 +1632,7 @@ LIRGenerator::visitLoadSlot(MLoadSlot *ins)
 
       case MIRType_Undefined:
       case MIRType_Null:
-        JS_ASSERT(!"typed load must have a payload");
+        JS_NOT_REACHED("typed load must have a payload");
         return false;
 
       default:
@@ -1405,6 +1644,64 @@ bool
 LIRGenerator::visitFunctionEnvironment(MFunctionEnvironment *ins)
 {
     return define(new LFunctionEnvironment(useRegisterAtStart(ins->function())), ins);
+}
+
+bool
+LIRGenerator::visitParSlice(MParSlice *ins)
+{
+    LParSlice *lir = new LParSlice(tempFixed(CallTempReg0));
+    return defineReturn(lir, ins);
+}
+
+bool
+LIRGenerator::visitParWriteGuard(MParWriteGuard *ins)
+{
+    LParWriteGuard *lir = new LParWriteGuard(useFixed(ins->parSlice(), CallTempReg0),
+                                             useFixed(ins->object(), CallTempReg1),
+                                             tempFixed(CallTempReg2));
+    lir->setMir(ins);
+    return add(lir, ins);
+}
+
+bool
+LIRGenerator::visitParCheckInterrupt(MParCheckInterrupt *ins)
+{
+    LParCheckInterrupt *lir = new LParCheckInterrupt(
+        useRegister(ins->parSlice()),
+        temp());
+    if (!add(lir, ins))
+        return false;
+    if (!assignSafepoint(lir, ins))
+        return false;
+    return true;
+}
+
+bool
+LIRGenerator::visitParDump(MParDump *ins)
+{
+    LParDump *lir = new LParDump();
+    useBoxFixed(lir, LParDump::Value, ins->value(), CallTempReg0, CallTempReg1);
+    return add(lir);
+}
+
+bool
+LIRGenerator::visitParNew(MParNew *ins)
+{
+    LParNew *lir = new LParNew(useRegister(ins->parSlice()),
+                               temp(), temp());
+    return define(lir, ins);
+}
+
+bool
+LIRGenerator::visitParNewDenseArray(MParNewDenseArray *ins)
+{
+    LParNewDenseArray *lir = new LParNewDenseArray(
+        useFixed(ins->parSlice(), CallTempReg0),
+        useFixed(ins->length(), CallTempReg1),
+        tempFixed(CallTempReg2),
+        tempFixed(CallTempReg3),
+        tempFixed(CallTempReg4));
+    return defineReturn(lir, ins);
 }
 
 bool
@@ -1435,12 +1732,17 @@ LIRGenerator::visitTypeBarrier(MTypeBarrier *ins)
 {
     // Requesting a non-GC pointer is safe here since we never re-enter C++
     // from inside a type barrier test.
-    LTypeBarrier *barrier = new LTypeBarrier(temp());
+
+    const types::StackTypeSet *types = ins->resultTypeSet();
+    bool needTemp = !types->unknownObject() && types->getObjectCount() > 0;
+    LDefinition tmp = needTemp ? temp() : tempToUnbox();
+
+    LTypeBarrier *barrier = new LTypeBarrier(tmp);
     if (!useBox(barrier, LTypeBarrier::Input, ins->input()))
         return false;
     if (!assignSnapshot(barrier, ins->bailoutKind()))
         return false;
-    return defineAs(barrier, ins, ins->input()) && add(barrier);
+    return redefine(ins, ins->input()) && add(barrier, ins);
 }
 
 bool
@@ -1448,10 +1750,41 @@ LIRGenerator::visitMonitorTypes(MMonitorTypes *ins)
 {
     // Requesting a non-GC pointer is safe here since we never re-enter C++
     // from inside a type check.
-    LMonitorTypes *lir = new LMonitorTypes(temp());
+
+    const types::StackTypeSet *types = ins->typeSet();
+    bool needTemp = !types->unknownObject() && types->getObjectCount() > 0;
+    LDefinition tmp = needTemp ? temp() : tempToUnbox();
+
+    LMonitorTypes *lir = new LMonitorTypes(tmp);
     if (!useBox(lir, LMonitorTypes::Input, ins->input()))
         return false;
-    return assignSnapshot(lir, Bailout_Monitor) && add(lir, ins);
+    return assignSnapshot(lir, Bailout_Normal) && add(lir, ins);
+}
+
+bool
+LIRGenerator::visitPostWriteBarrier(MPostWriteBarrier *ins)
+{
+#ifdef JSGC_GENERATIONAL
+    switch (ins->value()->type()) {
+      case MIRType_Object: {
+        LPostWriteBarrierO *lir = new LPostWriteBarrierO(useRegisterOrConstant(ins->object()),
+                                                         useRegister(ins->value()));
+        return add(lir, ins) && assignSafepoint(lir, ins);
+      }
+      case MIRType_Value: {
+        LPostWriteBarrierV *lir =
+            new LPostWriteBarrierV(useRegisterOrConstant(ins->object()), tempToUnbox());
+        if (!useBox(lir, LPostWriteBarrierV::Input, ins->value()))
+            return false;
+        return add(lir, ins) && assignSafepoint(lir, ins);
+      }
+      default:
+        // Currently, only objects can be in the nursery. Other instruction
+        // types cannot hold nursery pointers.
+        return true;
+    }
+#endif // JSGC_GENERATIONAL
+    return true;
 }
 
 bool
@@ -1545,7 +1878,7 @@ LIRGenerator::visitNot(MNot *ins)
       }
 
       default:
-        JS_ASSERT(!"Unexpected MIRType.");
+        JS_NOT_REACHED("Unexpected MIRType.");
         return false;
     }
 }
@@ -1581,11 +1914,19 @@ LIRGenerator::visitInArray(MInArray *ins)
     JS_ASSERT(ins->elements()->type() == MIRType_Elements);
     JS_ASSERT(ins->index()->type() == MIRType_Int32);
     JS_ASSERT(ins->initLength()->type() == MIRType_Int32);
+    JS_ASSERT(ins->object()->type() == MIRType_Object);
     JS_ASSERT(ins->type() == MIRType_Boolean);
+
+    LAllocation object;
+    if (ins->needsNegativeIntCheck())
+        object = useRegister(ins->object());
+    else
+        object = LConstantIndex::Bogus();
 
     LInArray *lir = new LInArray(useRegister(ins->elements()),
                                  useRegisterOrConstant(ins->index()),
-                                 useRegister(ins->initLength()));
+                                 useRegister(ins->initLength()),
+                                 object);
     return define(lir, ins) && assignSafepoint(lir, ins);
 }
 
@@ -1606,7 +1947,7 @@ LIRGenerator::visitLoadElement(MLoadElement *ins)
       }
       case MIRType_Undefined:
       case MIRType_Null:
-        JS_ASSERT(!"typed load must have a payload");
+        JS_NOT_REACHED("typed load must have a payload");
         return false;
 
       default:
@@ -1631,6 +1972,8 @@ LIRGenerator::visitLoadElementHole(MLoadElementHole *ins)
     LLoadElementHole *lir = new LLoadElementHole(useRegister(ins->elements()),
                                                  useRegisterOrConstant(ins->index()),
                                                  useRegister(ins->initLength()));
+    if (ins->needsNegativeIntCheck() && !assignSnapshot(lir))
+        return false;
     return defineBox(lir, ins);
 }
 
@@ -1647,6 +1990,8 @@ LIRGenerator::visitStoreElement(MStoreElement *ins)
       case MIRType_Value:
       {
         LInstruction *lir = new LStoreElementV(elements, index);
+        if (ins->fallible() && !assignSnapshot(lir))
+            return false;
         if (!useBox(lir, LStoreElementV::Value, ins->value()))
             return false;
         return add(lir, ins);
@@ -1655,7 +2000,10 @@ LIRGenerator::visitStoreElement(MStoreElement *ins)
       default:
       {
         const LAllocation value = useRegisterOrNonDoubleConstant(ins->value());
-        return add(new LStoreElementT(elements, index, value), ins);
+        LInstruction *lir = new LStoreElementT(elements, index, value);
+        if (ins->fallible() && !assignSnapshot(lir))
+            return false;
+        return add(lir, ins);
       }
     }
 }
@@ -1690,6 +2038,12 @@ LIRGenerator::visitStoreElementHole(MStoreElementHole *ins)
 }
 
 bool
+LIRGenerator::visitEffectiveAddress(MEffectiveAddress *ins)
+{
+    return define(new LEffectiveAddress(useRegister(ins->base()), useRegister(ins->index())), ins);
+}
+
+bool
 LIRGenerator::visitArrayPopShift(MArrayPopShift *ins)
 {
     LUse object = useRegister(ins->object());
@@ -1702,7 +2056,7 @@ LIRGenerator::visitArrayPopShift(MArrayPopShift *ins)
       }
       case MIRType_Undefined:
       case MIRType_Null:
-        JS_ASSERT(!"typed load must have a payload");
+        JS_NOT_REACHED("typed load must have a payload");
         return false;
 
       default:
@@ -1798,7 +2152,7 @@ LIRGenerator::visitClampToUint8(MClampToUint8 *ins)
       }
 
       default:
-        JS_ASSERT(!"unexpected type");
+        JS_NOT_REACHED("unexpected type");
         return false;
     }
 }
@@ -1818,6 +2172,17 @@ LIRGenerator::visitLoadTypedArrayElementHole(MLoadTypedArrayElementHole *ins)
     if (ins->fallible() && !assignSnapshot(lir))
         return false;
     return defineBox(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
+LIRGenerator::visitLoadTypedArrayElementStatic(MLoadTypedArrayElementStatic *ins)
+{
+    LLoadTypedArrayElementStatic *lir =
+        new LLoadTypedArrayElementStatic(useRegisterAtStart(ins->ptr()));
+
+    if (ins->fallible() && !assignSnapshot(lir))
+        return false;
+    return define(lir, ins);
 }
 
 bool
@@ -1874,6 +2239,17 @@ LIRGenerator::visitCallGetIntrinsicValue(MCallGetIntrinsicValue *ins)
 }
 
 bool
+LIRGenerator::visitCallsiteCloneCache(MCallsiteCloneCache *ins)
+{
+    JS_ASSERT(ins->callee()->type() == MIRType_Object);
+
+    LCallsiteCloneCache *lir = new LCallsiteCloneCache(useRegister(ins->callee()));
+    if (!define(lir, ins))
+        return false;
+    return assignSafepoint(lir, ins);
+}
+
+bool
 LIRGenerator::visitGetPropertyCache(MGetPropertyCache *ins)
 {
     JS_ASSERT(ins->object()->type() == MIRType_Object);
@@ -1884,25 +2260,62 @@ LIRGenerator::visitGetPropertyCache(MGetPropertyCache *ins)
         return assignSafepoint(lir, ins);
     }
 
-    LGetPropertyCacheT *lir = new LGetPropertyCacheT(useRegister(ins->object()));
+    LGetPropertyCacheT *lir = newLGetPropertyCacheT(ins);
     if (!define(lir, ins))
         return false;
     return assignSafepoint(lir, ins);
 }
 
 bool
+LIRGenerator::visitGetPropertyPolymorphic(MGetPropertyPolymorphic *ins)
+{
+    JS_ASSERT(ins->obj()->type() == MIRType_Object);
+
+    if (ins->type() == MIRType_Value) {
+        LGetPropertyPolymorphicV *lir = new LGetPropertyPolymorphicV(useRegister(ins->obj()));
+        return assignSnapshot(lir) && defineBox(lir, ins);
+    }
+
+    LDefinition maybeTemp = (ins->type() == MIRType_Double) ? temp() : LDefinition::BogusTemp();
+    LGetPropertyPolymorphicT *lir = new LGetPropertyPolymorphicT(useRegister(ins->obj()), maybeTemp);
+    return assignSnapshot(lir, Bailout_CachedShapeGuard) && define(lir, ins);
+}
+
+bool
+LIRGenerator::visitSetPropertyPolymorphic(MSetPropertyPolymorphic *ins)
+{
+    JS_ASSERT(ins->obj()->type() == MIRType_Object);
+
+    if (ins->value()->type() == MIRType_Value) {
+        LSetPropertyPolymorphicV *lir = new LSetPropertyPolymorphicV(useRegister(ins->obj()), temp());
+        if (!useBox(lir, LSetPropertyPolymorphicV::Value, ins->value()))
+            return false;
+        return assignSnapshot(lir, Bailout_CachedShapeGuard) && add(lir, ins);
+    }
+
+    LAllocation value = useRegisterOrConstant(ins->value());
+    LSetPropertyPolymorphicT *lir =
+        new LSetPropertyPolymorphicT(useRegister(ins->obj()), value, ins->value()->type(), temp());
+    return assignSnapshot(lir) && add(lir, ins);
+}
+
+bool
 LIRGenerator::visitGetElementCache(MGetElementCache *ins)
 {
     JS_ASSERT(ins->object()->type() == MIRType_Object);
-    JS_ASSERT(ins->index()->type() == MIRType_Value);
-    JS_ASSERT(ins->type() == MIRType_Value);
 
-    LGetElementCacheV *lir = new LGetElementCacheV(useRegister(ins->object()));
-    if (!useBox(lir, LGetElementCacheV::Index, ins->index()))
-        return false;
-    if (!defineBox(lir, ins))
-        return false;
-    return assignSafepoint(lir, ins);
+    if (ins->type() == MIRType_Value) {
+        JS_ASSERT(ins->index()->type() == MIRType_Value);
+        LGetElementCacheV *lir = new LGetElementCacheV(useRegister(ins->object()));
+        if (!useBox(lir, LGetElementCacheV::Index, ins->index()))
+            return false;
+        return defineBox(lir, ins) && assignSafepoint(lir, ins);
+    }
+
+    JS_ASSERT(ins->index()->type() == MIRType_Int32);
+    LGetElementCacheT *lir = new LGetElementCacheT(useRegister(ins->object()),
+                                                   useRegister(ins->index()));
+    return define(lir, ins) && assignSafepoint(lir, ins);
 }
 
 bool
@@ -2009,6 +2422,33 @@ LIRGenerator::visitSetPropertyCache(MSetPropertyCache *ins)
 }
 
 bool
+LIRGenerator::visitSetElementCache(MSetElementCache *ins)
+{
+    JS_ASSERT(ins->object()->type() == MIRType_Object);
+    JS_ASSERT(ins->index()->type() == MIRType_Value);
+
+    LInstruction *lir;
+    if (ins->value()->type() == MIRType_Value) {
+        lir = new LSetElementCacheV(useRegister(ins->object()), tempToUnbox(), temp());
+
+        if (!useBox(lir, LSetElementCacheV::Index, ins->index()))
+            return false;
+        if (!useBox(lir, LSetElementCacheV::Value, ins->value()))
+            return false;
+    } else {
+        lir = new LSetElementCacheT(
+            useRegister(ins->object()),
+            useRegisterOrConstant(ins->value()),
+            tempToUnbox(), temp());
+
+        if (!useBox(lir, LSetElementCacheT::Index, ins->index()))
+            return false;
+    }
+
+    return add(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
 LIRGenerator::visitCallSetElement(MCallSetElement *ins)
 {
     JS_ASSERT(ins->object()->type() == MIRType_Object);
@@ -2020,6 +2460,16 @@ LIRGenerator::visitCallSetElement(MCallSetElement *ins)
     if (!useBoxAtStart(lir, LCallSetElement::Index, ins->index()))
         return false;
     if (!useBoxAtStart(lir, LCallSetElement::Value, ins->value()))
+        return false;
+    return add(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
+LIRGenerator::visitCallInitElementArray(MCallInitElementArray *ins)
+{
+    LCallInitElementArray *lir = new LCallInitElementArray();
+    lir->setOperand(0, useRegisterAtStart(ins->object()));
+    if (!useBoxAtStart(lir, LCallInitElementArray::Value, ins->value()))
         return false;
     return add(lir, ins) && assignSafepoint(lir, ins);
 }
@@ -2076,6 +2526,38 @@ LIRGenerator::visitGetArgument(MGetArgument *ins)
 {
     LGetArgument *lir = new LGetArgument(useRegisterOrConstant(ins->index()));
     return defineBox(lir, ins);
+}
+
+bool
+LIRGenerator::visitRunOncePrologue(MRunOncePrologue *ins)
+{
+    LRunOncePrologue *lir = new LRunOncePrologue;
+    return add(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
+LIRGenerator::visitRest(MRest *ins)
+{
+    JS_ASSERT(ins->numActuals()->type() == MIRType_Int32);
+
+    LRest *lir = new LRest(useFixed(ins->numActuals(), CallTempReg0),
+                           tempFixed(CallTempReg1),
+                           tempFixed(CallTempReg2),
+                           tempFixed(CallTempReg3));
+    return defineReturn(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
+LIRGenerator::visitParRest(MParRest *ins)
+{
+    JS_ASSERT(ins->numActuals()->type() == MIRType_Int32);
+
+    LParRest *lir = new LParRest(useFixed(ins->parSlice(), CallTempReg0),
+                                 useFixed(ins->numActuals(), CallTempReg1),
+                                 tempFixed(CallTempReg2),
+                                 tempFixed(CallTempReg3),
+                                 tempFixed(CallTempReg4));
+    return defineReturn(lir, ins) && assignSafepoint(lir, ins);
 }
 
 bool
@@ -2149,6 +2631,124 @@ LIRGenerator::visitFunctionBoundary(MFunctionBoundary *ins)
 }
 
 bool
+LIRGenerator::visitIsCallable(MIsCallable *ins)
+{
+    JS_ASSERT(ins->object()->type() == MIRType_Object);
+    JS_ASSERT(ins->type() == MIRType_Boolean);
+    return define(new LIsCallable(useRegister(ins->object())), ins);
+}
+
+bool
+LIRGenerator::visitHaveSameClass(MHaveSameClass *ins)
+{
+    MDefinition *lhs = ins->lhs();
+    MDefinition *rhs = ins->rhs();
+
+    JS_ASSERT(lhs->type() == MIRType_Object);
+    JS_ASSERT(rhs->type() == MIRType_Object);
+
+    return define(new LHaveSameClass(useRegister(lhs), useRegister(rhs), temp()), ins);
+}
+
+bool
+LIRGenerator::visitAsmJSLoadHeap(MAsmJSLoadHeap *ins)
+{
+    LAsmJSLoadHeap *lir = new LAsmJSLoadHeap(useRegisterAtStart(ins->ptr()));
+    return define(lir, ins);
+}
+
+bool
+LIRGenerator::visitAsmJSLoadGlobalVar(MAsmJSLoadGlobalVar *ins)
+{
+    return define(new LAsmJSLoadGlobalVar, ins);
+}
+
+bool
+LIRGenerator::visitAsmJSStoreGlobalVar(MAsmJSStoreGlobalVar *ins)
+{
+    return add(new LAsmJSStoreGlobalVar(useRegisterAtStart(ins->value())), ins);
+}
+
+bool
+LIRGenerator::visitAsmJSLoadFFIFunc(MAsmJSLoadFFIFunc *ins)
+{
+    return define(new LAsmJSLoadFFIFunc, ins);
+}
+
+bool
+LIRGenerator::visitAsmJSParameter(MAsmJSParameter *ins)
+{
+    ABIArg abi = ins->abi();
+    if (abi.argInRegister())
+        return defineFixed(new LAsmJSParameter, ins, LAllocation(abi.reg()));
+
+    JS_ASSERT(ins->type() == MIRType_Int32 || ins->type() == MIRType_Double);
+    LAllocation::Kind argKind = ins->type() == MIRType_Int32
+                                ? LAllocation::INT_ARGUMENT
+                                : LAllocation::DOUBLE_ARGUMENT;
+    return defineFixed(new LAsmJSParameter, ins, LArgument(argKind, abi.offsetFromArgBase()));
+}
+
+bool
+LIRGenerator::visitAsmJSReturn(MAsmJSReturn *ins)
+{
+    MDefinition *rval = ins->getOperand(0);
+    LAsmJSReturn *lir = new LAsmJSReturn;
+    if (rval->type() == MIRType_Double)
+        lir->setOperand(0, useFixed(rval, ReturnFloatReg));
+    else if (rval->type() == MIRType_Int32)
+        lir->setOperand(0, useFixed(rval, ReturnReg));
+    else
+        JS_NOT_REACHED("Unexpected asm.js return type");
+    return add(lir);
+}
+
+bool
+LIRGenerator::visitAsmJSVoidReturn(MAsmJSVoidReturn *ins)
+{
+    return add(new LAsmJSVoidReturn);
+}
+
+bool
+LIRGenerator::visitAsmJSPassStackArg(MAsmJSPassStackArg *ins)
+{
+    if (ins->arg()->type() == MIRType_Double) {
+        JS_ASSERT(!ins->arg()->isEmittedAtUses());
+        return add(new LAsmJSPassStackArg(useRegisterAtStart(ins->arg())), ins);
+    }
+
+    return add(new LAsmJSPassStackArg(useRegisterOrConstantAtStart(ins->arg())), ins);
+}
+
+bool
+LIRGenerator::visitAsmJSCall(MAsmJSCall *ins)
+{
+    gen->setPerformsAsmJSCall();
+
+    LAllocation *args = gen->allocate<LAllocation>(ins->numOperands());
+    if (!args)
+        return false;
+
+    for (unsigned i = 0; i < ins->numArgs(); i++)
+        args[i] = useFixed(ins->getOperand(i), ins->registerForArg(i));
+
+    if (ins->callee().which() == MAsmJSCall::Callee::Dynamic)
+        args[ins->dynamicCalleeOperandIndex()] = useFixed(ins->callee().dynamic(), CallTempReg0);
+
+    LInstruction *lir = new LAsmJSCall(args, ins->numOperands());
+    if (ins->type() == MIRType_None) {
+        return add(lir, ins);
+    }
+    return defineReturn(lir, ins);
+}
+
+bool
+LIRGenerator::visitAsmJSCheckOverRecursed(MAsmJSCheckOverRecursed *ins)
+{
+    return add(new LAsmJSCheckOverRecursed(), ins);
+}
+
+bool
 LIRGenerator::visitSetDOMProperty(MSetDOMProperty *ins)
 {
     MDefinition *val = ins->value();
@@ -2166,8 +2766,8 @@ LIRGenerator::visitSetDOMProperty(MSetDOMProperty *ins)
     // Keep using GetTempRegForIntArg, since we want to make sure we
     // don't clobber registers we're already using.
     Register tempReg1, tempReg2;
-    GetTempRegForIntArg(2, 0, &tempReg1);
-    mozilla::DebugOnly<bool> ok = GetTempRegForIntArg(3, 0, &tempReg2);
+    GetTempRegForIntArg(4, 0, &tempReg1);
+    mozilla::DebugOnly<bool> ok = GetTempRegForIntArg(5, 0, &tempReg2);
     MOZ_ASSERT(ok, "How can we not have six temp registers?");
     if (!useBoxFixed(lir, LSetDOMProperty::Value, val, tempReg1, tempReg2))
         return false;
@@ -2191,7 +2791,6 @@ LIRGenerator::visitGetDOMProperty(MGetDOMProperty *ins)
 
     return defineReturn(lir, ins) && assignSafepoint(lir, ins);
 }
-
 
 static void
 SpewResumePoint(MBasicBlock *block, MInstruction *ins, MResumePoint *resumePoint)
@@ -2269,7 +2868,7 @@ void
 LIRGenerator::updateResumeState(MInstruction *ins)
 {
     lastResumePoint_ = ins->resumePoint();
-    if (IonSpewEnabled(IonSpew_Snapshots))
+    if (IonSpewEnabled(IonSpew_Snapshots) && lastResumePoint_)
         SpewResumePoint(NULL, ins, lastResumePoint_);
 }
 
@@ -2277,7 +2876,7 @@ void
 LIRGenerator::updateResumeState(MBasicBlock *block)
 {
     lastResumePoint_ = block->entryResumePoint();
-    if (IonSpewEnabled(IonSpew_Snapshots))
+    if (IonSpewEnabled(IonSpew_Snapshots) && lastResumePoint_)
         SpewResumePoint(block, NULL, lastResumePoint_);
 }
 
@@ -2402,6 +3001,7 @@ LIRGenerator::generate()
 
     lirGraph_.setArgumentSlotCount(maxargslots_);
 
+    JS_ASSERT(argslots_ == 0);
+    JS_ASSERT(prepareCallStack_.empty());
     return true;
 }
-

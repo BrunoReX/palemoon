@@ -4,7 +4,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GfxDriverInfo.h"
+
 #include "nsIGfxInfo.h"
+#include "nsTArray.h"
 
 using namespace mozilla::widget;
 
@@ -236,6 +238,7 @@ const nsAString& GfxDriverInfo::GetDeviceVendor(DeviceVendor id)
     DECLARE_VENDOR_ID(VendorNVIDIA, "0x10de");
     DECLARE_VENDOR_ID(VendorAMD, "0x1022");
     DECLARE_VENDOR_ID(VendorATI, "0x1002");
+    DECLARE_VENDOR_ID(VendorMicrosoft, "0x1414");
     // Suppress a warning.
     DECLARE_VENDOR_ID(DeviceVendorMax, "");
   }

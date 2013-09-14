@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_architecture_x64_h__
-#define jsion_architecture_x64_h__
+#ifndef ion_x64_Architecture_x64_h
+#define ion_x64_Architecture_x64_h
 
 #include "assembler/assembler/MacroAssembler.h"
 
@@ -37,10 +36,10 @@ class Registers {
     typedef JSC::X86Registers::RegisterID Code;
 
     static const char *GetName(Code code) {
-        static const char *Names[] = { "rax", "rcx", "rdx", "rbx",
-                                       "rsp", "rbp", "rsi", "rdi",
-                                       "r8",  "r9",  "r10", "r11",
-                                       "r12", "r13", "r14", "r15" };
+        static const char * const Names[] = { "rax", "rcx", "rdx", "rbx",
+                                              "rsp", "rbp", "rsi", "rdi",
+                                              "r8",  "r9",  "r10", "r11",
+                                              "r12", "r13", "r14", "r15" };
         return Names[code];
     }
 
@@ -119,10 +118,10 @@ class FloatRegisters {
     typedef JSC::X86Registers::XMMRegisterID Code;
 
     static const char *GetName(Code code) {
-        static const char *Names[] = { "xmm0",  "xmm1",  "xmm2",  "xmm3",
-                                       "xmm4",  "xmm5",  "xmm6",  "xmm7",
-                                       "xmm8",  "xmm9",  "xmm10", "xmm11",
-                                       "xmm12", "xmm13", "xmm14", "xmm15" };
+        static const char * const Names[] = { "xmm0",  "xmm1",  "xmm2",  "xmm3",
+                                              "xmm4",  "xmm5",  "xmm6",  "xmm7",
+                                              "xmm8",  "xmm9",  "xmm10", "xmm11",
+                                              "xmm12", "xmm13", "xmm14", "xmm15" };
         return Names[code];
     }
 
@@ -158,5 +157,4 @@ class FloatRegisters {
 } // namespace ion
 } // namespace js
 
-#endif // jsion_architecture_x64_h__
-
+#endif /* ion_x64_Architecture_x64_h */

@@ -22,7 +22,7 @@ typedef struct _FcPattern FcPattern;
 typedef struct FT_FaceRec_* FT_Face;
 typedef struct FT_LibraryRec_  *FT_Library;
 
-class THEBES_API gfxPangoFontGroup : public gfxFontGroup {
+class gfxPangoFontGroup : public gfxFontGroup {
 public:
     gfxPangoFontGroup (const nsAString& families,
                        const gfxFontStyle *aStyle,
@@ -32,8 +32,6 @@ public:
     virtual gfxFontGroup *Copy(const gfxFontStyle *aStyle);
 
     virtual gfxFont *GetFontAt(int32_t i);
-
-    virtual nsString GetFamilyNameAt(int32_t i);
 
     virtual void UpdateFontList();
 
@@ -51,12 +49,6 @@ public:
     static gfxFontEntry *NewFontEntry(const gfxProxyFontEntry &aProxyEntry,
                                       const uint8_t *aFontData,
                                       uint32_t aLength);
-
-    // Interfaces used internally
-    // (but public so that they can be accessed from non-member functions):
-
-    // A language guessed from the gfxFontStyle
-    PangoLanguage *GetPangoLanguage() { return mPangoLanguage; }
 
 private:
     // @param aLang [in] language to use for pref fonts and system default font
@@ -97,6 +89,7 @@ private:
         return mSizeAdjustFactor;
     }
 
+    friend class gfxSystemFcFontEntry;
     static FT_Library GetFTLibrary();
 };
 

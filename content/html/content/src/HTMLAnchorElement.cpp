@@ -16,7 +16,6 @@
 #include "nsHTMLDNSPrefetch.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Anchor)
-DOMCI_NODE_DATA(HTMLAnchorElement, mozilla::dom::HTMLAnchorElement)
 
 namespace mozilla {
 namespace dom {
@@ -32,8 +31,7 @@ enum {
   HTML_ANCHOR_DNS_PREFETCH_DEFERRED =     ANCHOR_ELEMENT_FLAG_BIT(1)
 };
 
-// Make sure we have enough space for those bits
-PR_STATIC_ASSERT(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 1 < 32);
+ASSERT_NODE_FLAGS_SPACE(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 2);
 
 #undef ANCHOR_ELEMENT_FLAG_BIT
 
@@ -46,21 +44,21 @@ NS_IMPL_RELEASE_INHERITED(HTMLAnchorElement, Element)
 
 // QueryInterface implementation for HTMLAnchorElement
 NS_INTERFACE_TABLE_HEAD(HTMLAnchorElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE3(HTMLAnchorElement,
-                                   nsIDOMHTMLAnchorElement,
-                                   nsILink,
-                                   Link)
-  NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(HTMLAnchorElement,
-                                               nsGenericHTMLElement)
-NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLAnchorElement)
+  NS_HTML_CONTENT_INTERFACES(nsGenericHTMLElement)
+  NS_INTERFACE_TABLE_INHERITED3(HTMLAnchorElement,
+                                nsIDOMHTMLAnchorElement,
+                                nsILink,
+                                Link)
+  NS_INTERFACE_TABLE_TO_MAP_SEGUE
+NS_ELEMENT_INTERFACE_MAP_END
 
 
 NS_IMPL_ELEMENT_CLONE(HTMLAnchorElement)
 
 JSObject*
-HTMLAnchorElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+HTMLAnchorElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return HTMLAnchorElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return HTMLAnchorElementBinding::Wrap(aCx, aScope, this);
 }
 
 NS_IMPL_STRING_ATTR(HTMLAnchorElement, Charset, charset)
@@ -331,19 +329,12 @@ HTMLAnchorElement::SetPing(const nsAString& aValue)
   return SetAttr(kNameSpaceID_None, nsGkAtoms::ping, aValue, true);
 }
 
-nsLinkState
-HTMLAnchorElement::GetLinkState() const
-{
-  return Link::GetLinkState();
-}
-
 already_AddRefed<nsIURI>
 HTMLAnchorElement::GetHrefURI() const
 {
-  nsIURI* uri = Link::GetCachedURI();
+  nsCOMPtr<nsIURI> uri = Link::GetCachedURI();
   if (uri) {
-    NS_ADDREF(uri);
-    return uri;
+    return uri.forget();
   }
 
   return GetHrefURIForAnchors();

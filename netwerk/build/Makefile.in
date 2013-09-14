@@ -10,19 +10,13 @@ VPATH     = @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE         = necko
 LIBRARY_NAME   = necko
+MSVC_ENABLE_PGO := 1
 EXPORT_LIBRARY = 1
 IS_COMPONENT   = 1
 MODULE_NAME    = necko
-GRE_MODULE     = 1
 LIBXUL_LIBRARY = 1
-ifndef _MSC_VER
 FAIL_ON_WARNINGS := 1
-endif # !_MSC_VER
-
-CPPSRCS = nsNetModule.cpp
-EXPORTS = nsNetCID.h
 
 SHARED_LIBRARY_LIBS = \
   ../base/src/$(LIB_PREFIX)neckobase_s.$(LIB_SUFFIX) \

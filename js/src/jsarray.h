@@ -1,22 +1,16 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsarray_h___
-#define jsarray_h___
-/*
- * JS Array interface.
- */
-#include "jscntxt.h"
-#include "jsprvtd.h"
-#include "jspubtd.h"
-#include "jsatom.h"
-#include "jsobj.h"
+/* JS Array interface. */
 
-/* Small arrays are dense, no matter what. */
-const unsigned MIN_SPARSE_INDEX = 512;
+#ifndef jsarray_h
+#define jsarray_h
+
+#include "jspubtd.h"
+#include "jsobj.h"
 
 namespace js {
 /* 2^32-2, inclusive */
@@ -28,14 +22,13 @@ js_IdIsIndex(jsid id, uint32_t *indexp)
 {
     if (JSID_IS_INT(id)) {
         int32_t i = JSID_TO_INT(id);
-        if (i < 0)
-            return JS_FALSE;
+        JS_ASSERT(i >= 0);
         *indexp = (uint32_t)i;
-        return JS_TRUE;
+        return true;
     }
 
     if (JS_UNLIKELY(!JSID_IS_STRING(id)))
-        return JS_FALSE;
+        return false;
 
     return js::StringIsArrayIndex(JSID_TO_ATOM(id), indexp);
 }
@@ -50,34 +43,46 @@ namespace js {
 
 /* Create a dense array with no capacity allocated, length set to 0. */
 extern JSObject * JS_FASTCALL
-NewDenseEmptyArray(JSContext *cx, RawObject proto = NULL);
+NewDenseEmptyArray(JSContext *cx, JSObject *proto = NULL,
+                   NewObjectKind newKind = GenericObject);
 
 /* Create a dense array with length and capacity == 'length', initialized length set to 0. */
 extern JSObject * JS_FASTCALL
-NewDenseAllocatedArray(JSContext *cx, uint32_t length, RawObject proto = NULL);
+NewDenseAllocatedArray(JSContext *cx, uint32_t length, JSObject *proto = NULL,
+                       NewObjectKind newKind = GenericObject);
 
 /*
  * Create a dense array with a set length, but without allocating space for the
  * contents. This is useful, e.g., when accepting length from the user.
  */
 extern JSObject * JS_FASTCALL
-NewDenseUnallocatedArray(JSContext *cx, uint32_t length, RawObject proto = NULL);
+NewDenseUnallocatedArray(JSContext *cx, uint32_t length, JSObject *proto = NULL,
+                         NewObjectKind newKind = GenericObject);
 
 /* Create a dense array with a copy of the dense array elements in src. */
 extern JSObject *
-NewDenseCopiedArray(JSContext *cx, uint32_t length, HandleObject src, uint32_t elementOffset, RawObject proto = NULL);
+NewDenseCopiedArray(JSContext *cx, uint32_t length, HandleObject src, uint32_t elementOffset, JSObject *proto = NULL);
 
 /* Create a dense array from the given array values, which must be rooted */
 extern JSObject *
-NewDenseCopiedArray(JSContext *cx, uint32_t length, const Value *values, RawObject proto = NULL);
+NewDenseCopiedArray(JSContext *cx, uint32_t length, const Value *values, JSObject *proto = NULL,
+                    NewObjectKind newKind = GenericObject);
 
-/* Create a sparse array. */
-extern JSObject *
-NewSlowEmptyArray(JSContext *cx);
+/*
+ * Determines whether a write to the given element on |obj| should fail because
+ * |obj| is an Array with a non-writable length, and writing that element would
+ * increase the length of the array.
+ */
+extern bool
+WouldDefinePastNonwritableLength(JSContext *cx, HandleObject obj, uint32_t index, bool strict,
+                                 bool *definesPast);
 
-/* Get the common shape used by all dense arrays with a prototype at globalObj. */
-extern UnrootedShape
-GetDenseArrayShape(JSContext *cx, HandleObject globalObj);
+/*
+ * Canonicalize |vp| to a uint32_t value potentially suitable for use as an
+ * array length.
+ */
+extern bool
+CanonicalizeArrayLengthValue(JSContext *cx, HandleValue v, uint32_t *canonicalized);
 
 extern JSBool
 GetLengthProperty(JSContext *cx, HandleObject obj, uint32_t *lengthp);
@@ -86,12 +91,7 @@ extern JSBool
 SetLengthProperty(JSContext *cx, HandleObject obj, double length);
 
 extern JSBool
-array_defineElement(JSContext *cx, HandleObject obj, uint32_t index, HandleValue value,
-                    PropertyOp getter, StrictPropertyOp setter, unsigned attrs);
-
-extern JSBool
-array_deleteElement(JSContext *cx, HandleObject obj, uint32_t index,
-                    MutableHandleValue rval, JSBool strict);
+ObjectMayHaveExtraIndexedProperties(JSObject *obj);
 
 /*
  * Copy 'length' elements from aobj to vp.
@@ -142,18 +142,8 @@ js_ArrayInfo(JSContext *cx, unsigned argc, js::Value *vp);
 extern JSBool
 js_NewbornArrayPush(JSContext *cx, js::HandleObject obj, const js::Value &v);
 
-JSBool
-js_PrototypeHasIndexedProperties(JSObject *obj);
-
-/*
- * Utility to access the value from the id returned by array_lookupProperty.
- */
-JSBool
-js_GetDenseArrayElementValue(JSContext *cx, js::HandleObject obj, jsid id,
-                             js::Value *vp);
-
 /* Array constructor native. Exposed only so the JIT can know its address. */
 JSBool
 js_Array(JSContext *cx, unsigned argc, js::Value *vp);
 
-#endif /* jsarray_h___ */
+#endif /* jsarray_h */

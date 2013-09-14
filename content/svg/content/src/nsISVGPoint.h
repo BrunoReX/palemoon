@@ -22,7 +22,9 @@ class nsSVGElement;
 
 namespace mozilla {
 
-class DOMSVGMatrix;
+namespace dom {
+class SVGMatrix;
+}
 
 /**
  * Class nsISVGPoint
@@ -49,7 +51,6 @@ public:
   {
     SetIsDOMBinding();
   }
-
 
   explicit nsISVGPoint(SVGPoint* aPt)
     : mList(nullptr)
@@ -138,10 +139,10 @@ public:
   virtual void SetX(float aX, ErrorResult& rv) = 0;
   virtual float Y() = 0;
   virtual void SetY(float aY, ErrorResult& rv) = 0;
-  virtual already_AddRefed<nsISVGPoint> MatrixTransform(DOMSVGMatrix& matrix) = 0;
-  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap)
-    { return dom::SVGPointBinding::Wrap(cx, scope, this, triedToWrap); }
+  virtual already_AddRefed<nsISVGPoint> MatrixTransform(dom::SVGMatrix& matrix) = 0;
+  virtual JSObject* WrapObject(JSContext *cx,
+                               JS::Handle<JSObject*> scope) MOZ_OVERRIDE
+    { return dom::SVGPointBinding::Wrap(cx, scope, this); }
 
   virtual nsISupports* GetParentObject() = 0;
 
@@ -179,4 +180,5 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsISVGPoint, MOZILLA_NSISVGPOINT_IID)
 } // namespace mozilla
 
 #undef MOZ_SVG_LIST_INDEX_BIT_COUNT
+
 

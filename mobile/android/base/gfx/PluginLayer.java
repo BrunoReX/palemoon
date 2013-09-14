@@ -4,23 +4,15 @@
 
 package org.mozilla.gecko.gfx;
 
-import org.mozilla.gecko.GeckoApp;
 import org.mozilla.gecko.GeckoAppShell;
-import org.mozilla.gecko.PrefsHelper;
-import org.mozilla.gecko.SurfaceBits;
 import org.mozilla.gecko.util.FloatUtils;
+import org.mozilla.gecko.util.ThreadUtils;
 
-import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.opengl.GLES20;
-import android.util.Log;
-import android.view.Surface;
 import android.view.SurfaceView;
 import android.view.View;
 import android.widget.AbsoluteLayout;
-
-import java.nio.FloatBuffer;
 
 public class PluginLayer extends TileLayer {
     private static final String LOGTAG = "PluginLayer";
@@ -47,7 +39,7 @@ public class PluginLayer extends TileLayer {
         super(new BufferedCairoImage(null, 0, 0, 0), TileLayer.PaintMode.NORMAL);
 
         mView = view;
-        mContainer = GeckoApp.mAppContext.getPluginContainer();
+        mContainer = GeckoAppShell.getGeckoInterface().getPluginContainer();
 
         mView.setWillNotDraw(false);
         if (mView instanceof SurfaceView) {
@@ -69,7 +61,8 @@ public class PluginLayer extends TileLayer {
 
     private void hideView() {
         if (mViewVisible) {
-            GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
+            ThreadUtils.postToUiThread(new Runnable() {
+                @Override
                 public void run() {
                     mView.setVisibility(View.GONE);
                     mViewVisible = false;
@@ -79,7 +72,8 @@ public class PluginLayer extends TileLayer {
     }
 
     public void showView() {
-        GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
+        ThreadUtils.postToUiThread(new Runnable() {
+            @Override
             public void run() {
                 if (mContainer.indexOfChild(mView) < 0) {
                     mContainer.addView(mView, mLayoutParams);
@@ -92,6 +86,7 @@ public class PluginLayer extends TileLayer {
         });
     }
 
+    @Override
     public void destroy() {
         mDestroyed = true;
 

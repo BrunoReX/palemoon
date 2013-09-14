@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_mirgen_h__
-#define jsion_mirgen_h__
+#ifndef ion_MIRGenerator_h
+#define ion_MIRGenerator_h
 
 // This file declares the data structures used to build a control-flow graph
 // containing MIR.
@@ -17,6 +16,7 @@
 #include "IonAllocPolicy.h"
 #include "IonCompartment.h"
 #include "CompileInfo.h"
+#include "RegisterSets.h"
 
 namespace js {
 namespace ion {
@@ -24,6 +24,18 @@ namespace ion {
 class MBasicBlock;
 class MIRGraph;
 class MStart;
+
+struct AsmJSGlobalAccess
+{
+    unsigned offset;
+    unsigned globalDataOffset;
+
+    AsmJSGlobalAccess(unsigned offset, unsigned globalDataOffset)
+      : offset(offset), globalDataOffset(globalDataOffset)
+    {}
+};
+
+typedef Vector<AsmJSGlobalAccess, 0, IonAllocPolicy> AsmJSGlobalAccessVector;
 
 class MIRGenerator
 {
@@ -72,6 +84,54 @@ class MIRGenerator
         cancelBuild_ = 1;
     }
 
+    bool compilingAsmJS() const {
+        return info_->script() == NULL;
+    }
+
+    uint32_t maxAsmJSStackArgBytes() const {
+        JS_ASSERT(compilingAsmJS());
+        return maxAsmJSStackArgBytes_;
+    }
+    uint32_t resetAsmJSMaxStackArgBytes() {
+        JS_ASSERT(compilingAsmJS());
+        uint32_t old = maxAsmJSStackArgBytes_;
+        maxAsmJSStackArgBytes_ = 0;
+        return old;
+    }
+    void setAsmJSMaxStackArgBytes(uint32_t n) {
+        JS_ASSERT(compilingAsmJS());
+        maxAsmJSStackArgBytes_ = n;
+    }
+    void setPerformsAsmJSCall() {
+        JS_ASSERT(compilingAsmJS());
+        performsAsmJSCall_ = true;
+    }
+    bool performsAsmJSCall() const {
+        JS_ASSERT(compilingAsmJS());
+        return performsAsmJSCall_;
+    }
+#ifndef JS_CPU_ARM
+    bool noteHeapAccess(AsmJSHeapAccess heapAccess) {
+        return asmJSHeapAccesses_.append(heapAccess);
+    }
+    const Vector<AsmJSHeapAccess, 0, IonAllocPolicy> &heapAccesses() const {
+        return asmJSHeapAccesses_;
+    }
+#else
+    bool noteBoundsCheck(uint32_t offsetBefore) {
+        return asmJSBoundsChecks_.append(AsmJSBoundsCheck(offsetBefore));
+    }
+    const Vector<AsmJSBoundsCheck, 0, IonAllocPolicy> &asmBoundsChecks() const {
+        return asmJSBoundsChecks_;
+    }
+#endif
+    bool noteGlobalAccess(unsigned offset, unsigned globalDataOffset) {
+        return asmJSGlobalAccesses_.append(AsmJSGlobalAccess(offset, globalDataOffset));
+    }
+    const Vector<AsmJSGlobalAccess, 0, IonAllocPolicy> &globalAccesses() const {
+        return asmJSGlobalAccesses_;
+    }
+
   public:
     JSCompartment *compartment;
 
@@ -83,10 +143,18 @@ class MIRGenerator
     MIRGraph *graph_;
     bool error_;
     size_t cancelBuild_;
+
+    uint32_t maxAsmJSStackArgBytes_;
+    bool performsAsmJSCall_;
+#ifdef JS_CPU_ARM
+    AsmJSBoundsCheckVector asmJSBoundsChecks_;
+#else
+    AsmJSHeapAccessVector asmJSHeapAccesses_;
+#endif
+    AsmJSGlobalAccessVector asmJSGlobalAccesses_;
 };
 
 } // namespace ion
 } // namespace js
 
-#endif // jsion_mirgen_h__
-
+#endif /* ion_MIRGenerator_h */

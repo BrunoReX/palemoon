@@ -10,73 +10,73 @@
 <script src="webaudio.js" type="text/javascript"></script>
 <script class="testbody" type="text/javascript">
 
-SimpleTest.waitForExplicitFinish();
-addLoadEvent(function() {
-  SpecialPowers.setBoolPref("media.webaudio.enabled", true);
+var gTest = {
+  length: 4096,
+  numberOfChannels: 1,
+  createGraph: function(context) {
+    var buffer = context.createBuffer(1, 2048, context.sampleRate);
+    for (var i = 0; i < 2048; ++i) {
+      buffer.getChannelData(0)[i] = Math.sin(440 * 2 * Math.PI * i / context.sampleRate);
+    }
 
-  var context = new mozAudioContext();
-  var buffer = context.createBuffer(1, 2048, 44100);
-  for (var i = 0; i < 2048; ++i) {
-    buffer.getChannelData(0)[i] = Math.sin(440 * 2 * Math.PI * i / 44100);
-  }
+    var source = context.createBufferSource();
 
-  var destination = context.destination;
+    var delay = context.createDelay();
 
-  var source = context.createBufferSource();
+    var delay2 = context.createDelayNode();
+    isnot(delay, delay2, "createDelayNode should create a different delay node");
 
-  var delay = context.createDelay();
+    source.buffer = buffer;
 
-  source.buffer = buffer;
+    source.connect(delay);
 
-  source.connect(delay);
-  delay.connect(destination);
+    ok(delay.delayTime, "The audioparam member must exist");
+    is(delay.delayTime.value, 0, "Correct initial value");
+    is(delay.delayTime.defaultValue, 0, "Correct default value");
+    delay.delayTime.value = 0.5;
+    is(delay.delayTime.value, 0.5, "Correct initial value");
+    is(delay.delayTime.defaultValue, 0, "Correct default value");
+    is(delay.channelCount, 2, "delay node has 2 input channels by default");
+    is(delay.channelCountMode, "max", "Correct channelCountMode for the delay node");
+    is(delay.channelInterpretation, "speakers", "Correct channelCountInterpretation for the delay node");
 
-  ok(delay.delayTime, "The audioparam member must exist");
-  is(delay.delayTime.value, 0, "Correct initial value");
-  is(delay.delayTime.defaultValue, 0, "Correct default value");
-  is(delay.delayTime.minValue, 0, "Correct min value");
-  is(delay.delayTime.maxValue, 1.0, "Correct max value");
-  delay.delayTime.value = 0.5;
-  is(delay.delayTime.value, 0.5, "Correct initial value");
-  is(delay.delayTime.defaultValue, 0, "Correct default value");
-  is(delay.delayTime.minValue, 0, "Correct min value");
-  is(delay.delayTime.maxValue, 1.0, "Correct max value");
+    var delay2 = context.createDelay(2);
+    is(delay2.delayTime.value, 0, "Correct initial value");
+    is(delay2.delayTime.defaultValue, 0, "Correct default value");
+    delay2.delayTime.value = 0.5;
+    is(delay2.delayTime.value, 0.5, "Correct initial value");
+    is(delay2.delayTime.defaultValue, 0, "Correct default value");
 
-  var delay2 = context.createDelay(2);
-  is(delay2.delayTime.value, 0, "Correct initial value");
-  is(delay2.delayTime.defaultValue, 0, "Correct default value");
-  is(delay2.delayTime.minValue, 0, "Correct min value");
-  is(delay2.delayTime.maxValue, 2.0, "Correct max value");
-  delay2.delayTime.value = 0.5;
-  is(delay2.delayTime.value, 0.5, "Correct initial value");
-  is(delay2.delayTime.defaultValue, 0, "Correct default value");
-  is(delay2.delayTime.minValue, 0, "Correct min value");
-  is(delay2.delayTime.maxValue, 2.0, "Correct max value");
+    expectException(function() {
+      context.createDelay(0);
+    }, DOMException.NOT_SUPPORTED_ERR);
+    expectException(function() {
+      context.createDelay(180);
+    }, DOMException.NOT_SUPPORTED_ERR);
+    expectTypeError(function() {
+      context.createDelay(NaN);
+    }, DOMException.NOT_SUPPORTED_ERR);
+    expectException(function() {
+      context.createDelay(-1);
+    }, DOMException.NOT_SUPPORTED_ERR);
+    context.createDelay(1); // should not throw
 
-  expectException(function() {
-    context.createDelay(0);
-  }, DOMException.NOT_SUPPORTED_ERR);
-  expectException(function() {
-    context.createDelay(3);
-  }, DOMException.NOT_SUPPORTED_ERR);
-  expectTypeError(function() {
-    context.createDelay(NaN);
-  }, DOMException.NOT_SUPPORTED_ERR);
-  expectException(function() {
-    context.createDelay(-1);
-  }, DOMException.NOT_SUPPORTED_ERR);
-  context.createDelay(1); // should not throw
+    // Delay the source stream by 2048 frames
+    delay.delayTime.value = 2048 / context.sampleRate;
 
-  source.start(0);
-  SimpleTest.executeSoon(function() {
-    source.stop(0);
-    source.disconnect();
-    delay.disconnect();
+    source.start(0);
+    return delay;
+  },
+  createExpectedBuffers: function(context) {
+    var expectedBuffer = context.createBuffer(1, 2048 * 2, context.sampleRate);
+    for (var i = 2048; i < 2048 * 2; ++i) {
+      expectedBuffer.getChannelData(0)[i] = Math.sin(440 * 2 * Math.PI * (i - 2048) / context.sampleRate);
+    }
+    return expectedBuffer;
+  },
+};
 
-    SpecialPowers.clearUserPref("media.webaudio.enabled");
-    SimpleTest.finish();
-  });
-});
+runTest();
 
 </script>
 </pre>

@@ -12,20 +12,13 @@
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for NetworkStats **/
+// Test for NetworkStats
 function checkInterface(aInterface) {
   ok(!(aInterface in window), aInterface + " should be prefixed");
   ok(("Moz" + aInterface) in window, aInterface + " should be prefixed");
 }
 
 function test() {
-  var gNetworkStatsEnabled = SpecialPowers.getBoolPref("dom.mozNetworkStats.enabled");
-
-  if (!gNetworkStatsEnabled) {
-    is(navigator.mozNetworkStats, null, "mozNetworkStats is null when not enabled.");
-    SimpleTest.finish();
-  }
-
   // Test interfaces
   checkInterface("NetworkStatsManager");
   checkInterface("NetworkStats");
@@ -34,7 +27,6 @@ function test() {
   ok('mozNetworkStats' in navigator, "navigator.mozMozNetworkStats should exist");
   ok(navigator.mozNetworkStats, "navigator.mozNetworkStats returns an object");
 
-  SpecialPowers.addPermission("networkstats-manage", true, document);
   netStats = navigator.mozNetworkStats;
 
   // Test IDL attributes
@@ -59,7 +51,7 @@ function test() {
 }
 
 function checkDataDates(data, start, end, sampleRate){
-  var offset = new Date().getTimezoneOffset() * 60 * 1000;
+  var offset = (new Date()).getTimezoneOffset() * 60 * 1000;
   start = Math.floor((start.getTime() - offset) / sampleRate) * sampleRate + offset;
   end = Math.floor((end.getTime() - offset) / sampleRate) * sampleRate + offset;
 
@@ -159,7 +151,8 @@ var steps = [
     var sampleRate = netStats.sampleRate * 1000;
     // Get date with samplerate's precision
     var offset = new Date().getTimezoneOffset() * 60 * 1000;
-    var endDate = new Date(Math.floor((new Date().getTime() - offset) / sampleRate) * sampleRate + offset);
+    var endDate = new Date(Math.floor((new Date().getTime() - offset) / sampleRate)
+                           * sampleRate + offset);
     var startDate = new Date(endDate.getTime() - (sampleRate * diff));
     // Calculate the number of samples that should be returned based on the
     // the samplerate and including final and initial samples.
@@ -190,7 +183,8 @@ var steps = [
     var sampleRate = netStats.sampleRate * 1000;
     // Get date with samplerate's precision
     var offset = new Date().getTimezoneOffset() * 60 * 1000;
-    var endDate = new Date(Math.floor((new Date().getTime() - offset) / sampleRate) * sampleRate + offset);
+    var endDate = new Date(Math.floor((new Date().getTime() - offset) / sampleRate)
+                           * sampleRate + offset);
     var startDate = new Date(endDate.getTime() - (sampleRate * diff));
     // Calculate the number of samples that should be returned based on the
     // the samplerate and including final and initial samples.
@@ -279,6 +273,7 @@ var steps = [
   },
   function () {
     ok(true, "all done!\n");
+    SpecialPowers.removePermission("networkstats-manage", document);
     SimpleTest.finish();
     return;
   }
@@ -298,7 +293,9 @@ function next() {
 }
 
 SimpleTest.waitForExplicitFinish();
-addLoadEvent(test);
+
+SpecialPowers.addPermission("networkstats-manage", true, document);
+SpecialPowers.pushPrefEnv({'set': [["dom.mozNetworkStats.enabled", true]]}, test);
 
 </script>
 </pre>

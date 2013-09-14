@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -556,6 +555,13 @@ LinearScanAllocator::populateSafepoints()
                     // add a torn entry.
                     if (!safepoint->addNunboxParts(*typeAlloc, *payloadAlloc))
                         return false;
+
+                    // If the nunbox is stored in multiple places, we need to
+                    // trace all of them to allow the GC to relocate objects.
+                    if (payloadAlloc->isGeneralReg() && isSpilledAt(payloadInterval, inputOf(ins))) {
+                        if (!safepoint->addNunboxParts(*typeAlloc, *payload->canonicalSpill()))
+                            return false;
+                    }
                 }
 #endif
             }
@@ -629,6 +635,7 @@ LinearScanAllocator::splitBlockingIntervals(LAllocation allocation)
     if (fixed->numRanges() > 0) {
         CodePosition fixedPos = current->intersect(fixed);
         if (fixedPos != CodePosition::MIN) {
+            JS_ASSERT(fixedPos > current->start());
             JS_ASSERT(fixedPos < current->end());
             if (!splitInterval(current, fixedPos))
                 return false;

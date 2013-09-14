@@ -10,28 +10,56 @@
  * liability, trademark and document use rules apply.
  */
 
+enum BiquadFilterType {
+  // Hack: Use numbers to support alternate enum values
+  "0", "1", "2", "3", "4", "5", "6", "7",
+
+  "lowpass",
+  "highpass",
+  "bandpass",
+  "lowshelf",
+  "highshelf",
+  "peaking",
+  "notch",
+  "allpass"
+};
+
 [PrefControlled]
 interface BiquadFilterNode : AudioNode {
 
-    // Filter type.
-    const unsigned short LOWPASS = 0;
-    const unsigned short HIGHPASS = 1;
-    const unsigned short BANDPASS = 2;
-    const unsigned short LOWSHELF = 3;
-    const unsigned short HIGHSHELF = 4;
-    const unsigned short PEAKING = 5;
-    const unsigned short NOTCH = 6;
-    const unsigned short ALLPASS = 7;
-
-    [SetterThrows]
-    attribute unsigned short type;
+    attribute BiquadFilterType type;
     readonly attribute AudioParam frequency; // in Hertz
+    readonly attribute AudioParam detune; // in Cents
     readonly attribute AudioParam Q; // Quality factor
     readonly attribute AudioParam gain; // in Decibels
 
-    // void getFrequencyResponse(Float32Array frequencyHz,
-    //                           Float32Array magResponse,
-    //                           Float32Array phaseResponse);
+    void getFrequencyResponse(Float32Array frequencyHz,
+                              Float32Array magResponse,
+                              Float32Array phaseResponse);
 
+};
+
+/*
+ * The origin of this IDL file is
+ * https://dvcs.w3.org/hg/audio/raw-file/tip/webaudio/specification.html#AlternateNames
+ */
+[PrefControlled]
+partial interface BiquadFilterNode {
+    [Pref="media.webaudio.legacy.BiquadFilterNode"]
+    const unsigned short LOWPASS = 0;
+    [Pref="media.webaudio.legacy.BiquadFilterNode"]
+    const unsigned short HIGHPASS = 1;
+    [Pref="media.webaudio.legacy.BiquadFilterNode"]
+    const unsigned short BANDPASS = 2;
+    [Pref="media.webaudio.legacy.BiquadFilterNode"]
+    const unsigned short LOWSHELF = 3;
+    [Pref="media.webaudio.legacy.BiquadFilterNode"]
+    const unsigned short HIGHSHELF = 4;
+    [Pref="media.webaudio.legacy.BiquadFilterNode"]
+    const unsigned short PEAKING = 5;
+    [Pref="media.webaudio.legacy.BiquadFilterNode"]
+    const unsigned short NOTCH = 6;
+    [Pref="media.webaudio.legacy.BiquadFilterNode"]
+    const unsigned short ALLPASS = 7;
 };
 

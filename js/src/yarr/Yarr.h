@@ -1,4 +1,6 @@
-/*
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ *
  * Copyright (C) 2009 Apple Inc. All rights reserved.
  * Copyright (C) 2010 Peter Varga (pvarga@inf.u-szeged.hu), University of Szeged
  * All rights reserved.
@@ -25,8 +27,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef Yarr_h
-#define Yarr_h
+#ifndef yarr_Yarr_h
+#define yarr_Yarr_h
 
 #include <limits.h>
 #include "YarrInterpreter.h"
@@ -66,5 +68,4 @@ enum YarrCharSize {
 
 } } // namespace JSC::Yarr
 
-#endif // Yarr_h
-
+#endif /* yarr_Yarr_h */

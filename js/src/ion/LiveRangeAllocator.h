@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef js_ion_liverangeallocator_h__
-#define js_ion_liverangeallocator_h__
+#ifndef ion_LiveRangeAllocator_h
+#define ion_LiveRangeAllocator_h
 
 #include "mozilla/DebugOnly.h"
 
@@ -379,7 +378,7 @@ class VirtualRegister
             return false;
         return intervals_.append(initial);
     }
-    uint32_t id() {
+    uint32_t id() const {
         return id_;
     }
     LBlock *block() {
@@ -635,7 +634,7 @@ class LiveRangeAllocator : public RegisterAllocator
     }
 
     // Finds the first safepoint that is within range of an interval.
-    size_t findFirstSafepoint(LiveInterval *interval, size_t startFrom)
+    size_t findFirstSafepoint(const LiveInterval *interval, size_t startFrom) const
     {
         size_t i = startFrom;
         for (; i < graph.numSafepoints(); i++) {
@@ -650,4 +649,4 @@ class LiveRangeAllocator : public RegisterAllocator
 } // namespace ion
 } // namespace js
 
-#endif
+#endif /* ion_LiveRangeAllocator_h */

@@ -68,11 +68,8 @@ public:
   void UpdateBand(const nsRect& aNewAvailableSpace,
                   nsIFrame* aFloatFrame);
 
-  nsresult BeginSpan(nsIFrame* aFrame,
-                     const nsHTMLReflowState* aSpanReflowState,
-                     nscoord aLeftEdge,
-                     nscoord aRightEdge,
-                     nscoord* aBaseline);
+  void BeginSpan(nsIFrame* aFrame, const nsHTMLReflowState* aSpanReflowState,
+                 nscoord aLeftEdge, nscoord aRightEdge, nscoord* aBaseline);
 
   // Returns the width of the span
   nscoord EndSpan(nsIFrame* aFrame);
@@ -90,8 +87,7 @@ public:
                        nsHTMLReflowMetrics* aMetrics,
                        bool& aPushedFrame);
 
-  nsresult AddBulletFrame(nsIFrame* aFrame,
-                          const nsHTMLReflowMetrics& aMetrics);
+  void AddBulletFrame(nsIFrame* aFrame, const nsHTMLReflowMetrics& aMetrics);
 
   void RemoveBulletFrame(nsIFrame* aFrame) {
     PushFrame(aFrame);
@@ -296,10 +292,8 @@ public:
    * some other kind of frame when inline frames are reflowed in a non-block
    * context (e.g. MathML or floating first-letter).
    */
-  nsIFrame* GetLineContainerFrame() const { return mBlockReflowState->frame; }
-  const nsHTMLReflowState* GetLineContainerRS() const {
-    return mBlockReflowState;
-  }
+  nsIFrame* LineContainerFrame() const { return mBlockReflowState->frame; }
+  const nsHTMLReflowState* LineContainerRS() const { return mBlockReflowState; }
   const nsLineList::iterator* GetLine() const {
     return mGotLineBox ? &mLineBox : nullptr;
   }
@@ -389,7 +383,6 @@ protected:
     {
       NS_ASSERTION(aFlag<=PFD_LASTFLAG, "bad flag");
       NS_ASSERTION(aFlag<=UINT8_MAX, "bad flag");
-      NS_ASSERTION(aValue==false || aValue==true, "bad value");
       if (aValue) { // set flag
         mFlags |= aFlag;
       }
@@ -508,9 +501,15 @@ protected:
 #endif
   PLArenaPool mArena; // Per span and per frame data, 4 byte aligned
 
-  nsresult NewPerFrameData(PerFrameData** aResult);
+  /**
+   * Allocate a PerFrameData from the mArena pool. The allocation is infallible.
+   */
+  PerFrameData* NewPerFrameData();
 
-  nsresult NewPerSpanData(PerSpanData** aResult);
+  /**
+   * Allocate a PerSpanData from the mArena pool. The allocation is infallible.
+   */
+  PerSpanData* NewPerSpanData();
 
   void FreeSpan(PerSpanData* psd);
 

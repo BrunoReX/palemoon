@@ -9,17 +9,15 @@
 #include "mozilla/dom/SVGForeignObjectElement.h"
 #include "mozilla/dom/SVGForeignObjectElementBinding.h"
 
-DOMCI_NODE_DATA(SVGForeignObjectElement, mozilla::dom::SVGForeignObjectElement)
-
 NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(ForeignObject)
 
 namespace mozilla {
 namespace dom {
 
 JSObject*
-SVGForeignObjectElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+SVGForeignObjectElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return SVGForeignObjectElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return SVGForeignObjectElementBinding::Wrap(aCx, aScope, this);
 }
 
 nsSVGElement::LengthInfo SVGForeignObjectElement::sLengthInfo[4] =
@@ -31,25 +29,11 @@ nsSVGElement::LengthInfo SVGForeignObjectElement::sLengthInfo[4] =
 };
 
 //----------------------------------------------------------------------
-// nsISupports methods
-
-NS_IMPL_ADDREF_INHERITED(SVGForeignObjectElement, SVGGraphicsElement)
-NS_IMPL_RELEASE_INHERITED(SVGForeignObjectElement, SVGGraphicsElement)
-
-NS_INTERFACE_TABLE_HEAD(SVGForeignObjectElement)
-  NS_NODE_INTERFACE_TABLE4(SVGForeignObjectElement, nsIDOMNode, nsIDOMElement,
-                           nsIDOMSVGElement,
-                           nsIDOMSVGForeignObjectElement)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGForeignObjectElement)
-NS_INTERFACE_MAP_END_INHERITING(SVGGraphicsElement)
-
-//----------------------------------------------------------------------
 // Implementation
 
 SVGForeignObjectElement::SVGForeignObjectElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : SVGGraphicsElement(aNodeInfo)
 {
-  SetIsDOMBinding();
 }
 
 //----------------------------------------------------------------------
@@ -58,57 +42,26 @@ SVGForeignObjectElement::SVGForeignObjectElement(already_AddRefed<nsINodeInfo> a
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGForeignObjectElement)
 
 //----------------------------------------------------------------------
-// nsIDOMSVGForeignObjectElement methods:
 
-/* readonly attribute nsIDOMSVGAnimatedLength x; */
-NS_IMETHODIMP SVGForeignObjectElement::GetX(nsIDOMSVGAnimatedLength * *aX)
-{
-  *aX = X().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGForeignObjectElement::X()
 {
   return mLengthAttributes[ATTR_X].ToDOMAnimatedLength(this);
 }
 
-/* readonly attribute nsIDOMSVGAnimatedLength y; */
-NS_IMETHODIMP SVGForeignObjectElement::GetY(nsIDOMSVGAnimatedLength * *aY)
-{
-  *aY = Y().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGForeignObjectElement::Y()
 {
   return mLengthAttributes[ATTR_Y].ToDOMAnimatedLength(this);
 }
 
-
-/* readonly attribute nsIDOMSVGAnimatedLength width; */
-NS_IMETHODIMP SVGForeignObjectElement::GetWidth(nsIDOMSVGAnimatedLength * *aWidth)
-{
-  *aWidth = Width().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGForeignObjectElement::Width()
 {
   return mLengthAttributes[ATTR_WIDTH].ToDOMAnimatedLength(this);
 }
 
-
-/* readonly attribute nsIDOMSVGAnimatedLength height; */
-NS_IMETHODIMP SVGForeignObjectElement::GetHeight(nsIDOMSVGAnimatedLength * *aHeight)
-{
-  *aHeight = Height().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGForeignObjectElement::Height()
 {
   return mLengthAttributes[ATTR_HEIGHT].ToDOMAnimatedLength(this);

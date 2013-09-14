@@ -16,7 +16,6 @@
 #include "nsDOMCID.h"
 #include "nsHTMLContentSerializer.h"
 #include "nsHTMLParts.h"
-#include "nsGenericHTMLElement.h"
 #include "nsIComponentManager.h"
 #include "nsIContentIterator.h"
 #include "nsIContentSerializer.h"
@@ -34,7 +33,6 @@
 #include "nsINodeInfo.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
-#include "nsIPresShell.h"
 #include "nsIScriptNameSpaceManager.h"
 #include "nsISelection.h"
 #include "nsCaret.h"
@@ -69,10 +67,9 @@
 #include "nsContentCreatorFunctions.h"
 
 // DOM includes
+#include "nsDOMBlobBuilder.h"
 #include "nsDOMException.h"
 #include "nsDOMFileReader.h"
-
-#include "ArchiveReader.h"
 
 #include "nsFormData.h"
 #include "nsHostObjectProtocolHandler.h"
@@ -83,7 +80,7 @@
 #include "nsScriptNameSpaceManager.h"
 #include "nsIControllerContext.h"
 #include "nsDOMScriptObjectFactory.h"
-#include "nsDOMStorage.h"
+#include "DOMStorageManager.h"
 #include "nsJSON.h"
 #include "mozIApplicationClearPrivateDataParams.h"
 #include "mozilla/Attributes.h"
@@ -92,8 +89,14 @@
 #include "mozilla/dom/EventSource.h"
 #include "mozilla/dom/indexedDB/IndexedDatabaseManager.h"
 #include "mozilla/dom/network/TCPSocketChild.h"
+#include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/OSFileConstants.h"
 #include "mozilla/Services.h"
+
+#ifdef MOZ_WEBSPEECH
+#include "mozilla/dom/FakeSpeechRecognitionService.h"
+#include "mozilla/dom/nsSynthVoiceRegistry.h"
+#endif
 
 #ifdef MOZ_B2G_RIL
 #include "SystemWorkerManager.h"
@@ -180,17 +183,6 @@ class nsIDocumentLoaderFactory;
 
 #define PRODUCT_NAME "Gecko"
 
-#define NS_HTMLIMGELEMENT_CONTRACTID \
-  "@mozilla.org/content/element/html;1?name=img"
-
-#define NS_HTMLOPTIONELEMENT_CONTRACTID \
-  "@mozilla.org/content/element/html;1?name=option"
-
-#ifdef MOZ_MEDIA
-#define NS_HTMLAUDIOELEMENT_CONTRACTID \
-  "@mozilla.org/content/element/html;1?name=audio"
-#endif
-
 /* 0ddf4df8-4dbb-4133-8b79-9afb966514f5 */
 #define NS_PLUGINDOCLOADERFACTORY_CID \
 { 0x0ddf4df8, 0x4dbb, 0x4133, { 0x8b, 0x79, 0x9a, 0xfb, 0x96, 0x65, 0x14, 0xf5 } }
@@ -225,10 +217,16 @@ static void Shutdown();
 
 #include "nsGeolocation.h"
 #include "nsDeviceSensors.h"
+#ifdef MOZ_GAMEPAD
+#include "mozilla/dom/GamepadService.h"
+#endif
 #include "nsCSPService.h"
 #include "nsISmsService.h"
-#include "nsISmsDatabaseService.h"
-#include "mozilla/dom/sms/SmsServicesFactory.h"
+#include "nsIMmsService.h"
+#include "nsIMobileMessageService.h"
+#include "nsIMobileMessageDatabaseService.h"
+#include "mozilla/dom/mobilemessage/MobileMessageService.h"
+#include "mozilla/dom/mobilemessage/SmsServicesFactory.h"
 #include "nsIPowerManagerService.h"
 #include "nsIAlarmHalService.h"
 #include "nsIMediaManager.h"
@@ -247,11 +245,11 @@ static void Shutdown();
 
 using namespace mozilla;
 using namespace mozilla::dom;
-using namespace mozilla::dom::file;
-using namespace mozilla::dom::sms;
+using namespace mozilla::dom::mobilemessage;
 using mozilla::dom::alarm::AlarmHalService;
 using mozilla::dom::indexedDB::IndexedDatabaseManager;
 using mozilla::dom::power::PowerManagerService;
+using mozilla::dom::quota::QuotaManager;
 using mozilla::dom::TCPSocketChild;
 using mozilla::dom::time::TimeService;
 
@@ -272,19 +270,20 @@ NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsXMLHttpRequest, Init)
 NS_GENERIC_FACTORY_CONSTRUCTOR(EventSource)
 NS_GENERIC_FACTORY_CONSTRUCTOR(Activity)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsDOMFileReader, Init)
-NS_GENERIC_FACTORY_CONSTRUCTOR(ArchiveReader)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsFormData)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsBlobProtocolHandler)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsMediaStreamProtocolHandler)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsHostObjectURI)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsDOMParser)
-NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsDOMStorageManager,
-                                         nsDOMStorageManager::GetInstance)
+NS_GENERIC_FACTORY_CONSTRUCTOR(DOMSessionStorageManager)
+NS_GENERIC_FACTORY_CONSTRUCTOR(DOMLocalStorageManager)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsChannelPolicy)
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(IndexedDatabaseManager,
                                          IndexedDatabaseManager::FactoryCreate)
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(DOMRequestService,
                                          DOMRequestService::FactoryCreate)
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(QuotaManager,
+                                         QuotaManager::FactoryCreate)
 #ifdef MOZ_B2G_RIL
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(SystemWorkerManager,
                                          SystemWorkerManager::FactoryCreate)
@@ -294,9 +293,13 @@ NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(BluetoothService,
                                          BluetoothService::FactoryCreate)
 #endif
 
+#ifdef MOZ_WEBSPEECH
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsSynthVoiceRegistry,
+                                         nsSynthVoiceRegistry::GetInstanceForService)
+#endif
+
 #ifdef MOZ_WIDGET_GONK
 NS_GENERIC_FACTORY_CONSTRUCTOR(AudioManager)
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsVolumeService)
 #endif
 
 #ifdef MOZ_B2G_FM
@@ -313,18 +316,33 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsHapticFeedback)
 #endif
 #endif
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(ThirdPartyUtil, Init)
-NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsISmsService, SmsServicesFactory::CreateSmsService)
-NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsISmsDatabaseService, SmsServicesFactory::CreateSmsDatabaseService)
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsISmsService,
+                                         SmsServicesFactory::CreateSmsService)
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsIMmsService,
+                                         SmsServicesFactory::CreateMmsService)
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsIMobileMessageService,
+                                         MobileMessageService::GetInstance)
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsIMobileMessageDatabaseService,
+                                         SmsServicesFactory::CreateMobileMessageDatabaseService)
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsIPowerManagerService,
                                          PowerManagerService::GetInstance)
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsIAlarmHalService,
                                          AlarmHalService::GetInstance)
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsITimeService,
                                          TimeService::GetInstance)
+#ifdef MOZ_GAMEPAD
+using mozilla::dom::GamepadServiceTest;
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(GamepadServiceTest,
+                                         GamepadServiceTest::CreateService)
+#endif
 
 #ifdef MOZ_WIDGET_GONK
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsIGeolocationProvider,
                                          GonkGPSGeolocationProvider::GetSingleton)
+// Since the nsVolumeService constructor calls into nsIPowerManagerService,
+// we need it to be constructed sometime after nsIPowerManagerService.
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsVolumeService,
+                                         nsVolumeService::GetSingleton)
 #endif
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsIMediaManagerService,
                                          MediaManager::GetInstance)
@@ -501,7 +519,6 @@ MAKE_CTOR(CreateNewLayoutDebugger,        nsILayoutDebugger,           NS_NewLay
 #endif
 
 MAKE_CTOR(CreateNewFrameTraversal,      nsIFrameTraversal,      NS_CreateFrameTraversal)
-MAKE_CTOR(CreateNewPresShell,           nsIPresShell,           NS_NewPresShell)
 MAKE_CTOR(CreateNewBoxObject,           nsIBoxObject,           NS_NewBoxObject)
 
 #ifdef MOZ_XUL
@@ -527,13 +544,12 @@ MAKE_CTOR(CreateHTMLDocument,             nsIDocument,                 NS_NewHTM
 MAKE_CTOR(CreateXMLDocument,              nsIDocument,                 NS_NewXMLDocument)
 MAKE_CTOR(CreateSVGDocument,              nsIDocument,                 NS_NewSVGDocument)
 MAKE_CTOR(CreateImageDocument,            nsIDocument,                 NS_NewImageDocument)
+MAKE_CTOR(CreateDOMBlob,                  nsISupports,                 nsDOMMultipartFile::NewBlob)
+MAKE_CTOR(CreateDOMFile,                  nsISupports,                 nsDOMMultipartFile::NewFile)
 MAKE_CTOR(CreateDOMSelection,             nsISelection,                NS_NewDomSelection)
 MAKE_CTOR2(CreateContentIterator,         nsIContentIterator,          NS_NewContentIterator)
 MAKE_CTOR2(CreatePreContentIterator,      nsIContentIterator,          NS_NewPreContentIterator)
 MAKE_CTOR2(CreateSubtreeIterator,         nsIContentIterator,          NS_NewContentSubtreeIterator)
-// CreateHTMLImgElement, see below
-// CreateHTMLOptionElement, see below
-// CreateHTMLAudioElement, see below
 MAKE_CTOR(CreateTextEncoder,              nsIDocumentEncoder,          NS_NewTextEncoder)
 MAKE_CTOR(CreateHTMLCopyTextEncoder,      nsIDocumentEncoder,          NS_NewHTMLCopyTextEncoder)
 MAKE_CTOR(CreateXMLContentSerializer,     nsIContentSerializer,        NS_NewXMLContentSerializer)
@@ -556,9 +572,7 @@ MAKE_CTOR(CreateChildMessageManager,      nsISyncMessageSender,        NS_NewChi
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsDataDocumentContentPolicy)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsNoDataProtocolContentPolicy)
 MAKE_CTOR(CreatePluginDocument,           nsIDocument,                 NS_NewPluginDocument)
-#ifdef MOZ_MEDIA
 MAKE_CTOR(CreateVideoDocument,            nsIDocument,                 NS_NewVideoDocument)
-#endif
 MAKE_CTOR(CreateFocusManager,             nsIFocusManager,      NS_NewFocusManager)
 
 MAKE_CTOR(CreateCanvasRenderingContextWebGL, nsIDOMWebGLRenderingContext, NS_NewCanvasRenderingContextWebGL)
@@ -592,62 +606,12 @@ _InstanceClass##Constructor(nsISupports *aOuter, REFNSIID aIID,               \
     return rv;                                                                \
 }                                                                             \
 
-static nsresult
-CreateHTMLImgElement(nsISupports* aOuter, REFNSIID aIID, void** aResult)
-{
-  *aResult = nullptr;
-  if (aOuter)
-    return NS_ERROR_NO_AGGREGATION;
-  // Note! NS_NewHTMLImageElement is special cased to handle a null nodeinfo
-  nsCOMPtr<nsINodeInfo> ni;
-  nsIContent* inst = NS_NewHTMLImageElement(ni.forget());
-  nsresult rv = NS_ERROR_OUT_OF_MEMORY;
-  if (inst) {
-    NS_ADDREF(inst);
-    rv = inst->QueryInterface(aIID, aResult);
-    NS_RELEASE(inst);
-  }
-  return rv;
-}
-
-static nsresult
-CreateHTMLOptionElement(nsISupports* aOuter, REFNSIID aIID, void** aResult)
-{
-  *aResult = nullptr;
-  if (aOuter)
-    return NS_ERROR_NO_AGGREGATION;
-  // Note! NS_NewHTMLOptionElement is special cased to handle a null nodeinfo
-  nsCOMPtr<nsINodeInfo> ni;
-  nsIContent* inst = NS_NewHTMLOptionElement(ni.forget());
-  nsresult rv = NS_ERROR_OUT_OF_MEMORY;
-  if (inst) {
-    NS_ADDREF(inst);
-    rv = inst->QueryInterface(aIID, aResult);
-    NS_RELEASE(inst);
-  }
-  return rv;
-}
-
-#ifdef MOZ_MEDIA
-static nsresult
-CreateHTMLAudioElement(nsISupports* aOuter, REFNSIID aIID, void** aResult)
-{
-  *aResult = nullptr;
-  if (aOuter)
-    return NS_ERROR_NO_AGGREGATION;
-  // Note! NS_NewHTMLAudioElement is special cased to handle a null nodeinfo
-  nsCOMPtr<nsINodeInfo> ni;
-  nsCOMPtr<nsIContent> inst(NS_NewHTMLAudioElement(ni.forget()));
-  return inst ? inst->QueryInterface(aIID, aResult) : NS_ERROR_OUT_OF_MEMORY;
-}
-#endif
-
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsDOMScriptObjectFactory)
 
 #define NS_GEOLOCATION_CID \
   { 0x1E1C3FF, 0x94A, 0xD048, { 0x44, 0xB4, 0x62, 0xD2, 0x9C, 0x7B, 0x4F, 0x39 } }
 
-NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsGeolocation, Init)
+NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(Geolocation, Init)
 
 #define NS_GEOLOCATION_SERVICE_CID \
   { 0x404d02a, 0x1CA, 0xAAAB, { 0x47, 0x62, 0x94, 0x4b, 0x1b, 0xf2, 0xf7, 0xb5 } }
@@ -658,6 +622,10 @@ NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsGeolocation, Init)
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsGeolocationService, nsGeolocationService::GetGeolocationService)
 
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(AudioChannelService, AudioChannelService::GetAudioChannelService)
+
+#ifdef MOZ_WEBSPEECH
+NS_GENERIC_FACTORY_CONSTRUCTOR(FakeSpeechRecognitionService)
+#endif
 
 NS_GENERIC_FACTORY_CONSTRUCTOR(CSPService)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsMixedContentBlocker)
@@ -671,6 +639,12 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsStructuredCloneContainer)
 
 NS_GENERIC_FACTORY_CONSTRUCTOR(OSFileConstantsService)
 NS_GENERIC_FACTORY_CONSTRUCTOR(TCPSocketChild)
+
+#ifdef ACCESSIBILITY
+#include "nsAccessibilityService.h"
+
+  MAKE_CTOR(CreateA11yService, nsIAccessibilityService, NS_GetAccessibilityService)
+#endif
 
 static nsresult
 Construct_nsIScriptSecurityManager(nsISupports *aOuter, REFNSIID aIID,
@@ -694,7 +668,6 @@ NS_DEFINE_NAMED_CID(NS_FRAME_UTIL_CID);
 NS_DEFINE_NAMED_CID(NS_LAYOUT_DEBUGGER_CID);
 #endif
 NS_DEFINE_NAMED_CID(NS_FRAMETRAVERSAL_CID);
-NS_DEFINE_NAMED_CID(NS_PRESSHELL_CID);
 NS_DEFINE_NAMED_CID(NS_BOXOBJECT_CID);
 #ifdef MOZ_XUL
 NS_DEFINE_NAMED_CID(NS_LISTBOXOBJECT_CID);
@@ -717,15 +690,12 @@ NS_DEFINE_NAMED_CID(NS_HTMLDOCUMENT_CID);
 NS_DEFINE_NAMED_CID(NS_XMLDOCUMENT_CID);
 NS_DEFINE_NAMED_CID(NS_SVGDOCUMENT_CID);
 NS_DEFINE_NAMED_CID(NS_IMAGEDOCUMENT_CID);
+NS_DEFINE_NAMED_CID(NS_DOMMULTIPARTBLOB_CID);
+NS_DEFINE_NAMED_CID(NS_DOMMULTIPARTFILE_CID);
 NS_DEFINE_NAMED_CID(NS_DOMSELECTION_CID);
 NS_DEFINE_NAMED_CID(NS_CONTENTITERATOR_CID);
 NS_DEFINE_NAMED_CID(NS_PRECONTENTITERATOR_CID);
 NS_DEFINE_NAMED_CID(NS_SUBTREEITERATOR_CID);
-NS_DEFINE_NAMED_CID(NS_HTMLIMAGEELEMENT_CID);
-NS_DEFINE_NAMED_CID(NS_HTMLOPTIONELEMENT_CID);
-#ifdef MOZ_MEDIA
-NS_DEFINE_NAMED_CID(NS_HTMLAUDIOELEMENT_CID);
-#endif
 NS_DEFINE_NAMED_CID(NS_CANVASRENDERINGCONTEXTWEBGL_CID);
 NS_DEFINE_NAMED_CID(NS_TEXT_ENCODER_CID);
 NS_DEFINE_NAMED_CID(NS_HTMLCOPY_TEXT_ENCODER_CID);
@@ -753,16 +723,13 @@ NS_DEFINE_NAMED_CID(NS_WINDOWCOMMANDTABLE_CID);
 NS_DEFINE_NAMED_CID(NS_WINDOWCONTROLLER_CID);
 NS_DEFINE_NAMED_CID(NS_PLUGINDOCLOADERFACTORY_CID);
 NS_DEFINE_NAMED_CID(NS_PLUGINDOCUMENT_CID);
-#ifdef MOZ_MEDIA
 NS_DEFINE_NAMED_CID(NS_VIDEODOCUMENT_CID);
-#endif
 NS_DEFINE_NAMED_CID(NS_STYLESHEETSERVICE_CID);
 NS_DEFINE_NAMED_CID(TRANSFORMIIX_XSLT_PROCESSOR_CID);
 NS_DEFINE_NAMED_CID(TRANSFORMIIX_XPATH_EVALUATOR_CID);
 NS_DEFINE_NAMED_CID(TRANSFORMIIX_NODESET_CID);
 NS_DEFINE_NAMED_CID(NS_XMLSERIALIZER_CID);
 NS_DEFINE_NAMED_CID(NS_FILEREADER_CID);
-NS_DEFINE_NAMED_CID(NS_ARCHIVEREADER_CID);
 NS_DEFINE_NAMED_CID(NS_FORMDATA_CID);
 NS_DEFINE_NAMED_CID(NS_BLOBPROTOCOLHANDLER_CID);
 NS_DEFINE_NAMED_CID(NS_MEDIASTREAMPROTOCOLHANDLER_CID);
@@ -771,12 +738,13 @@ NS_DEFINE_NAMED_CID(NS_XMLHTTPREQUEST_CID);
 NS_DEFINE_NAMED_CID(NS_EVENTSOURCE_CID);
 NS_DEFINE_NAMED_CID(NS_DOMACTIVITY_CID);
 NS_DEFINE_NAMED_CID(NS_DOMPARSER_CID);
-NS_DEFINE_NAMED_CID(NS_DOMSTORAGE2_CID);
-NS_DEFINE_NAMED_CID(NS_DOMSTORAGEMANAGER_CID);
+NS_DEFINE_NAMED_CID(NS_DOMSESSIONSTORAGEMANAGER_CID);
+NS_DEFINE_NAMED_CID(NS_DOMLOCALSTORAGEMANAGER_CID);
 NS_DEFINE_NAMED_CID(NS_DOMJSON_CID);
 NS_DEFINE_NAMED_CID(NS_TEXTEDITOR_CID);
 NS_DEFINE_NAMED_CID(INDEXEDDB_MANAGER_CID);
 NS_DEFINE_NAMED_CID(DOMREQUEST_SERVICE_CID);
+NS_DEFINE_NAMED_CID(QUOTA_MANAGER_CID);
 #ifdef MOZ_B2G_RIL
 NS_DEFINE_NAMED_CID(SYSTEMWORKERMANAGER_CID);
 #endif
@@ -830,7 +798,9 @@ NS_DEFINE_NAMED_CID(NS_HAPTICFEEDBACK_CID);
 #endif
 #endif
 NS_DEFINE_NAMED_CID(SMS_SERVICE_CID);
-NS_DEFINE_NAMED_CID(SMS_DATABASE_SERVICE_CID);
+NS_DEFINE_NAMED_CID(MMS_SERVICE_CID);
+NS_DEFINE_NAMED_CID(MOBILE_MESSAGE_SERVICE_CID);
+NS_DEFINE_NAMED_CID(MOBILE_MESSAGE_DATABASE_SERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_POWERMANAGERSERVICE_CID);
 NS_DEFINE_NAMED_CID(OSFILECONSTANTSSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_ALARMHALSERVICE_CID);
@@ -840,6 +810,17 @@ NS_DEFINE_NAMED_CID(NS_TIMESERVICE_CID);
 NS_DEFINE_NAMED_CID(GONK_GPS_GEOLOCATION_PROVIDER_CID);
 #endif
 NS_DEFINE_NAMED_CID(NS_MEDIAMANAGERSERVICE_CID);
+#ifdef MOZ_GAMEPAD
+NS_DEFINE_NAMED_CID(NS_GAMEPAD_TEST_CID);
+#endif
+#ifdef MOZ_WEBSPEECH
+NS_DEFINE_NAMED_CID(NS_FAKE_SPEECH_RECOGNITION_SERVICE_CID);
+NS_DEFINE_NAMED_CID(NS_SYNTHVOICEREGISTRY_CID);
+#endif
+
+#ifdef ACCESSIBILITY
+NS_DEFINE_NAMED_CID(NS_ACCESSIBILITY_SERVICE_CID);
+#endif
 
 static nsresult
 CreateWindowCommandTableConstructor(nsISupports *aOuter,
@@ -977,7 +958,6 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kNS_LAYOUT_DEBUGGER_CID, false, NULL, CreateNewLayoutDebugger },
 #endif
   { &kNS_FRAMETRAVERSAL_CID, false, NULL, CreateNewFrameTraversal },
-  { &kNS_PRESSHELL_CID, false, NULL, CreateNewPresShell },
   { &kNS_BOXOBJECT_CID, false, NULL, CreateNewBoxObject },
 #ifdef MOZ_XUL
   { &kNS_LISTBOXOBJECT_CID, false, NULL, CreateNewListBoxObject },
@@ -1000,15 +980,12 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kNS_XMLDOCUMENT_CID, false, NULL, CreateXMLDocument },
   { &kNS_SVGDOCUMENT_CID, false, NULL, CreateSVGDocument },
   { &kNS_IMAGEDOCUMENT_CID, false, NULL, CreateImageDocument },
+  { &kNS_DOMMULTIPARTBLOB_CID, false, NULL, CreateDOMBlob },
+  { &kNS_DOMMULTIPARTFILE_CID, false, NULL, CreateDOMFile },
   { &kNS_DOMSELECTION_CID, false, NULL, CreateDOMSelection },
   { &kNS_CONTENTITERATOR_CID, false, NULL, CreateContentIterator },
   { &kNS_PRECONTENTITERATOR_CID, false, NULL, CreatePreContentIterator },
   { &kNS_SUBTREEITERATOR_CID, false, NULL, CreateSubtreeIterator },
-  { &kNS_HTMLIMAGEELEMENT_CID, false, NULL, CreateHTMLImgElement },
-  { &kNS_HTMLOPTIONELEMENT_CID, false, NULL, CreateHTMLOptionElement },
-#ifdef MOZ_MEDIA
-  { &kNS_HTMLAUDIOELEMENT_CID, false, NULL, CreateHTMLAudioElement },
-#endif
   { &kNS_CANVASRENDERINGCONTEXTWEBGL_CID, false, NULL, CreateCanvasRenderingContextWebGL },
   { &kNS_TEXT_ENCODER_CID, false, NULL, CreateTextEncoder },
   { &kNS_HTMLCOPY_TEXT_ENCODER_CID, false, NULL, CreateHTMLCopyTextEncoder },
@@ -1036,16 +1013,13 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kNS_WINDOWCONTROLLER_CID, false, NULL, CreateWindowControllerWithSingletonCommandTable },
   { &kNS_PLUGINDOCLOADERFACTORY_CID, false, NULL, CreateContentDLF },
   { &kNS_PLUGINDOCUMENT_CID, false, NULL, CreatePluginDocument },
-#ifdef MOZ_MEDIA
   { &kNS_VIDEODOCUMENT_CID, false, NULL, CreateVideoDocument },
-#endif
   { &kNS_STYLESHEETSERVICE_CID, false, NULL, nsStyleSheetServiceConstructor },
   { &kTRANSFORMIIX_XSLT_PROCESSOR_CID, false, NULL, txMozillaXSLTProcessorConstructor },
   { &kTRANSFORMIIX_XPATH_EVALUATOR_CID, false, NULL, nsXPathEvaluatorConstructor },
   { &kTRANSFORMIIX_NODESET_CID, false, NULL, txNodeSetAdaptorConstructor },
   { &kNS_XMLSERIALIZER_CID, false, NULL, nsDOMSerializerConstructor },
   { &kNS_FILEREADER_CID, false, NULL, nsDOMFileReaderConstructor },
-  { &kNS_ARCHIVEREADER_CID, false, NULL, ArchiveReaderConstructor },
   { &kNS_FORMDATA_CID, false, NULL, nsFormDataConstructor },
   { &kNS_BLOBPROTOCOLHANDLER_CID, false, NULL, nsBlobProtocolHandlerConstructor },
   { &kNS_MEDIASTREAMPROTOCOLHANDLER_CID, false, NULL, nsMediaStreamProtocolHandlerConstructor },
@@ -1054,12 +1028,13 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kNS_EVENTSOURCE_CID, false, NULL, EventSourceConstructor },
   { &kNS_DOMACTIVITY_CID, false, NULL, ActivityConstructor },
   { &kNS_DOMPARSER_CID, false, NULL, nsDOMParserConstructor },
-  { &kNS_DOMSTORAGE2_CID, false, NULL, NS_NewDOMStorage2 },
-  { &kNS_DOMSTORAGEMANAGER_CID, false, NULL, nsDOMStorageManagerConstructor },
+  { &kNS_DOMSESSIONSTORAGEMANAGER_CID, false, NULL, DOMSessionStorageManagerConstructor },
+  { &kNS_DOMLOCALSTORAGEMANAGER_CID, false, NULL, DOMLocalStorageManagerConstructor },
   { &kNS_DOMJSON_CID, false, NULL, NS_NewJSON },
   { &kNS_TEXTEDITOR_CID, false, NULL, nsPlaintextEditorConstructor },
   { &kINDEXEDDB_MANAGER_CID, false, NULL, IndexedDatabaseManagerConstructor },
   { &kDOMREQUEST_SERVICE_CID, false, NULL, DOMRequestServiceConstructor },
+  { &kQUOTA_MANAGER_CID, false, NULL, QuotaManagerConstructor },
 #ifdef MOZ_B2G_RIL
   { &kSYSTEMWORKERMANAGER_CID, true, NULL, SystemWorkerManagerConstructor },
 #endif
@@ -1085,9 +1060,13 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kNS_EDITINGCOMMANDTABLE_CID, false, NULL, nsEditingCommandTableConstructor },
   { &kNS_TEXTSERVICESDOCUMENT_CID, false, NULL, nsTextServicesDocumentConstructor },
   { &kNS_GEOLOCATION_SERVICE_CID, false, NULL, nsGeolocationServiceConstructor },
-  { &kNS_GEOLOCATION_CID, false, NULL, nsGeolocationConstructor },
+  { &kNS_GEOLOCATION_CID, false, NULL, GeolocationConstructor },
   { &kNS_AUDIOCHANNEL_SERVICE_CID, false, NULL, AudioChannelServiceConstructor },
   { &kNS_FOCUSMANAGER_CID, false, NULL, CreateFocusManager },
+#ifdef MOZ_WEBSPEECH
+  { &kNS_FAKE_SPEECH_RECOGNITION_SERVICE_CID, false, NULL, FakeSpeechRecognitionServiceConstructor },
+  { &kNS_SYNTHVOICEREGISTRY_CID, true, NULL, nsSynthVoiceRegistryConstructor },
+#endif
   { &kCSPSERVICE_CID, false, NULL, CSPServiceConstructor },
   { &kNS_MIXEDCONTENTBLOCKER_CID, false, NULL, nsMixedContentBlockerConstructor },
   { &kNS_EVENTLISTENERSERVICE_CID, false, NULL, CreateEventListenerService },
@@ -1109,7 +1088,9 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kTHIRDPARTYUTIL_CID, false, NULL, ThirdPartyUtilConstructor },
   { &kNS_STRUCTUREDCLONECONTAINER_CID, false, NULL, nsStructuredCloneContainerConstructor },
   { &kSMS_SERVICE_CID, false, NULL, nsISmsServiceConstructor },
-  { &kSMS_DATABASE_SERVICE_CID, false, NULL, nsISmsDatabaseServiceConstructor },
+  { &kMMS_SERVICE_CID, false, NULL, nsIMmsServiceConstructor },
+  { &kMOBILE_MESSAGE_SERVICE_CID, false, NULL, nsIMobileMessageServiceConstructor },
+  { &kMOBILE_MESSAGE_DATABASE_SERVICE_CID, false, NULL, nsIMobileMessageDatabaseServiceConstructor },
   { &kNS_POWERMANAGERSERVICE_CID, false, NULL, nsIPowerManagerServiceConstructor },
   { &kOSFILECONSTANTSSERVICE_CID, true, NULL, OSFileConstantsServiceConstructor },
   { &kNS_ALARMHALSERVICE_CID, false, NULL, nsIAlarmHalServiceConstructor },
@@ -1119,6 +1100,12 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kGONK_GPS_GEOLOCATION_PROVIDER_CID, false, NULL, nsIGeolocationProviderConstructor },
 #endif
   { &kNS_MEDIAMANAGERSERVICE_CID, false, NULL, nsIMediaManagerServiceConstructor },
+#ifdef MOZ_GAMEPAD
+  { &kNS_GAMEPAD_TEST_CID, false, NULL, GamepadServiceTestConstructor },
+#endif
+#ifdef ACCESSIBILITY
+  { &kNS_ACCESSIBILITY_SERVICE_CID, false, NULL, CreateA11yService },
+#endif
   { NULL }
 };
 
@@ -1143,17 +1130,17 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { NS_NAMESPACEMANAGER_CONTRACTID, &kNS_NAMESPACEMANAGER_CID },
   { "@mozilla.org/xml/xml-document;1", &kNS_XMLDOCUMENT_CID },
   { "@mozilla.org/svg/svg-document;1", &kNS_SVGDOCUMENT_CID },
+  { NS_DOMMULTIPARTBLOB_CONTRACTID, &kNS_DOMMULTIPARTBLOB_CID },
+  { NS_DOMMULTIPARTFILE_CONTRACTID, &kNS_DOMMULTIPARTFILE_CID },
   { "@mozilla.org/content/dom-selection;1", &kNS_DOMSELECTION_CID },
   { "@mozilla.org/content/post-content-iterator;1", &kNS_CONTENTITERATOR_CID },
   { "@mozilla.org/content/pre-content-iterator;1", &kNS_PRECONTENTITERATOR_CID },
   { "@mozilla.org/content/subtree-content-iterator;1", &kNS_SUBTREEITERATOR_CID },
-  { NS_HTMLIMGELEMENT_CONTRACTID, &kNS_HTMLIMAGEELEMENT_CID },
-  { NS_HTMLOPTIONELEMENT_CONTRACTID, &kNS_HTMLOPTIONELEMENT_CID },
-#ifdef MOZ_MEDIA
-  { NS_HTMLAUDIOELEMENT_CONTRACTID, &kNS_HTMLAUDIOELEMENT_CID },
-#endif
   { "@mozilla.org/content/canvas-rendering-context;1?id=moz-webgl", &kNS_CANVASRENDERINGCONTEXTWEBGL_CID },
   { "@mozilla.org/content/canvas-rendering-context;1?id=experimental-webgl", &kNS_CANVASRENDERINGCONTEXTWEBGL_CID },
+#ifdef MOZ_PHOENIX // Not MOZ_FENNEC or MOZ_B2G yet.
+  { "@mozilla.org/content/canvas-rendering-context;1?id=webgl", &kNS_CANVASRENDERINGCONTEXTWEBGL_CID },
+#endif
   { NS_DOC_ENCODER_CONTRACTID_BASE "text/xml", &kNS_TEXT_ENCODER_CID },
   { NS_DOC_ENCODER_CONTRACTID_BASE "application/xml", &kNS_TEXT_ENCODER_CID },
   { NS_DOC_ENCODER_CONTRACTID_BASE "application/xhtml+xml", &kNS_TEXT_ENCODER_CID },
@@ -1190,7 +1177,6 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { TRANSFORMIIX_NODESET_CONTRACTID, &kTRANSFORMIIX_NODESET_CID },
   { NS_XMLSERIALIZER_CONTRACTID, &kNS_XMLSERIALIZER_CID },
   { NS_FILEREADER_CONTRACTID, &kNS_FILEREADER_CID },
-  { NS_ARCHIVEREADER_CONTRACTID, &kNS_ARCHIVEREADER_CID },
   { NS_FORMDATA_CONTRACTID, &kNS_FORMDATA_CID },
   { NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX BLOBURI_SCHEME, &kNS_BLOBPROTOCOLHANDLER_CID },
   { NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX MEDIASTREAMURI_SCHEME, &kNS_MEDIASTREAMPROTOCOLHANDLER_CID },
@@ -1198,12 +1184,15 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { NS_EVENTSOURCE_CONTRACTID, &kNS_EVENTSOURCE_CID },
   { NS_DOMACTIVITY_CONTRACTID, &kNS_DOMACTIVITY_CID },
   { NS_DOMPARSER_CONTRACTID, &kNS_DOMPARSER_CID },
-  { "@mozilla.org/dom/storage;2", &kNS_DOMSTORAGE2_CID },
-  { "@mozilla.org/dom/storagemanager;1", &kNS_DOMSTORAGEMANAGER_CID },
+  { "@mozilla.org/dom/localStorage-manager;1", &kNS_DOMLOCALSTORAGEMANAGER_CID },
+  // Keeping the old ContractID for backward compatibility
+  { "@mozilla.org/dom/storagemanager;1", &kNS_DOMLOCALSTORAGEMANAGER_CID },
+  { "@mozilla.org/dom/sessionStorage-manager;1", &kNS_DOMSESSIONSTORAGEMANAGER_CID },
   { "@mozilla.org/dom/json;1", &kNS_DOMJSON_CID },
   { "@mozilla.org/editor/texteditor;1", &kNS_TEXTEDITOR_CID },
   { INDEXEDDB_MANAGER_CONTRACTID, &kINDEXEDDB_MANAGER_CID },
   { DOMREQUEST_SERVICE_CONTRACTID, &kDOMREQUEST_SERVICE_CID },
+  { QUOTA_MANAGER_CONTRACTID, &kQUOTA_MANAGER_CID },
 #ifdef MOZ_B2G_RIL
   { SYSTEMWORKERMANAGER_CONTRACTID, &kSYSTEMWORKERMANAGER_CID },
 #endif
@@ -1230,6 +1219,10 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { "@mozilla.org/geolocation;1", &kNS_GEOLOCATION_CID },
   { "@mozilla.org/audiochannel/service;1", &kNS_AUDIOCHANNEL_SERVICE_CID },
   { "@mozilla.org/focus-manager;1", &kNS_FOCUSMANAGER_CID },
+#ifdef MOZ_WEBSPEECH
+  { NS_SPEECH_RECOGNITION_SERVICE_CONTRACTID_PREFIX "fake", &kNS_FAKE_SPEECH_RECOGNITION_SERVICE_CID },
+  { NS_SYNTHVOICEREGISTRY_CONTRACTID, &kNS_SYNTHVOICEREGISTRY_CID },
+#endif
   { CSPSERVICE_CONTRACTID, &kCSPSERVICE_CID },
   { NS_MIXEDCONTENTBLOCKER_CONTRACTID, &kNS_MIXEDCONTENTBLOCKER_CID },
   { NS_EVENTLISTENERSERVICE_CONTRACTID, &kNS_EVENTLISTENERSERVICE_CID },
@@ -1252,7 +1245,9 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { THIRDPARTYUTIL_CONTRACTID, &kTHIRDPARTYUTIL_CID },
   { NS_STRUCTUREDCLONECONTAINER_CONTRACTID, &kNS_STRUCTUREDCLONECONTAINER_CID },
   { SMS_SERVICE_CONTRACTID, &kSMS_SERVICE_CID },
-  { SMS_DATABASE_SERVICE_CONTRACTID, &kSMS_DATABASE_SERVICE_CID },
+  { MMS_SERVICE_CONTRACTID, &kMMS_SERVICE_CID },
+  { MOBILE_MESSAGE_SERVICE_CONTRACTID, &kMOBILE_MESSAGE_SERVICE_CID },
+  { MOBILE_MESSAGE_DATABASE_SERVICE_CONTRACTID, &kMOBILE_MESSAGE_DATABASE_SERVICE_CID },
   { POWERMANAGERSERVICE_CONTRACTID, &kNS_POWERMANAGERSERVICE_CID },
   { OSFILECONSTANTSSERVICE_CONTRACTID, &kOSFILECONSTANTSSERVICE_CID },
   { ALARMHALSERVICE_CONTRACTID, &kNS_ALARMHALSERVICE_CID },
@@ -1261,20 +1256,19 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
 #ifdef MOZ_WIDGET_GONK
   { GONK_GPS_GEOLOCATION_PROVIDER_CONTRACTID, &kGONK_GPS_GEOLOCATION_PROVIDER_CID },
 #endif
+#ifdef MOZ_GAMEPAD
+  { NS_GAMEPAD_TEST_CONTRACTID, &kNS_GAMEPAD_TEST_CID },
+#endif
   { MEDIAMANAGERSERVICE_CONTRACTID, &kNS_MEDIAMANAGERSERVICE_CID },
+#ifdef ACCESSIBILITY
+  { "@mozilla.org/accessibilityService;1", &kNS_ACCESSIBILITY_SERVICE_CID },
+  { "@mozilla.org/accessibleRetrieval;1", &kNS_ACCESSIBILITY_SERVICE_CID },
+#endif
   { NULL }
 };
 
 static const mozilla::Module::CategoryEntry kLayoutCategories[] = {
   XPCONNECT_CATEGORIES
-  { JAVASCRIPT_GLOBAL_CONSTRUCTOR_CATEGORY, "Image", NS_HTMLIMGELEMENT_CONTRACTID },
-  { JAVASCRIPT_GLOBAL_CONSTRUCTOR_PROTO_ALIAS_CATEGORY, "Image", "HTMLImageElement" },
-  { JAVASCRIPT_GLOBAL_CONSTRUCTOR_CATEGORY, "Option", NS_HTMLOPTIONELEMENT_CONTRACTID },
-  { JAVASCRIPT_GLOBAL_CONSTRUCTOR_PROTO_ALIAS_CATEGORY, "Option", "HTMLOptionElement" },
-#ifdef MOZ_MEDIA
-  { JAVASCRIPT_GLOBAL_CONSTRUCTOR_CATEGORY, "Audio", NS_HTMLAUDIOELEMENT_CONTRACTID },
-  { JAVASCRIPT_GLOBAL_CONSTRUCTOR_PROTO_ALIAS_CATEGORY, "Audio", "HTMLAudioElement" },
-#endif
   { "content-policy", NS_DATADOCUMENTCONTENTPOLICY_CONTRACTID, NS_DATADOCUMENTCONTENTPOLICY_CONTRACTID },
   { "content-policy", NS_NODATAPROTOCOLCONTENTPOLICY_CONTRACTID, NS_NODATAPROTOCOLCONTENTPOLICY_CONTRACTID },
   { "content-policy", "CSPService", CSPSERVICE_CONTRACTID },
@@ -1282,7 +1276,7 @@ static const mozilla::Module::CategoryEntry kLayoutCategories[] = {
   { "net-channel-event-sinks", "CSPService", CSPSERVICE_CONTRACTID },
   { JAVASCRIPT_GLOBAL_STATIC_NAMESET_CATEGORY, "PrivilegeManager", NS_SECURITYNAMESET_CONTRACTID },
   { "app-startup", "Script Security Manager", "service," NS_SCRIPTSECURITYMANAGER_CONTRACTID },
-  { TOPIC_WEB_APP_CLEAR_DATA, "IndexedDatabaseManager", "service," INDEXEDDB_MANAGER_CONTRACTID },
+  { TOPIC_WEB_APP_CLEAR_DATA, "QuotaManager", "service," QUOTA_MANAGER_CONTRACTID },
 #ifdef MOZ_WIDGET_GONK
   { "app-startup", "Volume Service", "service," NS_VOLUMESERVICE_CONTRACTID },
 #endif

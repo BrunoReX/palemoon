@@ -17,8 +17,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsIURI.h"
 #include "nsIDocShell.h"
-#include "nsIEnumerator.h"
-#include "nsIDocShellTreeItem.h"
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsIDocument.h"
@@ -499,12 +497,15 @@ nsWebBrowserFind::GetSearchLimits(nsIDOMRange* aSearchRange,
     // There is a selection.
     int32_t count = -1;
     nsresult rv = aSel->GetRangeCount(&count);
+    NS_ENSURE_SUCCESS(rv, rv);
     if (count < 1)
         return SetRangeAroundDocument(aSearchRange, aStartPt, aEndPt, aDoc);
 
     // Need bodyNode, for the start/end of the document
     nsCOMPtr<nsIDOMNode> bodyNode;
     rv = GetRootNode(aDoc, getter_AddRefs(bodyNode));
+    NS_ENSURE_SUCCESS(rv, rv);
+
     nsCOMPtr<nsIContent> bodyContent (do_QueryInterface(bodyNode));
     NS_ENSURE_ARG_POINTER(bodyContent);
 
@@ -725,11 +726,11 @@ nsresult nsWebBrowserFind::SearchInFrame(nsIDOMWindow* aWindow,
     GetFrameSelection(aWindow, getter_AddRefs(sel));
     NS_ENSURE_ARG_POINTER(sel);
 
-    nsCOMPtr<nsIDOMRange> searchRange = nsFind::CreateRange();
+    nsCOMPtr<nsIDOMRange> searchRange = nsFind::CreateRange(theDoc);
     NS_ENSURE_ARG_POINTER(searchRange);
-    nsCOMPtr<nsIDOMRange> startPt  = nsFind::CreateRange();
+    nsCOMPtr<nsIDOMRange> startPt  = nsFind::CreateRange(theDoc);
     NS_ENSURE_ARG_POINTER(startPt);
-    nsCOMPtr<nsIDOMRange> endPt  = nsFind::CreateRange();
+    nsCOMPtr<nsIDOMRange> endPt  = nsFind::CreateRange(theDoc);
     NS_ENSURE_ARG_POINTER(endPt);
 
     nsCOMPtr<nsIDOMRange> foundRange;

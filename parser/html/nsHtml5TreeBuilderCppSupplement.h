@@ -722,11 +722,21 @@ nsHtml5TreeBuilder::StartPlainTextViewSource(const nsAutoString& aTitle)
            nsHtml5ViewSourceUtils::NewBodyAttributes(),
            false);
 
-  StartPlainText();
+  StartPlainTextBody();
 }
 
 void
 nsHtml5TreeBuilder::StartPlainText()
+{
+  startTag(nsHtml5ElementName::ELT_LINK,
+           nsHtml5PlainTextUtils::NewLinkAttributes(),
+           false);
+
+  StartPlainTextBody();
+}
+
+void
+nsHtml5TreeBuilder::StartPlainTextBody()
 {
   startTag(nsHtml5ElementName::ELT_PRE,
            nsHtml5HtmlAttributes::EMPTY_ATTRIBUTES,
@@ -741,6 +751,16 @@ nsHtml5TreeBuilder::documentMode(nsHtml5DocumentMode m)
   nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
   NS_ASSERTION(treeOp, "Tree op allocation failed.");
   treeOp->Init(m);
+}
+
+nsIContent**
+nsHtml5TreeBuilder::getDocumentFragmentForTemplate(nsIContent** aTemplate)
+{
+  nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
+  NS_ASSERTION(treeOp, "Tree op allocation failed.");
+  nsIContent** fragHandle = AllocateContentHandle();
+  treeOp->Init(eTreeOpGetDocumentFragmentForTemplate, aTemplate, fragHandle);
+  return fragHandle;
 }
 
 // Error reporting

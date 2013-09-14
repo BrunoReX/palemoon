@@ -6,6 +6,8 @@
 "use strict";
 
 SimpleTest.waitForExplicitFinish();
+browserElementTestHelpers.setEnabledPref(true);
+browserElementTestHelpers.addPermission();
 
 var initialScreenshotArrayBuffer;
 
@@ -26,11 +28,8 @@ function arrayBuffersEqual(a, b) {
 }
 
 function runTest() {
-  browserElementTestHelpers.setEnabledPref(true);
-  browserElementTestHelpers.addPermission();
-
   var iframe = document.createElement('iframe');
-  iframe.mozbrowser = true;
+  SpecialPowers.wrap(iframe).mozbrowser = true;
 
   // Our child will create two iframes, so make sure this iframe is big enough
   // to show both of them without scrolling, so taking a screenshot gets both
@@ -77,4 +76,4 @@ function runTest() {
   iframe.src = 'http://example.com/tests/dom/browser-element/mochitest/file_browserElement_XFrameOptionsDeny.html';
 }
 
-runTest();
+addEventListener('testready', runTest);

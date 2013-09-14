@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_architecture_arm_h__
-#define jsion_architecture_arm_h__
+#ifndef ion_arm_Architecture_arm_h
+#define ion_arm_Architecture_arm_h
 
 #include <limits.h>
 // gcc appears to use __ARM_PCS_VFP to denote that the target is a hard-float target.
@@ -16,7 +15,7 @@
 namespace js {
 namespace ion {
 
-static const ptrdiff_t STACK_SLOT_SIZE       = 4;
+static const uint32_t STACK_SLOT_SIZE       = 4;
 static const uint32_t DOUBLE_STACK_ALIGNMENT = 2;
 
 // In bytes: slots needed for potential memory->memory move spills.
@@ -33,6 +32,7 @@ static const int32_t INVALID_STACK_SLOT      = -1;
 static const int32_t NUNBOX32_TYPE_OFFSET    = 4;
 static const int32_t NUNBOX32_PAYLOAD_OFFSET = 0;
 
+static const uint32_t ShadowStackSpace = 0;
 ////
 // These offsets are related to bailouts.
 ////
@@ -75,8 +75,8 @@ class Registers
     typedef RegisterID Code;
 
     static const char *GetName(Code code) {
-        static const char *Names[] = { "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
-                                       "r8", "r9", "r10", "r11", "r12", "sp", "r14", "pc"};
+        static const char * const Names[] = { "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
+                                              "r8", "r9", "r10", "r11", "r12", "sp", "r14", "pc"};
         return Names[code];
     }
 
@@ -181,8 +181,8 @@ class FloatRegisters
     typedef FPRegisterID Code;
 
     static const char *GetName(Code code) {
-        static const char *Names[] = { "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7",
-                                       "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15"};
+        static const char * const Names[] = { "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7",
+                                              "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15"};
         return Names[code];
     }
 
@@ -209,9 +209,10 @@ class FloatRegisters
 
 bool hasMOVWT();
 bool hasVFPv3();
+bool hasVFP();
 bool has16DP();
 
 } // namespace ion
 } // namespace js
 
-#endif // jsion_architecture_arm_h__
+#endif /* ion_arm_Architecture_arm_h */

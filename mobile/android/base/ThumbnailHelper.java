@@ -6,11 +6,11 @@
 package org.mozilla.gecko;
 
 import org.mozilla.gecko.db.BrowserDB;
+import org.mozilla.gecko.gfx.BitmapUtils;
 import org.mozilla.gecko.gfx.IntSize;
 import org.mozilla.gecko.mozglue.DirectBufferAllocator;
 
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.util.Log;
 
 import java.nio.ByteBuffer;
@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * applied between thumbnail processing. This allows a single thumbnail buffer to
  * be used for all thumbnails.
  */
-final class ThumbnailHelper {
+public final class ThumbnailHelper {
     private static final String LOGTAG = "GeckoThumbnailHelper";
 
     public static final float THUMBNAIL_ASPECT_RATIO = 0.714f;  // this is a 5:7 ratio (as per UX decision)
@@ -52,7 +52,7 @@ final class ThumbnailHelper {
 
     private ThumbnailHelper() {
         mPendingThumbnails = new LinkedList<Tab>();
-        mPendingWidth = new AtomicInteger((int)GeckoApp.mAppContext.getResources().getDimension(R.dimen.tab_thumbnail_width));
+        mPendingWidth = new AtomicInteger((int)GeckoAppShell.getContext().getResources().getDimension(R.dimen.tab_thumbnail_width));
         mWidth = -1;
         mHeight = -1;
     }
@@ -66,7 +66,7 @@ final class ThumbnailHelper {
         if (tab.getState() == Tab.STATE_DELAYED) {
             String url = tab.getURL();
             if (url != null) {
-                byte[] thumbnail = BrowserDB.getThumbnailForUrl(GeckoApp.mAppContext.getContentResolver(), url);
+                byte[] thumbnail = BrowserDB.getThumbnailForUrl(GeckoAppShell.getContext().getContentResolver(), url);
                 if (thumbnail != null) {
                     setTabThumbnail(tab, null, thumbnail);
                 }
@@ -187,21 +187,17 @@ final class ThumbnailHelper {
     }
 
     private void setTabThumbnail(Tab tab, Bitmap bitmap, byte[] compressed) {
-        try {
-            if (bitmap == null) {
-                if (compressed == null) {
-                    Log.w(LOGTAG, "setTabThumbnail: one of bitmap or compressed must be non-null!");
-                    return;
-                }
-                bitmap = BitmapFactory.decodeByteArray(compressed, 0, compressed.length);
+        if (bitmap == null) {
+            if (compressed == null) {
+                Log.w(LOGTAG, "setTabThumbnail: one of bitmap or compressed must be non-null!");
+                return;
             }
-            tab.updateThumbnail(bitmap);
-        } catch (OutOfMemoryError ome) {
-            Log.w(LOGTAG, "setTabThumbnail: decoding byte array of length " + compressed.length + " ran out of memory");
+            bitmap = BitmapUtils.decodeByteArray(compressed);
         }
+        tab.updateThumbnail(bitmap);
     }
 
     private boolean shouldUpdateThumbnail(Tab tab) {
-        return (Tabs.getInstance().isSelectedTab(tab) || GeckoApp.mAppContext.areTabsShown());
+        return (Tabs.getInstance().isSelectedTab(tab) || (GeckoAppShell.getGeckoInterface() != null && GeckoAppShell.getGeckoInterface().areTabsShown()));
     }
 }

@@ -21,7 +21,7 @@
 #include "nsWidgetInitData.h"
 #include "nsTArray.h"
 #include "nsXULAppAPI.h"
-#include "LayersTypes.h"
+#include "mozilla/layers/LayersTypes.h"
 
 // forward declarations
 class   nsFontMetrics;
@@ -45,7 +45,7 @@ namespace layers {
 class Composer2D;
 class CompositorChild;
 class LayerManager;
-class PLayersChild;
+class PLayerTransactionChild;
 }
 }
 
@@ -92,8 +92,8 @@ typedef nsEventStatus (* EVENT_CALLBACK)(nsGUIEvent *event);
 #endif
 
 #define NS_IWIDGET_IID \
-  { 0x476D5716, 0xE225, 0x4497, \
-    { 0x80, 0x41, 0x92, 0xF8, 0x67, 0x59, 0xC4, 0x38 } }
+{ 0x5b9152, 0x56c8, 0x4a2d, \
+  { 0x94, 0x9e, 0xec, 0xf5, 0x3, 0x83, 0x3d, 0x48 } }
 
 /*
  * Window shadow styles
@@ -188,11 +188,12 @@ enum nsTopLevelWidgetZPlacement { // for PlaceBehind()
  * Preference for receiving IME updates
  *
  * If mWantUpdates is true, nsTextStateManager will observe text change and
- * selection change and call nsIWidget::OnIMETextChange() and
- * nsIWidget::OnIMESelectionChange(). The observing cost is very expensive.
+ * selection change and call nsIWidget::NotifyIMEOfTextChange() and
+ * nsIWidget::NotifyIME(NOTIFY_IME_OF_SELECTION_CHANGE). The observing cost is
+ * very expensive.
  * If the IME implementation on a particular platform doesn't care about
- * OnIMETextChange and OnIMESelectionChange, they should set mWantUpdates to
- * false to avoid the cost.
+ * NotifyIMEOfTextChange and NotifyIME(NOTIFY_IME_OF_SELECTION_CHANGE), they
+ * should set mWantUpdates to false to avoid the cost.
  *
  * If mWantHints is true, PuppetWidget will forward the content of text fields
  * to the chrome process to be cached. This way we return the cached content
@@ -304,6 +305,11 @@ struct IMEState {
 
 struct InputContext {
   InputContext() : mNativeIMEContext(nullptr) {}
+
+  bool IsPasswordEditor() const
+  {
+    return mHTMLInputType.LowerCaseEqualsLiteral("password");
+  }
 
   IMEState mIMEState;
 
@@ -418,7 +424,8 @@ class nsIWidget : public nsISupports {
     typedef mozilla::layers::CompositorChild CompositorChild;
     typedef mozilla::layers::LayerManager LayerManager;
     typedef mozilla::layers::LayersBackend LayersBackend;
-    typedef mozilla::layers::PLayersChild PLayersChild;
+    typedef mozilla::layers::PLayerTransactionChild PLayerTransactionChild;
+    typedef mozilla::widget::NotificationToIME NotificationToIME;
     typedef mozilla::widget::IMEState IMEState;
     typedef mozilla::widget::InputContext InputContext;
     typedef mozilla::widget::InputContextAction InputContextAction;
@@ -604,6 +611,19 @@ class nsIWidget : public nsISupports {
      * overriding the system setting.
      */
     double GetDefaultScale();
+
+    /**
+     * Return the Gecko override of the system default scale, if any;
+     * returns <= 0.0 if the system scale should be used as-is.
+     * nsIWidget::GetDefaultScale() [above] takes this into account.
+     * It is exposed here so that code that wants to check for a
+     * default-scale override without having a widget on hand can
+     * easily access the same value.
+     * Note that any scale override is a browser-wide value, whereas
+     * the default GetDefaultScale value (when no override is present)
+     * may vary between widgets (or screens).
+     */
+    static double DefaultScaleOverride();
 
     /**
      * Return the first child of this widget.  Will return null if
@@ -833,7 +853,7 @@ class nsIWidget : public nsISupports {
      * Return size mode (minimized, maximized, normalized).
      * Returns a value from nsSizeMode (see nsGUIEvent.h)
      */
-    NS_IMETHOD GetSizeMode(int32_t* aMode) = 0;
+    virtual int32_t SizeMode() = 0;
 
     /**
      * Enable or disable this Widget
@@ -1133,24 +1153,42 @@ class nsIWidget : public nsISupports {
      * type |aBackendHint| instead of what would normally be created.
      * LAYERS_NONE means "no hint".
      */
-    virtual LayerManager* GetLayerManager(PLayersChild* aShadowManager,
+    virtual LayerManager* GetLayerManager(PLayerTransactionChild* aShadowManager,
                                           LayersBackend aBackendHint,
                                           LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
                                           bool* aAllowRetaining = nullptr) = 0;
 
     /**
+     * Called before each layer manager transaction to allow any preparation
+     * for DrawWindowUnderlay/Overlay that needs to be on the main thread.
+     *
+     * Always called on the main thread.
+     */
+    virtual void PrepareWindowEffects() = 0;
+
+    /**
+     * Called when shutting down the LayerManager to clean-up any cached resources.
+     *
+     * Always called from the compositing thread, which may be the main-thread if
+     * OMTC is not enabled.
+     */
+    virtual void CleanupWindowEffects() = 0;
+
+    virtual void PreRender(LayerManager* aManager) = 0;
+
+    /**
      * Called before the LayerManager draws the layer tree.
      *
-     * @param aManager The drawing LayerManager.
-     * @param aWidgetRect The current widget rect that is being drawn.
+     * Always called from the compositing thread, which may be the main-thread if
+     * OMTC is not enabled.
      */
     virtual void DrawWindowUnderlay(LayerManager* aManager, nsIntRect aRect) = 0;
 
     /**
      * Called after the LayerManager draws the layer tree
      *
-     * @param aManager The drawing LayerManager.
-     * @param aRect Current widget rect that is being drawn.
+     * Always called from the compositing thread, which may be the main-thread if
+     * OMTC is not enabled.
      */
     virtual void DrawWindowOverlay(LayerManager* aManager, nsIntRect aRect) = 0;
 
@@ -1276,24 +1314,6 @@ class nsIWidget : public nsISupports {
      * included, including those not targeted at this nsIwidget instance.
      */
     virtual bool HasPendingInputEvent() = 0;
-
-    /**
-     * Called when when we need to begin secure keyboard input, such as when a password field
-     * gets focus.
-     *
-     * NOTE: Calls to this method may not be nested and you can only enable secure keyboard input
-     * for one widget at a time.
-     */
-    NS_IMETHOD BeginSecureKeyboardInput() = 0;
-
-    /**
-     * Called when when we need to end secure keyboard input, such as when a password field
-     * loses focus.
-     *
-     * NOTE: Calls to this method may not be nested and you can only enable secure keyboard input
-     * for one widget at a time.
-     */
-    NS_IMETHOD EndSecureKeyboardInput() = 0;
 
     /**
      * Set the background color of the window titlebar for this widget. On Mac,
@@ -1486,25 +1506,10 @@ class nsIWidget : public nsISupports {
      */
     virtual nsresult ForceUpdateNativeMenuAt(const nsAString& indexString) = 0;
 
-    /*
-     * Force Input Method Editor to commit the uncommitted input
+    /**
+     * Notify IME of the specified notification.
      */
-    NS_IMETHOD ResetInputState()=0;
-
-    /*
-     * Following methods relates to IME 'Opened'/'Closed' state.
-     * 'Opened' means the user can input any character. I.e., users can input Japanese  
-     * and other characters. The user can change the state to 'Closed'.
-     * 'Closed' means the user can input ASCII characters only. This is the same as a
-     * non-IME environment. The user can change the state to 'Opened'.
-     * For more information is here.
-     * http://bugzilla.mozilla.org/show_bug.cgi?id=16940#c48
-     */
-
-    /*
-     * Destruct and don't commit the IME composition string.
-     */
-    NS_IMETHOD CancelIMEComposition() = 0;
+    NS_IMETHOD NotifyIME(NotificationToIME aNotification) = 0;
 
     /*
      * Notifies the input context changes.
@@ -1534,27 +1539,14 @@ class nsIWidget : public nsISupports {
     NS_IMETHOD GetToggledKeyState(uint32_t aKeyCode, bool* aLEDState) = 0;
 
     /*
-     * An editable node (i.e. input/textarea/design mode document)
-     *  is receiving or giving up focus
-     * aFocus is true if node is receiving focus
-     * aFocus is false if node is giving up focus (blur)
-     */
-    NS_IMETHOD OnIMEFocusChange(bool aFocus) = 0;
-
-    /*
      * Text content of the focused node has changed
      * aStart is the starting offset of the change
      * aOldEnd is the ending offset of the change
      * aNewEnd is the caret offset after the change
      */
-    NS_IMETHOD OnIMETextChange(uint32_t aStart,
-                               uint32_t aOldEnd,
-                               uint32_t aNewEnd) = 0;
-
-    /*
-     * Selection has changed in the focused node
-     */
-    NS_IMETHOD OnIMESelectionChange(void) = 0;
+    NS_IMETHOD NotifyIMEOfTextChange(uint32_t aStart,
+                                     uint32_t aOldEnd,
+                                     uint32_t aNewEnd) = 0;
 
     /*
      * Retrieves preference for IME updates
@@ -1579,16 +1571,19 @@ class nsIWidget : public nsISupports {
      * actions.  And also this isn't called when the user doesn't use the
      * system wheel speed settings.
      *
-     * @param aOriginalDelta   The delta value of the current mouse wheel
-     *                         scrolling event.
-     * @param aIsHorizontal    If TRUE, the scrolling direction is horizontal.
-     *                         Otherwise, it's vertical.
-     * @param aOverriddenDelta The overridden mouse scrolling speed.  This value
-     *                         may be same as aOriginalDelta.
+     * @param aOriginalDeltaX   The X delta value of the current mouse wheel
+     *                          scrolling event.
+     * @param aOriginalDeltaX   The Y delta value of the current mouse wheel
+     *                          scrolling event.
+     * @param aOverriddenDeltaX The overridden mouse scrolling speed along X
+     *                          axis. This value may be same as aOriginalDeltaX.
+     * @param aOverriddenDeltaY The overridden mouse scrolling speed along Y
+     *                          axis. This value may be same as aOriginalDeltaY.
      */
-    NS_IMETHOD OverrideSystemMouseScrollSpeed(int32_t aOriginalDelta,
-                                              bool aIsHorizontal,
-                                              int32_t &aOverriddenDelta) = 0;
+    NS_IMETHOD OverrideSystemMouseScrollSpeed(double aOriginalDeltaX,
+                                              double aOriginalDeltaY,
+                                              double& aOverriddenDeltaX,
+                                              double& aOverriddenDeltaY) = 0;
 
     /**
      * Return true if this process shouldn't use platform widgets, and
@@ -1649,6 +1644,7 @@ class nsIWidget : public nsISupports {
        NS_ENSURE_SUCCESS(rv, false);
        return !bounds.IsEmpty();
     }
+
     /**
      * Get the natural bounds of this widget.  This method is only
      * meaningful for widgets for which Gecko implements screen

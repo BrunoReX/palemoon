@@ -25,6 +25,8 @@ const TESTROOT = "http://example.com/" + RELATIVE_DIR;
 const TESTROOT2 = "http://example.org/" + RELATIVE_DIR;
 const CHROMEROOT = pathParts.join("/") + "/";
 const PREF_DISCOVERURL = "extensions.webservice.discoverURL";
+const PREF_DISCOVER_ENABLED = "extensions.getAddons.showPane";
+const PREF_XPI_ENABLED = "xpinstall.enabled";
 const PREF_UPDATEURL = "extensions.update.url";
 const PREF_GETADDONS_CACHE_ENABLED = "extensions.getAddons.cache.enabled";
 
@@ -1232,3 +1234,30 @@ MockInstall.prototype = {
   }
 };
 
+function waitForCondition(condition, nextTest, errorMsg) {
+  let tries = 0;
+  let interval = setInterval(function() {
+    if (tries >= 30) {
+      ok(false, errorMsg);
+      moveOn();
+    }
+    if (condition()) {
+      moveOn();
+    }
+    tries++;
+  }, 100);
+  let moveOn = function() { clearInterval(interval); nextTest(); };
+}
+
+function getTestPluginTag() {
+  let ph = Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost);
+  let tags = ph.getPluginTags();
+
+  // Find the test plugin
+  for (let i = 0; i < tags.length; i++) {
+    if (tags[i].name == "Test Plug-in")
+      return tags[i];
+  }
+  ok(false, "Unable to find plugin");
+  return null;
+}

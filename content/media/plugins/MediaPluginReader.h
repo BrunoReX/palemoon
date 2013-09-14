@@ -6,6 +6,7 @@
 #if !defined(MediaPluginReader_h_)
 #define MediaPluginReader_h_
 
+#include "mozilla/Attributes.h"
 #include "MediaResource.h"
 #include "MediaDecoderReader.h"
 #include "ImageContainer.h"
@@ -21,6 +22,10 @@ class AbstractMediaDecoder;
 
 namespace layers {
 class ImageContainer;
+}
+
+namespace dom {
+class TimeRanges;
 }
  
 class MediaPluginReader : public MediaDecoderReader
@@ -59,13 +64,13 @@ public:
   virtual nsresult ReadMetadata(VideoInfo* aInfo,
                                 MetadataTags** aTags);
   virtual nsresult Seek(int64_t aTime, int64_t aStartTime, int64_t aEndTime, int64_t aCurrentTime);
-  virtual nsresult GetBuffered(nsTimeRanges* aBuffered, int64_t aStartTime);
+  virtual nsresult GetBuffered(mozilla::dom::TimeRanges* aBuffered, int64_t aStartTime);
   class ImageBufferCallback : public MPAPI::BufferCallback {
     typedef mozilla::layers::Image Image;
   public:
     ImageBufferCallback(mozilla::layers::ImageContainer *aImageContainer);
     void *operator()(size_t aWidth, size_t aHeight,
-                     MPAPI::ColorFormat aColorFormat);
+                     MPAPI::ColorFormat aColorFormat) MOZ_OVERRIDE;
     already_AddRefed<Image> GetImage();
   private:
     mozilla::layers::ImageContainer *mImageContainer;

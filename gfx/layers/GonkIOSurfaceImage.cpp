@@ -20,6 +20,7 @@ uint32_t GonkIOSurfaceImage::sColorIdMap[] = {
     HAL_PIXEL_FORMAT_YCbCr_420_P, OMX_COLOR_FormatYUV420Planar,
     HAL_PIXEL_FORMAT_YCbCr_422_P, OMX_COLOR_FormatYUV422Planar,
     HAL_PIXEL_FORMAT_YCbCr_420_SP, OMX_COLOR_FormatYUV420SemiPlanar,
+    HAL_PIXEL_FORMAT_YCrCb_420_SP, -1,
     HAL_PIXEL_FORMAT_YCrCb_420_SP_ADRENO, -1,
     HAL_PIXEL_FORMAT_YV12, OMX_COLOR_FormatYUV420Planar,
     0, 0
@@ -51,8 +52,8 @@ ConvertYVU420SPToRGB565(void *aYData, uint32_t aYStride,
 
   uint16_t *rgb = (uint16_t*)aOut;
 
-  for (int i = 0; i < aHeight; i++) {
-    for (int j = 0; j < aWidth; j++) {
+  for (size_t i = 0; i < aHeight; i++) {
+    for (size_t j = 0; j < aWidth; j++) {
       int8_t d = uv[j | 1] - 128;
       int8_t e = uv[j & ~1] - 128;
 
@@ -120,8 +121,18 @@ GonkIOSurfaceImage::GetAsSurface()
     uint32_t alignedHeight = ALIGN(height, 32);
     uint32_t uvOffset = ALIGN(alignedHeight * alignedWidth, 4096);
     uint32_t uvStride = 2 * ALIGN(width / 2, 32);
+    uint8_t* buffer_as_bytes = static_cast<uint8_t*>(buffer);
     ConvertYVU420SPToRGB565(buffer, alignedWidth,
-                            buffer + uvOffset, uvStride,
+                            buffer_as_bytes + uvOffset, uvStride,
+                            imageSurface->Data(),
+                            width, height);
+
+    return imageSurface.forget();
+  }
+  else if (format == HAL_PIXEL_FORMAT_YCrCb_420_SP) {
+    uint32_t uvOffset = height * width;
+    ConvertYVU420SPToRGB565(buffer, width,
+                            buffer + uvOffset, width,
                             imageSurface->Data(),
                             width, height);
 

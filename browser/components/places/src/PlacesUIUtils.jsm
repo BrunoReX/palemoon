@@ -334,30 +334,26 @@ this.PlacesUIUtils = {
    *        See documentation at the top of bookmarkProperties.js
    * @param aWindow
    *        Owner window for the new dialog.
-   * @param aResizable [optional]
-   *        Whether the dialog is allowed to resize.  Do not pass this for new
-   *        callers since it's deprecated.  It'll be removed in future releases.
    *
    * @see documentation at the top of bookmarkProperties.js
    * @return true if any transaction has been performed, false otherwise.
    */
   showBookmarkDialog:
-  function PUIU_showBookmarkDialog(aInfo, aParentWindow, aResizable) {
+  function PUIU_showBookmarkDialog(aInfo, aParentWindow) {
     // Preserve size attributes differently based on the fact the dialog has
     // a folder picker or not.  If the picker is visible, the dialog should
     // be resizable since it may not show enough content for the folders
     // hierarchy.
     let hasFolderPicker = !("hiddenRows" in aInfo) ||
                           aInfo.hiddenRows.indexOf("folderPicker") == -1;
-    let resizable = aResizable !== undefined ? aResizable : hasFolderPicker;
     // Use a different chrome url, since this allows to persist different sizes,
     // based on resizability of the dialog.
-    let dialogURL = resizable ?
+    let dialogURL = hasFolderPicker ?
                     "chrome://browser/content/places/bookmarkProperties2.xul" :
                     "chrome://browser/content/places/bookmarkProperties.xul";
 
     let features =
-      "centerscreen,chrome,modal,resizable=" + (resizable ? "yes" : "no");
+      "centerscreen,chrome,modal,resizable=" + (hasFolderPicker ? "yes" : "no");
 
     aParentWindow.openDialog(dialogURL, "",  features, aInfo);
     return ("performed" in aInfo && aInfo.performed);
@@ -403,8 +399,7 @@ this.PlacesUIUtils = {
    * TRANSITION_LINK.
    */
   markPageAsTyped: function PUIU_markPageAsTyped(aURL) {
-    PlacesUtils.history.QueryInterface(Ci.nsIBrowserHistory)
-               .markPageAsTyped(this.createFixedURI(aURL));
+    PlacesUtils.history.markPageAsTyped(this.createFixedURI(aURL));
   },
 
   /**
@@ -425,8 +420,7 @@ this.PlacesUIUtils = {
    * so automatic visits can be correctly ignored.
    */
   markPageAsFollowedLink: function PUIU_markPageAsFollowedLink(aURL) {
-    PlacesUtils.history.QueryInterface(Ci.nsIBrowserHistory)
-               .markPageAsFollowedLink(this.createFixedURI(aURL));
+    PlacesUtils.history.markPageAsFollowedLink(this.createFixedURI(aURL));
   },
 
   /**
@@ -681,7 +675,7 @@ this.PlacesUIUtils = {
 
   getBestTitle: function PUIU_getBestTitle(aNode, aDoNotCutTitle) {
     var title;
-    if (!aNode.title && PlacesUtils.uriTypes.indexOf(aNode.type) != -1) {
+    if (!aNode.title && PlacesUtils.nodeIsURI(aNode)) {
       // if node title is empty, try to set the label using host and filename
       // PlacesUtils._uri() will throw if aNode.uri is not a valid URI
       try {
@@ -1008,12 +1002,6 @@ XPCOMUtils.defineLazyGetter(PlacesUIUtils, "ellipsis", function() {
   return Services.prefs.getComplexValue("intl.ellipsis",
                                         Ci.nsIPrefLocalizedString).data;
 });
-
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-XPCOMUtils.defineLazyServiceGetter(PlacesUIUtils, "privateBrowsing",
-                                   "@mozilla.org/privatebrowsing;1",
-                                   "nsIPrivateBrowsingService");
-#endif
 
 XPCOMUtils.defineLazyServiceGetter(this, "URIFixup",
                                    "@mozilla.org/docshell/urifixup;1",

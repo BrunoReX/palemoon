@@ -39,7 +39,7 @@ public:
   NS_DECL_FRAMEARENA_HELPERS
 
 
-  virtual void DestroyFrom(nsIFrame* aDestructRoot);
+  virtual void DestroyFrom(nsIFrame* aDestructRoot) MOZ_OVERRIDE;
 
   NS_IMETHOD SetInitialChildList(ChildListID     aListID,
                                  nsFrameList&    aChildList) MOZ_OVERRIDE;
@@ -57,7 +57,7 @@ public:
                     nsHTMLReflowMetrics&     aDesiredSize,
                     const nsHTMLReflowState& aReflowState,
                     nsReflowStatus&          aStatus) MOZ_OVERRIDE;
-  virtual bool IsFrameOfType(uint32_t aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const MOZ_OVERRIDE
   {
     return nsContainerFrame::IsFrameOfType(aFlags &
              ~(nsIFrame::eCanContainOverflowContainers));
@@ -68,15 +68,15 @@ public:
    */
   NS_IMETHOD SetHasFocus(bool aHasFocus);
 
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
   void PaintFocus(nsRenderingContext& aRenderingContext, nsPoint aPt);
 
   // nsIScrollPositionListener
-  virtual void ScrollPositionWillChange(nscoord aX, nscoord aY);
-  virtual void ScrollPositionDidChange(nscoord aX, nscoord aY) {}
+  virtual void ScrollPositionWillChange(nscoord aX, nscoord aY) MOZ_OVERRIDE;
+  virtual void ScrollPositionDidChange(nscoord aX, nscoord aY) MOZ_OVERRIDE {}
 
   /**
    * Get the "type" of the frame
@@ -109,8 +109,6 @@ public:
   nsRect CanvasArea() const;
 
 protected:
-  virtual int GetSkipSides() const;
-
   // Data members
   bool                      mDoPaintFocus;
   bool                      mAddedScrollPositionListener;
@@ -161,6 +159,20 @@ public:
     // We need to override so we don't consider border-radius.
     aOutFrames->AppendElement(mFrame);
   }
+
+  virtual nsDisplayItemGeometry* AllocateGeometry(nsDisplayListBuilder* aBuilder) MOZ_OVERRIDE
+  {
+    return new nsDisplayItemBoundsGeometry(this, aBuilder);
+  }
+
+  virtual void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
+                                         const nsDisplayItemGeometry* aGeometry,
+                                         nsRegion* aInvalidRegion) MOZ_OVERRIDE
+  {
+    const nsDisplayItemBoundsGeometry* geometry = static_cast<const nsDisplayItemBoundsGeometry*>(aGeometry);
+    ComputeInvalidationRegionDifference(aBuilder, geometry, aInvalidRegion);
+  }
+
   virtual void NotifyRenderingChanged() MOZ_OVERRIDE
   {
     mFrame->Properties().Delete(nsIFrame::CachedBackgroundImage());

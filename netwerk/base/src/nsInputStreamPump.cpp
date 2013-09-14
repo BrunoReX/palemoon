@@ -15,7 +15,8 @@
 #include "nsThreadUtils.h"
 #include "nsCOMPtr.h"
 #include "prlog.h"
-#include "sampler.h"
+#include "GeckoProfiler.h"
+#include <algorithm>
 
 static NS_DEFINE_CID(kStreamTransportServiceCID, NS_STREAMTRANSPORTSERVICE_CID);
 
@@ -105,7 +106,7 @@ nsInputStreamPump::PeekStream(PeekSegmentFun callback, void* closure)
   nsresult rv = mAsyncStream->Available(&dummy64);
   if (NS_FAILED(rv))
     return rv;
-  uint32_t dummy = (uint32_t)NS_MIN(dummy64, (uint64_t)UINT32_MAX);
+  uint32_t dummy = (uint32_t)std::min(dummy64, (uint64_t)UINT32_MAX);
 
   PeekData data(callback, closure);
   return mAsyncStream->ReadSegments(CallPeekFunc,
@@ -171,7 +172,7 @@ nsInputStreamPump::GetStatus(nsresult *status)
 NS_IMETHODIMP
 nsInputStreamPump::Cancel(nsresult status)
 {
-    LOG(("nsInputStreamPump::Cancel [this=%x status=%x]\n",
+    LOG(("nsInputStreamPump::Cancel [this=%p status=%x]\n",
         this, status));
 
     if (NS_FAILED(mStatus)) {
@@ -198,7 +199,7 @@ nsInputStreamPump::Cancel(nsresult status)
 NS_IMETHODIMP
 nsInputStreamPump::Suspend()
 {
-    LOG(("nsInputStreamPump::Suspend [this=%x]\n", this));
+    LOG(("nsInputStreamPump::Suspend [this=%p]\n", this));
     NS_ENSURE_TRUE(mState != STATE_IDLE, NS_ERROR_UNEXPECTED);
     ++mSuspendCount;
     return NS_OK;
@@ -207,7 +208,7 @@ nsInputStreamPump::Suspend()
 NS_IMETHODIMP
 nsInputStreamPump::Resume()
 {
-    LOG(("nsInputStreamPump::Resume [this=%x]\n", this));
+    LOG(("nsInputStreamPump::Resume [this=%p]\n", this));
     NS_ENSURE_TRUE(mSuspendCount > 0, NS_ERROR_UNEXPECTED);
     NS_ENSURE_TRUE(mState != STATE_IDLE, NS_ERROR_UNEXPECTED);
 
@@ -350,9 +351,9 @@ nsInputStreamPump::AsyncRead(nsIStreamListener *listener, nsISupports *ctxt)
 NS_IMETHODIMP
 nsInputStreamPump::OnInputStreamReady(nsIAsyncInputStream *stream)
 {
-    LOG(("nsInputStreamPump::OnInputStreamReady [this=%x]\n", this));
+    LOG(("nsInputStreamPump::OnInputStreamReady [this=%p]\n", this));
 
-    SAMPLE_LABEL("Input", "nsInputStreamPump::OnInputStreamReady");
+    PROFILER_LABEL("Input", "nsInputStreamPump::OnInputStreamReady");
     // this function has been called from a PLEvent, so we can safely call
     // any listener or progress sink methods directly from here.
 
@@ -399,8 +400,8 @@ nsInputStreamPump::OnInputStreamReady(nsIAsyncInputStream *stream)
 uint32_t
 nsInputStreamPump::OnStateStart()
 {
-    SAMPLE_LABEL("nsInputStreamPump", "OnStateStart");
-    LOG(("  OnStateStart [this=%x]\n", this));
+    PROFILER_LABEL("nsInputStreamPump", "OnStateStart");
+    LOG(("  OnStateStart [this=%p]\n", this));
 
     nsresult rv;
 
@@ -427,8 +428,8 @@ nsInputStreamPump::OnStateStart()
 uint32_t
 nsInputStreamPump::OnStateTransfer()
 {
-    SAMPLE_LABEL("Input", "nsInputStreamPump::OnStateTransfer");
-    LOG(("  OnStateTransfer [this=%x]\n", this));
+    PROFILER_LABEL("Input", "nsInputStreamPump::OnStateTransfer");
+    LOG(("  OnStateTransfer [this=%p]\n", this));
 
     // if canceled, go directly to STATE_STOP...
     if (NS_FAILED(mStatus))
@@ -525,6 +526,8 @@ nsInputStreamPump::OnStateTransfer()
             rv = mAsyncStream->Available(&avail);
             if (NS_SUCCEEDED(rv))
                 return STATE_TRANSFER;
+            if (rv != NS_BASE_STREAM_CLOSED)
+                mStatus = rv;
         }
     }
     return STATE_STOP;
@@ -533,8 +536,8 @@ nsInputStreamPump::OnStateTransfer()
 uint32_t
 nsInputStreamPump::OnStateStop()
 {
-    SAMPLE_LABEL("Input", "nsInputStreamPump::OnStateTransfer");
-    LOG(("  OnStateStop [this=%x status=%x]\n", this, mStatus));
+    PROFILER_LABEL("Input", "nsInputStreamPump::OnStateTransfer");
+    LOG(("  OnStateStop [this=%p status=%x]\n", this, mStatus));
 
     // if an error occurred, we must be sure to pass the error onto the async
     // stream.  in some cases, this is redundant, but since close is idempotent,

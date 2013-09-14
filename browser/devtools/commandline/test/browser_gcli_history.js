@@ -26,70 +26,59 @@ var exports = {};
 const TEST_URI = "data:text/html;charset=utf-8,<p id='gcli-input'>gcli-testHistory.js</p>";
 
 function test() {
-  var tests = Object.keys(exports);
-  // Push setup to the top and shutdown to the bottom
-  tests.sort(function(t1, t2) {
-    if (t1 == "setup" || t2 == "shutdown") return -1;
-    if (t2 == "setup" || t1 == "shutdown") return 1;
-    return 0;
-  });
-  info("Running tests: " + tests.join(", "))
-  tests = tests.map(function(test) { return exports[test]; });
-  DeveloperToolbarTest.test(TEST_URI, tests, true);
+  helpers.addTabWithToolbar(TEST_URI, function(options) {
+    return helpers.runTests(options, exports);
+  }).then(finish);
 }
 
 // <INJECTED SOURCE:END>
 
+'use strict';
+
 // var assert = require('test/assert');
 var History = require('gcli/history').History;
 
-exports.setup = function() {
-};
-
-exports.shutdown = function() {
-};
-
-exports.testSimpleHistory = function () {
+exports.testSimpleHistory = function (options) {
   var history = new History({});
   history.add('foo');
   history.add('bar');
-  assert.is('bar', history.backward());
-  assert.is('foo', history.backward());
+  assert.is(history.backward(), 'bar');
+  assert.is(history.backward(), 'foo');
 
   // Adding to the history again moves us back to the start of the history.
   history.add('quux');
-  assert.is('quux', history.backward());
-  assert.is('bar', history.backward());
-  assert.is('foo', history.backward());
+  assert.is(history.backward(), 'quux');
+  assert.is(history.backward(), 'bar');
+  assert.is(history.backward(), 'foo');
 };
 
-exports.testBackwardsPastIndex = function () {
+exports.testBackwardsPastIndex = function (options) {
   var history = new History({});
   history.add('foo');
   history.add('bar');
-  assert.is('bar', history.backward());
-  assert.is('foo', history.backward());
+  assert.is(history.backward(), 'bar');
+  assert.is(history.backward(), 'foo');
 
   // Moving backwards past recorded history just keeps giving you the last
   // item.
-  assert.is('foo', history.backward());
+  assert.is(history.backward(), 'foo');
 };
 
-exports.testForwardsPastIndex = function () {
+exports.testForwardsPastIndex = function (options) {
   var history = new History({});
   history.add('foo');
   history.add('bar');
-  assert.is('bar', history.backward());
-  assert.is('foo', history.backward());
+  assert.is(history.backward(), 'bar');
+  assert.is(history.backward(), 'foo');
 
   // Going forward through the history again.
-  assert.is('bar', history.forward());
+  assert.is(history.forward(), 'bar');
 
   // 'Present' time.
-  assert.is('', history.forward());
+  assert.is(history.forward(), '');
 
   // Going to the 'future' just keeps giving us the empty string.
-  assert.is('', history.forward());
+  assert.is(history.forward(), '');
 };
 
 // });

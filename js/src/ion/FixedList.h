@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_ion_fixed_list_h__
-#define jsion_ion_fixed_list_h__
+#ifndef ion_FixedList_h
+#define ion_FixedList_h
 
 namespace js {
 namespace ion {
@@ -46,6 +45,19 @@ class FixedList
         length_ -= num;
     }
 
+    bool growBy(size_t num) {
+        T *list = (T *)GetIonContext()->temp->allocate((length_ + num) * sizeof(T));
+        if (!list)
+            return false;
+
+        for (size_t i = 0; i < length_; i++)
+            list[i] = list_[i];
+
+        length_ += num;
+        list_ = list;
+        return true;
+    }
+
     T &operator[](size_t index) {
         JS_ASSERT(index < length_);
         return list_[index];
@@ -59,5 +71,4 @@ class FixedList
 } // namespace ion
 } // namespace js
 
-#endif // jsion_ion_fixed_list_h__
-
+#endif /* ion_FixedList_h */

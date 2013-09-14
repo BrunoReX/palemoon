@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -121,8 +120,7 @@ MacroAssemblerX64::callWithABIPre(uint32_t *stackAdjust)
 #ifdef DEBUG
     {
         Label good;
-        movl(rsp, rax);
-        testq(rax, Imm32(StackAlignment - 1));
+        testq(rsp, Imm32(StackAlignment - 1));
         j(Equal, &good);
         breakpoint();
         bind(&good);
@@ -180,7 +178,7 @@ MacroAssemblerX64::callWithABI(Address fun, Result result)
 }
 
 void
-MacroAssemblerX64::handleException()
+MacroAssemblerX64::handleFailureWithHandler(void *handler)
 {
     // Reserve space for exception information.
     subq(Imm32(sizeof(ResumeFromException)), rsp);
@@ -189,11 +187,58 @@ MacroAssemblerX64::handleException()
     // Ask for an exception handler.
     setupUnalignedABICall(1, rcx);
     passABIArg(rax);
-    callWithABI(JS_FUNC_TO_DATA_PTR(void *, ion::HandleException));
+    callWithABI(handler);
 
-    // Load the error value, load the new stack pointer, and return.
+    Label entryFrame;
+    Label catch_;
+    Label finally;
+    Label return_;
+
+    loadPtr(Address(rsp, offsetof(ResumeFromException, kind)), rax);
+    branch32(Assembler::Equal, rax, Imm32(ResumeFromException::RESUME_ENTRY_FRAME), &entryFrame);
+    branch32(Assembler::Equal, rax, Imm32(ResumeFromException::RESUME_CATCH), &catch_);
+    branch32(Assembler::Equal, rax, Imm32(ResumeFromException::RESUME_FINALLY), &finally);
+    branch32(Assembler::Equal, rax, Imm32(ResumeFromException::RESUME_FORCED_RETURN), &return_);
+
+    breakpoint(); // Invalid kind.
+
+    // No exception handler. Load the error value, load the new stack pointer
+    // and return from the entry frame.
+    bind(&entryFrame);
     moveValue(MagicValue(JS_ION_ERROR), JSReturnOperand);
     movq(Operand(rsp, offsetof(ResumeFromException, stackPointer)), rsp);
+    ret();
+
+    // If we found a catch handler, this must be a baseline frame. Restore state
+    // and jump to the catch block.
+    bind(&catch_);
+    movq(Operand(rsp, offsetof(ResumeFromException, target)), rax);
+    movq(Operand(rsp, offsetof(ResumeFromException, framePointer)), rbp);
+    movq(Operand(rsp, offsetof(ResumeFromException, stackPointer)), rsp);
+    jmp(Operand(rax));
+
+    // If we found a finally block, this must be a baseline frame. Push
+    // two values expected by JSOP_RETSUB: BooleanValue(true) and the
+    // exception.
+    bind(&finally);
+    ValueOperand exception = ValueOperand(rcx);
+    loadValue(Operand(esp, offsetof(ResumeFromException, exception)), exception);
+
+    movq(Operand(rsp, offsetof(ResumeFromException, target)), rax);
+    movq(Operand(rsp, offsetof(ResumeFromException, framePointer)), rbp);
+    movq(Operand(rsp, offsetof(ResumeFromException, stackPointer)), rsp);
+
+    pushValue(BooleanValue(true));
+    pushValue(exception);
+    jmp(Operand(rax));
+
+    // Only used in debug mode. Return BaselineFrame->returnValue() to the caller.
+    bind(&return_);
+    movq(Operand(rsp, offsetof(ResumeFromException, framePointer)), rbp);
+    movq(Operand(rsp, offsetof(ResumeFromException, stackPointer)), rsp);
+    loadValue(Address(rbp, BaselineFrame::reverseOffsetOfReturnValue()), JSReturnOperand);
+    movq(rbp, rsp);
+    pop(rbp);
     ret();
 }
 

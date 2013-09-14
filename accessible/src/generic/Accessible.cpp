@@ -11,10 +11,10 @@
 #include "AccGroupInfo.h"
 #include "AccIterator.h"
 #include "nsAccUtils.h"
-#include "nsAccEvent.h"
 #include "nsAccessibleRelation.h"
 #include "nsAccessibilityService.h"
 #include "nsIAccessibleRelation.h"
+#include "nsIAccessibleRole.h"
 #include "nsEventShell.h"
 #include "nsTextEquivUtils.h"
 #include "Relation.h"
@@ -22,6 +22,8 @@
 #include "RootAccessible.h"
 #include "States.h"
 #include "StyleInfo.h"
+#include "TableAccessible.h"
+#include "TableCellAccessible.h"
 #include "TreeWalker.h"
 
 #include "nsContentUtils.h"
@@ -141,11 +143,11 @@ Accessible::QueryInterface(REFNSIID aIID, void** aInstancePtr)
     return NS_ERROR_NO_INTERFACE;
   }
 
-  return nsAccessNodeWrap::QueryInterface(aIID, aInstancePtr);
+  return nsAccessNode::QueryInterface(aIID, aInstancePtr);
 }
 
 Accessible::Accessible(nsIContent* aContent, DocAccessible* aDoc) :
-  nsAccessNodeWrap(aContent, aDoc),
+  nsAccessNode(aContent, aDoc),
   mParent(nullptr), mIndexInParent(-1), mChildrenFlags(eChildrenUninitialized),
   mStateFlags(0), mType(0), mGenericTypes(0), mIndexOfEmbeddedChild(-1),
   mRoleMapEntry(nullptr)
@@ -618,7 +620,7 @@ Accessible::VisibilityState()
 
   // Walk the parent frame chain to see if there's invisible parent or the frame
   // is in background tab.
-  if (!frame->GetStyleVisibility()->IsVisible())
+  if (!frame->StyleVisibility()->IsVisible())
     return states::INVISIBLE;
 
   nsIFrame* curFrame = frame;
@@ -627,6 +629,9 @@ Accessible::VisibilityState()
     nsView* view = curFrame->GetView();
     if (view && view->GetVisibility() == nsViewVisibility_kHide)
       return states::INVISIBLE;
+
+    if (nsLayoutUtils::IsPopup(curFrame))
+      return 0;
 
     // Offscreen state for background tab content and invisible for not selected
     // deck panel.
@@ -658,7 +663,7 @@ Accessible::VisibilityState()
 
     if (!parentFrame) {
       parentFrame = nsLayoutUtils::GetCrossDocParentFrame(curFrame);
-      if (parentFrame && !parentFrame->GetStyleVisibility()->IsVisible())
+      if (parentFrame && !parentFrame->StyleVisibility()->IsVisible())
         return states::INVISIBLE;
     }
 
@@ -715,7 +720,7 @@ Accessible::NativeState()
     // XXX we should look at layout for non XUL box frames, but need to decide
     // how that interacts with ARIA.
     if (HasOwnContent() && mContent->IsXUL() && frame->IsBoxFrame()) {
-      const nsStyleXUL* xulStyle = frame->GetStyleXUL();
+      const nsStyleXUL* xulStyle = frame->StyleXUL();
       if (xulStyle && frame->IsBoxFrame()) {
         // In XUL all boxes are either vertical or horizontal
         if (xulStyle->mBoxOrient == NS_STYLE_BOX_ORIENT_VERTICAL)
@@ -841,7 +846,7 @@ Accessible::ChildAtPoint(int32_t aX, int32_t aY,
   DocAccessible* contentDocAcc = GetAccService()->
     GetDocAccessible(content->OwnerDoc());
 
-  // contentDocAcc in some circumstances can be NULL. See bug 729861
+  // contentDocAcc in some circumstances can be nullptr. See bug 729861
   NS_ASSERTION(contentDocAcc, "could not get the document accessible");
   if (!contentDocAcc)
     return fallbackAnswer;
@@ -1159,8 +1164,7 @@ Accessible::HandleAccEvent(AccEvent* aEvent)
 {
   NS_ENSURE_ARG_POINTER(aEvent);
 
-  nsCOMPtr<nsIObserverService> obsService =
-    mozilla::services::GetObserverService();
+  nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
   NS_ENSURE_TRUE(obsService, NS_ERROR_FAILURE);
 
   nsCOMPtr<nsISimpleEnumerator> observers;
@@ -1172,8 +1176,8 @@ Accessible::HandleAccEvent(AccEvent* aEvent)
   bool hasObservers = false;
   observers->HasMoreElements(&hasObservers);
   if (hasObservers) {
-    nsRefPtr<nsAccEvent> evnt(aEvent->CreateXPCOMObject());
-    return obsService->NotifyObservers(evnt, NS_ACCESSIBLE_EVENT_TOPIC, nullptr);
+    nsCOMPtr<nsIAccessibleEvent> event = MakeXPCEvent(aEvent);
+    return obsService->NotifyObservers(event, NS_ACCESSIBLE_EVENT_TOPIC, nullptr);
   }
 
   return NS_OK;
@@ -1507,9 +1511,9 @@ Accessible::State()
   const uint32_t kExpandCollapseStates = states::COLLAPSED | states::EXPANDED;
   if ((state & kExpandCollapseStates) == kExpandCollapseStates) {
     // Cannot be both expanded and collapsed -- this happens in ARIA expanded
-    // combobox because of limitation of nsARIAMap.
+    // combobox because of limitation of ARIAMap.
     // XXX: Perhaps we will be able to make this less hacky if we support
-    // extended states in nsARIAMap, e.g. derive COLLAPSED from
+    // extended states in ARIAMap, e.g. derive COLLAPSED from
     // EXPANDABLE && !EXPANDED.
     state &= ~states::COLLAPSED;
   }
@@ -1535,7 +1539,7 @@ Accessible::State()
   if (!frame)
     return state;
 
-  const nsStyleDisplay* display = frame->GetStyleDisplay();
+  const nsStyleDisplay* display = frame->StyleDisplay();
   if (display && display->mOpacity == 1.0f &&
       !(state & states::INVISIBLE)) {
     state |= states::OPAQUE1;
@@ -1597,6 +1601,24 @@ Accessible::ApplyARIAState(uint64_t* aState) const
   if (aria::MapToState(mRoleMapEntry->attributeMap1, element, aState) &&
       aria::MapToState(mRoleMapEntry->attributeMap2, element, aState))
     aria::MapToState(mRoleMapEntry->attributeMap3, element, aState);
+
+  // ARIA gridcell inherits editable/readonly states from the grid until it's
+  // overridden.
+  if ((mRoleMapEntry->Is(nsGkAtoms::gridcell) ||
+       mRoleMapEntry->Is(nsGkAtoms::columnheader) ||
+       mRoleMapEntry->Is(nsGkAtoms::rowheader)) &&
+      !(*aState & (states::READONLY | states::EDITABLE))) {
+    const TableCellAccessible* cell = AsTableCell();
+    if (cell) {
+      TableAccessible* table = cell->Table();
+      if (table) {
+        Accessible* grid = table->AsAccessible();
+        uint64_t gridState = 0;
+        grid->ApplyARIAState(&gridState);
+        *aState |= (gridState & (states::READONLY | states::EDITABLE));
+      }
+    }
+  }
 }
 
 NS_IMETHODIMP
@@ -1652,7 +1674,7 @@ Accessible::Value(nsString& aValue)
     }
 
     if (option)
-      nsTextEquivUtils::GetNameFromSubtree(option, aValue);
+      nsTextEquivUtils::GetTextEquivFromSubtree(option, aValue);
   }
 }
 
@@ -1949,16 +1971,6 @@ Accessible::RelationByType(uint32_t aType)
   // Relationships are defined on the same content node that the role would be
   // defined on.
   switch (aType) {
-    case nsIAccessibleRelation::RELATION_LABEL_FOR: {
-      Relation rel(new RelatedAccIterator(Document(), mContent,
-                                          nsGkAtoms::aria_labelledby));
-      if (mContent->Tag() == nsGkAtoms::label)
-        rel.AppendIter(new IDRefsIterator(mDoc, mContent, mContent->IsHTML() ?
-                                          nsGkAtoms::_for :
-                                          nsGkAtoms::control));
-
-      return rel;
-    }
     case nsIAccessibleRelation::RELATION_LABELLED_BY: {
       Relation rel(new IDRefsIterator(mDoc, mContent,
                                       nsGkAtoms::aria_labelledby));
@@ -1970,6 +1982,18 @@ Accessible::RelationByType(uint32_t aType)
 
       return rel;
     }
+
+    case nsIAccessibleRelation::RELATION_LABEL_FOR: {
+      Relation rel(new RelatedAccIterator(Document(), mContent,
+                                          nsGkAtoms::aria_labelledby));
+      if (mContent->Tag() == nsGkAtoms::label)
+        rel.AppendIter(new IDRefsIterator(mDoc, mContent, mContent->IsHTML() ?
+          nsGkAtoms::_for :
+          nsGkAtoms::control));
+
+      return rel;
+    }
+
     case nsIAccessibleRelation::RELATION_DESCRIBED_BY: {
       Relation rel(new IDRefsIterator(mDoc, mContent,
                                       nsGkAtoms::aria_describedby));
@@ -1978,6 +2002,7 @@ Accessible::RelationByType(uint32_t aType)
 
       return rel;
     }
+
     case nsIAccessibleRelation::RELATION_DESCRIPTION_FOR: {
       Relation rel(new RelatedAccIterator(Document(), mContent,
                                           nsGkAtoms::aria_describedby));
@@ -1992,19 +2017,17 @@ Accessible::RelationByType(uint32_t aType)
 
       return rel;
     }
+
     case nsIAccessibleRelation::RELATION_NODE_CHILD_OF: {
       Relation rel(new RelatedAccIterator(Document(), mContent,
                                           nsGkAtoms::aria_owns));
-      
+
       // This is an ARIA tree or treegrid that doesn't use owns, so we need to
       // get the parent the hard way.
-      if (mRoleMapEntry && (mRoleMapEntry->role == roles::OUTLINEITEM || 
+      if (mRoleMapEntry && (mRoleMapEntry->role == roles::OUTLINEITEM ||
+                            mRoleMapEntry->role == roles::LISTITEM ||
                             mRoleMapEntry->role == roles::ROW)) {
-        AccGroupInfo* groupInfo = GetGroupInfo();
-        if (!groupInfo)
-          return rel;
-
-        rel.AppendTarget(groupInfo->ConceptualParent());
+        rel.AppendTarget(GetGroupInfo()->ConceptualParent());
       }
 
       // If accessible is in its own Window, or is the root of a document,
@@ -2025,21 +2048,54 @@ Accessible::RelationByType(uint32_t aType)
 
       return rel;
     }
+
+    case nsIAccessibleRelation::RELATION_NODE_PARENT_OF: {
+      Relation rel(new IDRefsIterator(mDoc, mContent, nsGkAtoms::aria_owns));
+
+      // ARIA tree or treegrid can do the hierarchy by @aria-level, ARIA trees
+      // also can be organized by groups.
+      if (mRoleMapEntry &&
+          (mRoleMapEntry->role == roles::OUTLINEITEM ||
+           mRoleMapEntry->role == roles::LISTITEM ||
+           mRoleMapEntry->role == roles::ROW ||
+           mRoleMapEntry->role == roles::OUTLINE ||
+           mRoleMapEntry->role == roles::LIST ||
+           mRoleMapEntry->role == roles::TREE_TABLE)) {
+        rel.AppendIter(new ItemIterator(this));
+      }
+
+      return rel;
+    }
+
     case nsIAccessibleRelation::RELATION_CONTROLLED_BY:
       return Relation(new RelatedAccIterator(Document(), mContent,
                                              nsGkAtoms::aria_controls));
+
     case nsIAccessibleRelation::RELATION_CONTROLLER_FOR: {
       Relation rel(new IDRefsIterator(mDoc, mContent,
                                       nsGkAtoms::aria_controls));
       rel.AppendIter(new HTMLOutputIterator(Document(), mContent));
       return rel;
     }
+
     case nsIAccessibleRelation::RELATION_FLOWS_TO:
       return Relation(new IDRefsIterator(mDoc, mContent,
                                          nsGkAtoms::aria_flowto));
+
     case nsIAccessibleRelation::RELATION_FLOWS_FROM:
       return Relation(new RelatedAccIterator(Document(), mContent,
                                              nsGkAtoms::aria_flowto));
+
+    case nsIAccessibleRelation::RELATION_MEMBER_OF:
+          return Relation(mDoc, GetAtomicRegion());
+
+    case nsIAccessibleRelation::RELATION_SUBWINDOW_OF:
+    case nsIAccessibleRelation::RELATION_EMBEDS:
+    case nsIAccessibleRelation::RELATION_EMBEDDED_BY:
+    case nsIAccessibleRelation::RELATION_POPUP_FOR:
+    case nsIAccessibleRelation::RELATION_PARENT_WINDOW_OF:
+      return Relation();
+
     case nsIAccessibleRelation::RELATION_DEFAULT_BUTTON: {
       if (mContent->IsHTML()) {
         // HTML form controls implements nsIFormControl interface.
@@ -2087,15 +2143,9 @@ Accessible::RelationByType(uint32_t aType)
       }
       return Relation();
     }
-    case nsIAccessibleRelation::RELATION_MEMBER_OF:
-      return Relation(mDoc, GetAtomicRegion());
-    case nsIAccessibleRelation::RELATION_SUBWINDOW_OF:
-    case nsIAccessibleRelation::RELATION_EMBEDS:
-    case nsIAccessibleRelation::RELATION_EMBEDDED_BY:
-    case nsIAccessibleRelation::RELATION_POPUP_FOR:
-    case nsIAccessibleRelation::RELATION_PARENT_WINDOW_OF:
+
     default:
-    return Relation();
+      return Relation();
   }
 }
 
@@ -2111,12 +2161,29 @@ Accessible::GetRelations(nsIArray **aRelations)
   nsCOMPtr<nsIMutableArray> relations = do_CreateInstance(NS_ARRAY_CONTRACTID);
   NS_ENSURE_TRUE(relations, NS_ERROR_OUT_OF_MEMORY);
 
-  for (uint32_t relType = nsIAccessibleRelation::RELATION_FIRST;
-       relType < nsIAccessibleRelation::RELATION_LAST;
-       ++relType) {
+  static const uint32_t relationTypes[] = {
+    nsIAccessibleRelation::RELATION_LABELLED_BY,
+    nsIAccessibleRelation::RELATION_LABEL_FOR,
+    nsIAccessibleRelation::RELATION_DESCRIBED_BY,
+    nsIAccessibleRelation::RELATION_DESCRIPTION_FOR,
+    nsIAccessibleRelation::RELATION_NODE_CHILD_OF,
+    nsIAccessibleRelation::RELATION_NODE_PARENT_OF,
+    nsIAccessibleRelation::RELATION_CONTROLLED_BY,
+    nsIAccessibleRelation::RELATION_CONTROLLER_FOR,
+    nsIAccessibleRelation::RELATION_FLOWS_TO,
+    nsIAccessibleRelation::RELATION_FLOWS_FROM,
+    nsIAccessibleRelation::RELATION_MEMBER_OF,
+    nsIAccessibleRelation::RELATION_SUBWINDOW_OF,
+    nsIAccessibleRelation::RELATION_EMBEDS,
+    nsIAccessibleRelation::RELATION_EMBEDDED_BY,
+    nsIAccessibleRelation::RELATION_POPUP_FOR,
+    nsIAccessibleRelation::RELATION_PARENT_WINDOW_OF,
+    nsIAccessibleRelation::RELATION_DEFAULT_BUTTON
+  };
 
+  for (uint32_t idx = 0; idx < ArrayLength(relationTypes); idx++) {
     nsCOMPtr<nsIAccessibleRelation> relation;
-    nsresult rv = GetRelationByType(relType, getter_AddRefs(relation));
+    nsresult rv = GetRelationByType(relationTypes[idx], getter_AddRefs(relation));
 
     if (NS_SUCCEEDED(rv) && relation) {
       uint32_t targets = 0;
@@ -2489,7 +2556,7 @@ Accessible::Shutdown()
   if (mParent)
     mParent->RemoveChild(this);
 
-  nsAccessNodeWrap::Shutdown();
+  nsAccessNode::Shutdown();
 }
 
 // Accessible protected
@@ -2582,39 +2649,30 @@ Accessible::InvalidateChildren()
 }
 
 bool
-Accessible::AppendChild(Accessible* aChild)
-{
-  if (!aChild)
-    return false;
-
-  if (!mChildren.AppendElement(aChild))
-    return false;
-
-  if (!nsAccUtils::IsEmbeddedObject(aChild))
-    SetChildrenFlag(eMixedChildren);
-
-  aChild->BindToParent(this, mChildren.Length() - 1);
-  return true;
-}
-
-bool
 Accessible::InsertChildAt(uint32_t aIndex, Accessible* aChild)
 {
   if (!aChild)
     return false;
 
-  if (!mChildren.InsertElementAt(aIndex, aChild))
-    return false;
+  if (aIndex == mChildren.Length()) {
+    if (!mChildren.AppendElement(aChild))
+      return false;
 
-  for (uint32_t idx = aIndex + 1; idx < mChildren.Length(); idx++) {
-    NS_ASSERTION(mChildren[idx]->mIndexInParent == idx - 1, "Accessible child index doesn't match");
-    mChildren[idx]->mIndexInParent = idx;
+  } else {
+    if (!mChildren.InsertElementAt(aIndex, aChild))
+      return false;
+
+    for (uint32_t idx = aIndex + 1; idx < mChildren.Length(); idx++) {
+      NS_ASSERTION(static_cast<uint32_t>(mChildren[idx]->mIndexInParent) == idx - 1,
+                   "Accessible child index doesn't match");
+      mChildren[idx]->mIndexInParent = idx;
+    }
+
+    mEmbeddedObjCollector = nullptr;
   }
 
-  if (nsAccUtils::IsText(aChild))
+  if (!nsAccUtils::IsEmbeddedObject(aChild))
     SetChildrenFlag(eMixedChildren);
-
-  mEmbeddedObjCollector = nullptr;
 
   aChild->BindToParent(this, aIndex);
   return true;
@@ -2637,7 +2695,8 @@ Accessible::RemoveChild(Accessible* aChild)
   }
 
   for (uint32_t idx = index + 1; idx < mChildren.Length(); idx++) {
-    NS_ASSERTION(mChildren[idx]->mIndexInParent == idx, "Accessible child index doesn't match");
+    NS_ASSERTION(static_cast<uint32_t>(mChildren[idx]->mIndexInParent) == idx,
+                 "Accessible child index doesn't match");
     mChildren[idx]->mIndexInParent = idx - 1;
   }
 
@@ -2794,9 +2853,7 @@ Accessible::SelectedItems()
   while ((selected = iter.Next()))
     selectedItems->AppendElement(selected, false);
 
-  nsIMutableArray* items = nullptr;
-  selectedItems.forget(&items);
-  return items;
+  return selectedItems.forget();
 }
 
 uint32_t
@@ -2978,7 +3035,7 @@ Accessible::ContainerWidget() const
       }
 
       // Don't cross DOM document boundaries.
-      if (parent->IsDocumentNode())
+      if (parent->IsDoc())
         break;
     }
   }
@@ -3080,7 +3137,7 @@ Accessible::GetFirstAvailableAccessible(nsINode *aStartNode) const
   nsCOMPtr<nsIDOMTreeWalker> walker;
   domDoc->CreateTreeWalker(rootNode,
                            nsIDOMNodeFilter::SHOW_ELEMENT | nsIDOMNodeFilter::SHOW_TEXT,
-                           nullptr, false, getter_AddRefs(walker));
+                           nullptr, 1, getter_AddRefs(walker));
   NS_ENSURE_TRUE(walker, nullptr);
 
   walker->SetCurrentNode(currentNode);
@@ -3202,10 +3259,11 @@ Accessible::GetLevelInternal()
     }
 
   } else if (role == roles::LISTITEM) {
-    // Expose 'level' attribute on nested lists. We assume nested list is a last
-    // child of listitem of parent list. We don't handle the case when nested
-    // lists have more complex structure, for example when there are accessibles
-    // between parent listitem and nested list.
+    // Expose 'level' attribute on nested lists. We support two hierarchies:
+    // a) list -> listitem -> list -> listitem (nested list is a last child
+    //   of listitem of the parent list);
+    // b) list -> listitem -> group -> listitem (nested listitems are contained
+    //   by group that is a last child of the parent listitem).
 
     // Calculate 'level' attribute based on number of parent listitems.
     level = 0;
@@ -3215,9 +3273,8 @@ Accessible::GetLevelInternal()
 
       if (parentRole == roles::LISTITEM)
         ++ level;
-      else if (parentRole != roles::LIST)
+      else if (parentRole != roles::LIST && parentRole != roles::GROUPING)
         break;
-
     }
 
     if (level == 0) {
@@ -3229,8 +3286,11 @@ Accessible::GetLevelInternal()
         Accessible* sibling = parent->GetChildAt(siblingIdx);
 
         Accessible* siblingChild = sibling->LastChild();
-        if (siblingChild && siblingChild->Role() == roles::LIST)
-          return 1;
+        if (siblingChild) {
+          roles::Role lastChildRole = siblingChild->Role();
+          if (lastChildRole == roles::LIST || lastChildRole == roles::GROUPING)
+            return 1;
+        }
       }
     } else {
       ++ level; // level is 1-index based

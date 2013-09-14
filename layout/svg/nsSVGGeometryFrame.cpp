@@ -12,7 +12,6 @@
 #include "nsPresContext.h"
 #include "nsSVGEffects.h"
 #include "nsSVGPaintServerFrame.h"
-#include "nsSVGPathElement.h"
 #include "nsSVGUtils.h"
 
 NS_IMPL_FRAMEARENA_HELPERS(nsSVGGeometryFrame)
@@ -20,15 +19,14 @@ NS_IMPL_FRAMEARENA_HELPERS(nsSVGGeometryFrame)
 //----------------------------------------------------------------------
 // nsIFrame methods
 
-NS_IMETHODIMP
+void
 nsSVGGeometryFrame::Init(nsIContent* aContent,
                          nsIFrame* aParent,
                          nsIFrame* aPrevInFlow)
 {
   AddStateBits(aParent->GetStateBits() &
                (NS_STATE_SVG_NONDISPLAY_CHILD | NS_STATE_SVG_CLIPPATH_CHILD));
-  nsresult rv = nsSVGGeometryFrameBase::Init(aContent, aParent, aPrevInFlow);
-  return rv;
+  nsSVGGeometryFrameBase::Init(aContent, aParent, aPrevInFlow);
 }
 
 //----------------------------------------------------------------------
@@ -36,7 +34,7 @@ nsSVGGeometryFrame::Init(nsIContent* aContent,
 uint16_t
 nsSVGGeometryFrame::GetClipRule()
 {
-  return GetStyleSVG()->mClipRule;
+  return StyleSVG()->mClipRule;
 }
 
 uint16_t

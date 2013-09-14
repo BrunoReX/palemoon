@@ -1104,15 +1104,25 @@ static unsigned		ncpus;
  * controlling the malloc behavior are defined as compile-time constants
  * for best performance and cannot be altered at runtime.
  */
+#if !defined(__ia64__) && !defined(__sparc__) && !defined(__mips__)
 #define MALLOC_STATIC_SIZES 1
+#endif
 
 #ifdef MALLOC_STATIC_SIZES
 
 /*
  * VM page size. It must divide the runtime CPU page size or the code
  * will abort.
+ * Platform specific page size conditions copied from js/public/HeapAPI.h
  */
+#if (defined(SOLARIS) || defined(__FreeBSD__)) && \
+    (defined(__sparc) || defined(__sparcv9) || defined(__ia64))
+#define pagesize_2pow			((size_t) 13)
+#elif defined(__powerpc64__)
+#define pagesize_2pow			((size_t) 16)
+#else
 #define pagesize_2pow			((size_t) 12)
+#endif
 #define pagesize			((size_t) 1 << pagesize_2pow)
 #define pagesize_mask			(pagesize - 1)
 

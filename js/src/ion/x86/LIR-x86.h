@@ -1,14 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_lir_x86_h__
-#define jsion_lir_x86_h__
-
-#include "ion/TypeOracle.h"
+#ifndef ion_x86_LIR_x86_h
+#define ion_x86_LIR_x86_h
 
 namespace js {
 namespace ion {
@@ -70,19 +67,37 @@ class LUnboxDouble : public LInstructionHelper<1, 2, 0>
     }
 };
 
-// Constant double.
-class LDouble : public LInstructionHelper<1, 1, 0>
+// Convert a 32-bit unsigned integer to a double.
+class LUInt32ToDouble : public LInstructionHelper<1, 1, 1>
 {
   public:
-    LIR_HEADER(Double);
+    LIR_HEADER(UInt32ToDouble)
 
-    LDouble(const LConstantIndex &cindex) {
-        setOperand(0, cindex);
+    LUInt32ToDouble(const LAllocation &input, const LDefinition &temp) {
+        setOperand(0, input);
+        setTemp(0, temp);
+    }
+    const LDefinition *temp() {
+        return getTemp(0);
+    }
+};
+
+class LAsmJSLoadFuncPtr : public LInstructionHelper<1, 1, 0>
+{
+  public:
+    LIR_HEADER(AsmJSLoadFuncPtr);
+    LAsmJSLoadFuncPtr(const LAllocation &index) {
+        setOperand(0, index);
+    }
+    MAsmJSLoadFuncPtr *mir() const {
+        return mir_->toAsmJSLoadFuncPtr();
+    }
+    const LAllocation *index() {
+        return getOperand(0);
     }
 };
 
 } // namespace ion
 } // namespace js
 
-#endif // jsion_lir_x86_h__
-
+#endif /* ion_x86_LIR_x86_h */

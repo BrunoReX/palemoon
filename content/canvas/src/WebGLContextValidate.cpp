@@ -4,6 +4,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebGLContext.h"
+#include "WebGLBuffer.h"
+#include "WebGLVertexAttribData.h"
+#include "WebGLShader.h"
+#include "WebGLProgram.h"
+#include "WebGLUniformLocation.h"
+#include "WebGLFramebuffer.h"
+#include "WebGLRenderbuffer.h"
+#include "WebGLTexture.h"
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Preferences.h"
@@ -33,7 +41,7 @@ WebGLProgram::UpdateInfo()
     mAttribMaxNameLength = 0;
 
     for (size_t i = 0; i < mAttachedShaders.Length(); i++)
-        mAttribMaxNameLength = NS_MAX(mAttribMaxNameLength, mAttachedShaders[i]->mAttribMaxNameLength);
+        mAttribMaxNameLength = std::max(mAttribMaxNameLength, mAttachedShaders[i]->mAttribMaxNameLength);
 
     GLint attribCount;
     mContext->gl->fGetProgramiv(mGLName, LOCAL_GL_ACTIVE_ATTRIBUTES, &attribCount);
@@ -61,6 +69,18 @@ WebGLProgram::UpdateInfo()
             } else {
                 mContext->GenerateWarning("program exceeds MAX_VERTEX_ATTRIBS");
                 return false;
+            }
+        }
+    }
+
+    if (!mUniformInfoMap) {
+        mUniformInfoMap = new CStringToUniformInfoMap;
+        mUniformInfoMap->Init();
+        for (size_t i = 0; i < mAttachedShaders.Length(); i++) {
+            for (size_t j = 0; j < mAttachedShaders[i]->mUniforms.Length(); j++) {
+	        const WebGLMappedIdentifier& uniform = mAttachedShaders[i]->mUniforms[j];
+	        const WebGLUniformInfo& info = mAttachedShaders[i]->mUniformInfos[j];
+	        mUniformInfoMap->Put(uniform.mapped, info);
             }
         }
     }
@@ -339,6 +359,16 @@ bool WebGLContext::ValidateGLSLVariableName(const nsAString& name, const char *i
         return false;
     }
 
+    nsString prefix1 = NS_LITERAL_STRING("webgl_");
+    nsString prefix2 = NS_LITERAL_STRING("_webgl_");
+
+    if (Substring(name, 0, prefix1.Length()).Equals(prefix1) ||
+        Substring(name, 0, prefix2.Length()).Equals(prefix2))
+    {
+        ErrorInvalidOperation("%s: string contains a reserved GLSL prefix", info);
+        return false;
+    }
+
     return true;
 }
 
@@ -411,13 +441,13 @@ bool WebGLContext::ValidateCompressedTextureSize(WebGLenum target, WebGLint leve
         case LOCAL_GL_COMPRESSED_RGB_PVRTC_4BPPV1:
         case LOCAL_GL_COMPRESSED_RGBA_PVRTC_4BPPV1:
         {
-            required_byteLength = CheckedUint32(NS_MAX(width, 8)) * CheckedUint32(NS_MAX(height, 8)) / 2;
+            required_byteLength = CheckedUint32(std::max(width, 8)) * CheckedUint32(std::max(height, 8)) / 2;
             break;
         }
         case LOCAL_GL_COMPRESSED_RGB_PVRTC_2BPPV1:
         case LOCAL_GL_COMPRESSED_RGBA_PVRTC_2BPPV1:
         {
-            required_byteLength = CheckedUint32(NS_MAX(width, 16)) * CheckedUint32(NS_MAX(height, 8)) / 4;
+            required_byteLength = CheckedUint32(std::max(width, 16)) * CheckedUint32(std::max(height, 8)) / 4;
             break;
         }
     }
@@ -689,6 +719,23 @@ WebGLContext::ValidateUniformLocation(const char* info, WebGLUniformLocation *lo
 }
 
 bool
+WebGLContext::ValidateSamplerUniformSetter(const char* info, WebGLUniformLocation *location, WebGLint value)
+{
+    if (location->Info().type != SH_SAMPLER_2D &&
+        location->Info().type != SH_SAMPLER_CUBE)
+    {
+        return true;
+    }
+
+    if (value >= 0 && value < mGLMaxTextureUnits)
+        return true;
+
+    ErrorInvalidValue("%s: this uniform location is a sampler, but %d is not a valid texture unit",
+                      info, value);
+    return false;
+}
+
+bool
 WebGLContext::ValidateAttribArraySetter(const char* name, uint32_t cnt, uint32_t arrayLength)
 {
     if (!IsContextStable()) {
@@ -738,7 +785,7 @@ WebGLContext::ValidateUniformArraySetter(const char* name, uint32_t expectedElem
         return false;
     }
     numElementsToUpload =
-        NS_MIN(info.arraySize, arrayLength / expectedElemSize);
+        std::min(info.arraySize, arrayLength / expectedElemSize);
     return true;
 }
 
@@ -786,7 +833,7 @@ WebGLContext::ValidateUniformMatrixArraySetter(const char* name, int dim, WebGLU
         return false;
     }
     numElementsToUpload =
-        NS_MIN(info.arraySize, arrayLength / (expectedElemSize));
+        std::min(info.arraySize, arrayLength / (expectedElemSize));
     return true;
 }
 
@@ -835,6 +882,16 @@ bool WebGLContext::ValidateStencilParamsForDrawCall()
   return true;
 }
 
+static inline int32_t floorPOT(int32_t x)
+{
+    MOZ_ASSERT(x > 0);
+    int32_t POT = 1;
+    while (POT < 0x40000000 && POT * 2 <= x) {
+        POT *= 2;
+    }
+    return POT;
+}
+
 bool
 WebGLContext::InitAndValidateGL()
 {
@@ -850,6 +907,10 @@ WebGLContext::InitAndValidateGL()
     mDisableExtensions = Preferences::GetBool("webgl.disable-extensions", false);
     mLoseContextOnHeapMinimize = Preferences::GetBool("webgl.lose-context-on-heap-minimize", false);
     mCanLoseContextInForeground = Preferences::GetBool("webgl.can-lose-context-in-foreground", true);
+
+    if (MinCapabilityMode()) {
+      mDisableFragHighP = true;
+    }
 
     mActiveTexture = 0;
     mWebGLError = LOCAL_GL_NO_ERROR;
@@ -915,6 +976,9 @@ WebGLContext::InitAndValidateGL()
         gl->fGetIntegerv(LOCAL_GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, &mGLMaxVertexTextureImageUnits);
     }
 
+    mGLMaxTextureSize = floorPOT(mGLMaxTextureSize);
+    mGLMaxRenderbufferSize = floorPOT(mGLMaxRenderbufferSize);
+
     if (MinCapabilityMode()) {
         mGLMaxFragmentUniformVectors = MINVALUE_GL_MAX_FRAGMENT_UNIFORM_VECTORS;
         mGLMaxVertexUniformVectors = MINVALUE_GL_MAX_VERTEX_UNIFORM_VECTORS;
@@ -951,7 +1015,7 @@ WebGLContext::InitAndValidateGL()
             error = gl->GetAndClearError();
             switch (error) {
                 case LOCAL_GL_NO_ERROR:
-                    mGLMaxVaryingVectors = NS_MIN(maxVertexOutputComponents, minFragmentInputComponents) / 4;
+                    mGLMaxVaryingVectors = std::min(maxVertexOutputComponents, minFragmentInputComponents) / 4;
                     break;
                 case LOCAL_GL_INVALID_ENUM:
                     mGLMaxVaryingVectors = 16; // = 64/4, 64 is the min value for maxVertexOutputComponents in OpenGL 3.2 spec

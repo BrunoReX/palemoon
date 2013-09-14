@@ -4,19 +4,15 @@
 
 package org.mozilla.gecko.sync.stage;
 
+import org.mozilla.gecko.background.common.log.Logger;
 import org.mozilla.gecko.sync.GlobalSession;
 import org.mozilla.gecko.sync.InfoCollections;
-import org.mozilla.gecko.sync.Logger;
 import org.mozilla.gecko.sync.MetaGlobal;
 import org.mozilla.gecko.sync.PersistedMetaGlobal;
 import org.mozilla.gecko.sync.delegates.MetaGlobalDelegate;
 import org.mozilla.gecko.sync.net.SyncStorageResponse;
 
 public class FetchMetaGlobalStage extends AbstractNonRepositorySyncStage {
-  public FetchMetaGlobalStage(GlobalSession session) {
-    super(session);
-  }
-
   private static final String LOG_TAG = "FetchMetaGlobalStage";
   private static final String META_COLLECTION = "meta";
 

@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_bailouts_h__
-#define jsion_bailouts_h__
+#ifndef ion_Bailouts_h
+#define ion_Bailouts_h
 
 #include "jstypes.h"
 #include "vm/Stack.h"
@@ -101,65 +100,7 @@ static const uint32_t BAILOUT_TABLE_SIZE = 16;
 // N.B. the relative order of these values is hard-coded into ::GenerateBailoutThunk.
 static const uint32_t BAILOUT_RETURN_OK = 0;
 static const uint32_t BAILOUT_RETURN_FATAL_ERROR = 1;
-static const uint32_t BAILOUT_RETURN_ARGUMENT_CHECK = 2;
-static const uint32_t BAILOUT_RETURN_TYPE_BARRIER = 3;
-static const uint32_t BAILOUT_RETURN_MONITOR = 4;
-static const uint32_t BAILOUT_RETURN_RECOMPILE_CHECK = 5;
-static const uint32_t BAILOUT_RETURN_BOUNDS_CHECK = 6;
-static const uint32_t BAILOUT_RETURN_SHAPE_GUARD = 7;
-static const uint32_t BAILOUT_RETURN_OVERRECURSED = 8;
-static const uint32_t BAILOUT_RETURN_CACHED_SHAPE_GUARD = 9;
-
-// Attached to the compartment for easy passing through from ::Bailout to
-// ::ThunkToInterpreter.
-class BailoutClosure
-{
-    // These class are used to control the stack usage and the order of
-    // declaration is used by the destructor to restore the stack in the
-    // expected order when classes are created. This class is only created
-    // when we need a new stack frame.
-    struct Guards {
-        InvokeArgsGuard iag;
-        BailoutFrameGuard bfg;
-    };
-
-    mozilla::Maybe<Guards> guards_;
-
-    StackFrame *entryfp_;
-    jsbytecode *bailoutPc_;
-
-  public:
-    BailoutClosure()
-      : bailoutPc_(NULL)
-    { }
-
-    void constructFrame() {
-        guards_.construct();
-    }
-    InvokeArgsGuard *argsGuard() {
-        return &guards_.ref().iag;
-    }
-    BailoutFrameGuard *frameGuard() {
-        return &guards_.ref().bfg;
-    }
-    StackFrame *entryfp() const {
-        return entryfp_;
-    }
-    void setEntryFrame(StackFrame *fp) {
-        entryfp_ = fp;
-    }
-
-    // The bailout pc is the pc associated with the MResuemPoint this bailout
-    // is restoring. If the resume point is "ResumeAfter", we'll actually start
-    // executing from the *next* bytecode. This lets us recover the pc used for
-    // type inference reflows.
-    void setBailoutPc(jsbytecode *pc) {
-        bailoutPc_ = pc;
-    }
-    jsbytecode *bailoutPc() const {
-        return bailoutPc_;
-    }
-};
+static const uint32_t BAILOUT_RETURN_OVERRECURSED = 2;
 
 class IonCompartment;
 
@@ -181,8 +122,8 @@ class IonBailoutIterator : public IonFrameIterator
     IonScript *topIonScript_;
 
   public:
-    IonBailoutIterator(const IonActivationIterator &activations, BailoutStack *sp);
-    IonBailoutIterator(const IonActivationIterator &activations, InvalidationBailoutStack *sp);
+    IonBailoutIterator(const JitActivationIterator &activations, BailoutStack *sp);
+    IonBailoutIterator(const JitActivationIterator &activations, InvalidationBailoutStack *sp);
 
     SnapshotOffset snapshotOffset() const {
         JS_ASSERT(topIonScript_);
@@ -204,30 +145,22 @@ class IonBailoutIterator : public IonFrameIterator
     void dump() const;
 };
 
-bool EnsureHasScopeObjects(JSContext *cx, StackFrame *fp);
+bool EnsureHasScopeObjects(JSContext *cx, AbstractFramePtr fp);
+
+struct BaselineBailoutInfo;
 
 // Called from a bailout thunk. Returns a BAILOUT_* error code.
-uint32_t Bailout(BailoutStack *sp);
+uint32_t Bailout(BailoutStack *sp, BaselineBailoutInfo **info);
 
 // Called from the invalidation thunk. Returns a BAILOUT_* error code.
-uint32_t InvalidationBailout(InvalidationBailoutStack *sp, size_t *frameSizeOut);
+uint32_t InvalidationBailout(InvalidationBailoutStack *sp, size_t *frameSizeOut,
+                             BaselineBailoutInfo **info);
 
-// Called from a bailout thunk. Interprets the frame(s) that have been bailed
-// out.
-uint32_t ThunkToInterpreter(Value *vp);
+uint32_t FinishBailoutToBaseline(BaselineBailoutInfo *bailoutInfo);
 
-uint32_t ReflowTypeInfo(uint32_t bailoutResult);
-
-uint32_t RecompileForInlining();
-
-uint32_t BoundsCheckFailure();
-
-uint32_t ShapeGuardFailure();
-
-uint32_t CachedShapeGuardFailure();
+bool CheckFrequentBailouts(JSContext *cx, JSScript *script);
 
 } // namespace ion
 } // namespace js
 
-#endif // jsion_bailouts_h__
-
+#endif /* ion_Bailouts_h */

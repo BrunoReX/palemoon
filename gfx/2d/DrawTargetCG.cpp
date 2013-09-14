@@ -122,7 +122,7 @@ CGBlendMode ToBlendMode(CompositionOp op)
 
 
 
-DrawTargetCG::DrawTargetCG() : mSnapshot(nullptr), mCg(nullptr)
+DrawTargetCG::DrawTargetCG() : mCg(nullptr), mSnapshot(nullptr)
 {
 }
 
@@ -298,6 +298,38 @@ DrawTargetCG::DrawSurface(SourceSurface *aSurface,
   CGContextRestoreGState(mCg);
 
   CGImageRelease(subimage);
+}
+
+void
+DrawTargetCG::MaskSurface(const Pattern &aSource,
+                          SourceSurface *aMask,
+                          Point aOffset,
+                          const DrawOptions &aDrawOptions)
+{
+  MarkChanged();
+
+  CGImageRef image;
+  CGContextSaveGState(mCg);
+
+  CGContextSetBlendMode(mCg, ToBlendMode(aDrawOptions.mCompositionOp));
+  UnboundnessFixer fixer;
+  CGContextRef cg = fixer.Check(mCg, aDrawOptions.mCompositionOp);
+  CGContextSetAlpha(cg, aDrawOptions.mAlpha);
+
+  CGContextConcatCTM(cg, GfxMatrixToCGAffineTransform(mTransform));
+  image = GetImageFromSourceSurface(aMask);
+
+  CGContextScaleCTM(cg, 1, -1);
+
+  IntSize size = aMask->GetSize();
+  CGContextClipToMask(cg, CGRectMake(aOffset.x, aOffset.y, size.width, size.height), image);
+  
+  FillRect(Rect(0, 0, size.width, size.height), aSource, aDrawOptions);
+  
+  fixer.Fix(mCg);
+
+  CGContextRestoreGState(mCg);
+
 }
 
 static CGColorRef ColorToCGColor(CGColorSpaceRef aColorSpace, const Color& aColor)
@@ -670,10 +702,7 @@ DrawTargetCG::Stroke(const Path *aPath, const Pattern &aPattern, const StrokeOpt
     CGContextClip(cg);
     DrawGradient(cg, aPattern);
   } else {
-    CGContextBeginPath(cg);
     // XXX: we could put fill mode into the path fill rule if we wanted
-    const PathCG *cgPath = static_cast<const PathCG*>(aPath);
-    CGContextAddPath(cg, cgPath->GetPath());
 
     SetStrokeFromPattern(cg, mColorSpace, aPattern);
     CGContextStrokePath(cg);
@@ -1029,8 +1058,8 @@ DrawTargetCG::CreatePathBuilder(FillRule aFillRule) const
 void*
 DrawTargetCG::GetNativeSurface(NativeSurfaceType aType)
 {
-  if (aType == NATIVE_SURFACE_CGCONTEXT && GetContextType(mCg) == CG_CONTEXT_TYPE_BITMAP ||
-      aType == NATIVE_SURFACE_CGCONTEXT_ACCELERATED && GetContextType(mCg) == CG_CONTEXT_TYPE_IOSURFACE) {
+  if ((aType == NATIVE_SURFACE_CGCONTEXT && GetContextType(mCg) == CG_CONTEXT_TYPE_BITMAP) ||
+      (aType == NATIVE_SURFACE_CGCONTEXT_ACCELERATED && GetContextType(mCg) == CG_CONTEXT_TYPE_IOSURFACE)) {
     return mCg;
   } else {
     return nullptr;

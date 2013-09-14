@@ -12,25 +12,21 @@
  * and create derivative works of this document.
  */
 
-interface DOMStringMap;
-interface HTMLMenuElement;
-
-[PrefControlled]
 interface HTMLElement : Element {
   // metadata attributes
            attribute DOMString title;
            attribute DOMString lang;
   //         attribute boolean translate;
-  [SetterThrows]
+  [SetterThrows, Pure]
            attribute DOMString dir;
   [Constant]
   readonly attribute DOMStringMap dataset;
 
   // microdata 
-  [SetterThrows]
+  [SetterThrows, Pure]
            attribute boolean itemScope;
   [PutForwards=value,Constant] readonly attribute DOMSettableTokenList itemType;
-  [SetterThrows]
+  [SetterThrows, Pure]
            attribute DOMString itemId;
   [PutForwards=value,Constant] readonly attribute DOMSettableTokenList itemRef;
   [PutForwards=value,Constant] readonly attribute DOMSettableTokenList itemProp;
@@ -40,28 +36,31 @@ interface HTMLElement : Element {
            attribute any itemValue;
 
   // user interaction
-  [SetterThrows]
+  [SetterThrows, Pure]
            attribute boolean hidden;
   void click();
-  [SetterThrows]
+  [SetterThrows, Pure]
            attribute long tabIndex;
   [Throws]
   void focus();
   [Throws]
   void blur();
-  [SetterThrows]
+  [SetterThrows, Pure]
            attribute DOMString accessKey;
+  [Pure]
   readonly attribute DOMString accessKeyLabel;
-  [SetterThrows]
+  [SetterThrows, Pure]
            attribute boolean draggable;
   //[PutForwards=value] readonly attribute DOMSettableTokenList dropzone;
-  [SetterThrows]
+  [SetterThrows, Pure]
            attribute DOMString contentEditable;
+  [Pure]
   readonly attribute boolean isContentEditable;
+  [Pure]
   readonly attribute HTMLMenuElement? contextMenu;
   //[SetterThrows]
   //         attribute HTMLMenuElement? contextMenu;
-  [SetterThrows]
+  [SetterThrows, Pure]
            attribute boolean spellcheck;
 
   // command API
@@ -73,148 +72,12 @@ interface HTMLElement : Element {
   //readonly attribute boolean? commandChecked;
 
   // styling
-  [Throws, Constant]
+  [PutForwards=cssText, Constant]
   readonly attribute CSSStyleDeclaration style;
-
-  // event handler IDL attributes
-  [SetterThrows]
-           attribute EventHandler onabort;
-  [SetterThrows]
-           attribute EventHandler onblur;
-  //[SetterThrows]
-  //         attribute EventHandler oncancel;
-  [SetterThrows]
-           attribute EventHandler oncanplay;
-  [SetterThrows]
-           attribute EventHandler oncanplaythrough;
-  [SetterThrows]
-           attribute EventHandler onchange;
-  [SetterThrows]
-           attribute EventHandler onclick;
-  //[SetterThrows]
-  //         attribute EventHandler onclose;
-  [SetterThrows]
-           attribute EventHandler oncontextmenu;
-  //[SetterThrows]
-  //         attribute EventHandler oncuechange;
-  [SetterThrows]
-           attribute EventHandler ondblclick;
-  [SetterThrows]
-           attribute EventHandler ondrag;
-  [SetterThrows]
-           attribute EventHandler ondragend;
-  [SetterThrows]
-           attribute EventHandler ondragenter;
-  [SetterThrows]
-           attribute EventHandler ondragleave;
-  [SetterThrows]
-           attribute EventHandler ondragover;
-  [SetterThrows]
-           attribute EventHandler ondragstart;
-  [SetterThrows]
-           attribute EventHandler ondrop;
-  [SetterThrows]
-           attribute EventHandler ondurationchange;
-  [SetterThrows]
-           attribute EventHandler onemptied;
-  [SetterThrows]
-           attribute EventHandler onended;
-  // We think the spec is wrong here.
-  //         attribute OnErrorEventHandler onerror;
-  [SetterThrows]
-           attribute EventHandler onerror;
-  [SetterThrows]
-           attribute EventHandler onfocus;
-  [SetterThrows]
-           attribute EventHandler oninput;
-  [SetterThrows]
-           attribute EventHandler oninvalid;
-  [SetterThrows]
-           attribute EventHandler onkeydown;
-  [SetterThrows]
-           attribute EventHandler onkeypress;
-  [SetterThrows]
-           attribute EventHandler onkeyup;
-  [SetterThrows]
-           attribute EventHandler onload;
-  [SetterThrows]
-           attribute EventHandler onloadeddata;
-  [SetterThrows]
-           attribute EventHandler onloadedmetadata;
-  [SetterThrows]
-           attribute EventHandler onloadstart;
-  [SetterThrows]
-           attribute EventHandler onmousedown;
-  [SetterThrows]
-           attribute EventHandler onmousemove;
-  [SetterThrows]
-           attribute EventHandler onmouseout;
-  [SetterThrows]
-           attribute EventHandler onmouseover;
-  [SetterThrows]
-           attribute EventHandler onmouseup;
-  //[SetterThrows]
-  //         attribute EventHandler onmousewheel;
-  [SetterThrows]
-           attribute EventHandler onpause;
-  [SetterThrows]
-           attribute EventHandler onplay;
-  [SetterThrows]
-           attribute EventHandler onplaying;
-  [SetterThrows]
-           attribute EventHandler onprogress;
-  [SetterThrows]
-           attribute EventHandler onratechange;
-  [SetterThrows]
-           attribute EventHandler onreset;
-  [SetterThrows]
-           attribute EventHandler onscroll;
-  [SetterThrows]
-           attribute EventHandler onseeked;
-  [SetterThrows]
-           attribute EventHandler onseeking;
-  [SetterThrows]
-           attribute EventHandler onselect;
-  [SetterThrows]
-           attribute EventHandler onshow;
-  [SetterThrows]
-           attribute EventHandler onstalled;
-  [SetterThrows]
-           attribute EventHandler onsubmit;
-  [SetterThrows]
-           attribute EventHandler onsuspend;
-  [SetterThrows]
-           attribute EventHandler ontimeupdate;
-  [SetterThrows]
-           attribute EventHandler onvolumechange;
-  [SetterThrows]
-           attribute EventHandler onwaiting;
-
-  [SetterThrows]
-           attribute EventHandler onmozfullscreenchange;
-  [SetterThrows]
-           attribute EventHandler onmozfullscreenerror;
-  [SetterThrows]
-           attribute EventHandler onmozpointerlockchange;
-  [SetterThrows]
-           attribute EventHandler onmozpointerlockerror;
 
   // Mozilla specific stuff
   // FIXME Bug 810677 Move className from HTMLElement to Element
            attribute DOMString className;
-
-  [SetterThrows,Pref="dom.w3c_touch_events.expose"]
-           attribute EventHandler ontouchstart;
-  [SetterThrows,Pref="dom.w3c_touch_events.expose"]
-           attribute EventHandler ontouchend;
-  [SetterThrows,Pref="dom.w3c_touch_events.expose"]
-           attribute EventHandler ontouchmove;
-  [SetterThrows,Pref="dom.w3c_touch_events.expose"]
-           attribute EventHandler ontouchenter;
-  [SetterThrows,Pref="dom.w3c_touch_events.expose"]
-           attribute EventHandler ontouchleave;
-  [SetterThrows,Pref="dom.w3c_touch_events.expose"]
-           attribute EventHandler ontouchcancel;
 
   [SetterThrows]
            attribute EventHandler oncopy;
@@ -222,17 +85,36 @@ interface HTMLElement : Element {
            attribute EventHandler oncut;
   [SetterThrows]
            attribute EventHandler onpaste;
-/*
 };
 
 // http://dev.w3.org/csswg/cssom-view/#extensions-to-the-htmlelement-interface
 partial interface HTMLElement {
-*/
+  // CSSOM things are not [Pure] because they can flush
   readonly attribute Element? offsetParent;
   readonly attribute long offsetTop;
   readonly attribute long offsetLeft;
   readonly attribute long offsetWidth;
   readonly attribute long offsetHeight;
 };
+
+[NoInterfaceObject]
+interface TouchEventHandlers {
+  [SetterThrows,Func="nsGenericHTMLElement::TouchEventsEnabled"]
+           attribute EventHandler ontouchstart;
+  [SetterThrows,Func="nsGenericHTMLElement::TouchEventsEnabled"]
+           attribute EventHandler ontouchend;
+  [SetterThrows,Func="nsGenericHTMLElement::TouchEventsEnabled"]
+           attribute EventHandler ontouchmove;
+  [SetterThrows,Func="nsGenericHTMLElement::TouchEventsEnabled"]
+           attribute EventHandler ontouchenter;
+  [SetterThrows,Func="nsGenericHTMLElement::TouchEventsEnabled"]
+           attribute EventHandler ontouchleave;
+  [SetterThrows,Func="nsGenericHTMLElement::TouchEventsEnabled"]
+           attribute EventHandler ontouchcancel;
+};
+
+HTMLElement implements GlobalEventHandlers;
+HTMLElement implements NodeEventHandlers;
+HTMLElement implements TouchEventHandlers;
 
 interface HTMLUnknownElement : HTMLElement {};

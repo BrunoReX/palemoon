@@ -34,7 +34,6 @@ using mozilla::DefaultXDisplay;
 #include "nsDisplayList.h"
 #include "ImageLayers.h"
 #include "SharedTextureImage.h"
-#include "nsIDOMEventTarget.h"
 #include "nsObjectFrame.h"
 #include "nsIPluginDocument.h"
 #include "nsIStringStream.h"
@@ -50,6 +49,7 @@ using mozilla::DefaultXDisplay;
 #include "nsIDOMHTMLObjectElement.h"
 #include "nsIAppShell.h"
 #include "nsIDOMHTMLAppletElement.h"
+#include "nsIObjectLoadingContent.h"
 #include "nsAttrName.h"
 #include "nsIFocusManager.h"
 #include "nsFocusManager.h"
@@ -101,15 +101,14 @@ using namespace mozilla::layers;
 class nsPluginDOMContextMenuListener : public nsIDOMEventListener
 {
 public:
-  nsPluginDOMContextMenuListener();
+  nsPluginDOMContextMenuListener(nsIContent* aContent);
   virtual ~nsPluginDOMContextMenuListener();
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIDOMEVENTLISTENER
 
-  nsresult Init(nsIContent* aContent);
-  nsresult Destroy(nsIContent* aContent);
-  
+  void Destroy(nsIContent* aContent);
+
   nsEventStatus ProcessEvent(const nsGUIEvent& anEvent)
   {
     return nsEventStatus_eConsumeNoDefault;
@@ -148,22 +147,6 @@ nsPluginInstanceOwner::NotifyPaintWaiter(nsDisplayListBuilder* aBuilder)
     mWaitingForPaint = nsContentUtils::AddScriptRunner(event);
   }
 }
-
-#ifdef XP_MACOSX
-static void DrawPlugin(ImageContainer* aContainer, void* aPluginInstanceOwner)
-{
-  nsObjectFrame* frame = static_cast<nsPluginInstanceOwner*>(aPluginInstanceOwner)->GetFrame();
-  if (frame) {
-    frame->UpdateImageLayer(gfxRect(0,0,0,0));
-  }
-}
-
-static void OnDestroyImage(void* aPluginInstanceOwner)
-{
-  nsPluginInstanceOwner* owner = static_cast<nsPluginInstanceOwner*>(aPluginInstanceOwner);
-  NS_IF_RELEASE(owner);
-}
-#endif // XP_MACOSX
 
 already_AddRefed<ImageContainer>
 nsPluginInstanceOwner::GetImageContainer()
@@ -206,22 +189,7 @@ nsPluginInstanceOwner::GetImageContainer()
 #endif
 
   mInstance->GetImageContainer(getter_AddRefs(container));
-  if (container) {
-#ifdef XP_MACOSX
-    AutoLockImage autoLock(container);
-    Image* image = autoLock.GetImage();
-    if (image && image->GetFormat() == MAC_IO_SURFACE && mObjectFrame) {
-      // With this drawing model, every call to
-      // nsIPluginInstance::GetImage() creates a new image.
-      MacIOSurfaceImage *oglImage = static_cast<MacIOSurfaceImage*>(image);
-      NS_ADDREF_THIS();
-      oglImage->SetUpdateCallback(&DrawPlugin, this);
-      oglImage->SetDestroyCallback(&OnDestroyImage);
-    }
-#endif
-    return container.forget();
-  }
-  return nullptr;
+  return container.forget();
 }
 
 void
@@ -304,7 +272,6 @@ nsPluginInstanceOwner::nsPluginInstanceOwner()
 
   mObjectFrame = nullptr;
   mContent = nullptr;
-  mTagText = nullptr;
   mWidgetCreationComplete = false;
 #ifdef XP_MACOSX
   memset(&mCGPluginPortCopy, 0, sizeof(NP_CGContext));
@@ -373,11 +340,6 @@ nsPluginInstanceOwner::~nsPluginInstanceOwner()
   if (mCachedAttrParamValues) {
     NS_Free(mCachedAttrParamValues);
     mCachedAttrParamValues = nullptr;
-  }
-
-  if (mTagText) {
-    NS_Free(mTagText);
-    mTagText = nullptr;
   }
 
   PLUG_DeletePluginNativeWindow(mPluginWindow);
@@ -640,7 +602,6 @@ NS_IMETHODIMP nsPluginInstanceOwner::InvalidateRect(NPRect *invalidRect)
 #if defined(XP_MACOSX) || defined(MOZ_WIDGET_ANDROID)
   // Each time an asynchronously-drawing plugin sends a new surface to display,
   // the image in the ImageContainer is updated and InvalidateRect is called.
-  // MacIOSurfaceImages callbacks are attached here.
   // There are different side effects for (sync) Android plugins.
   nsRefPtr<ImageContainer> container;
   mInstance->GetImageContainer(getter_AddRefs(container));
@@ -834,49 +795,6 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetTagType(nsPluginTagType *result)
   else if (atom == nsGkAtoms::object)
     *result = nsPluginTagType_Object;
 
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsPluginInstanceOwner::GetTagText(const char* *result)
-{
-  NS_ENSURE_ARG_POINTER(result);
-  if (nullptr == mTagText) {
-    nsresult rv;
-    nsCOMPtr<nsIDOMNode> node(do_QueryInterface(mContent, &rv));
-    if (NS_FAILED(rv))
-      return rv;
-
-    nsCOMPtr<nsIDocument> document;
-    rv = GetDocument(getter_AddRefs(document));
-    if (NS_FAILED(rv))
-      return rv;
-
-    nsCOMPtr<nsIDOMDocument> domDoc = do_QueryInterface(document);
-    NS_ASSERTION(domDoc, "Need a document");
-
-    nsCOMPtr<nsIDocumentEncoder> docEncoder(do_CreateInstance(NS_DOC_ENCODER_CONTRACTID_BASE "text/html", &rv));
-    if (NS_FAILED(rv))
-      return rv;
-    rv = docEncoder->Init(domDoc, NS_LITERAL_STRING("text/html"), nsIDocumentEncoder::OutputEncodeBasicEntities);
-    if (NS_FAILED(rv))
-      return rv;
-
-    nsRefPtr<nsRange> range = new nsRange();
-    rv = range->SelectNode(node);
-    if (NS_FAILED(rv))
-      return rv;
-
-    docEncoder->SetRange(range);
-    nsString elementHTML;
-    rv = docEncoder->EncodeToString(elementHTML);
-    if (NS_FAILED(rv))
-      return rv;
-
-    mTagText = ToNewUTF8String(elementHTML);
-    if (!mTagText)
-      return NS_ERROR_OUT_OF_MEMORY;
-  }
-  *result = mTagText;
   return NS_OK;
 }
 
@@ -1130,6 +1048,11 @@ nsresult nsPluginInstanceOwner::EnsureCachedAttrParamArrays()
     mNumCachedAttrs = 0xFFFD;
   }
 
+  // Check if we are java for special codebase handling
+  const char* mime = nullptr;
+  bool isJava = NS_SUCCEEDED(mInstance->GetMIMEType(&mime)) && mime &&
+                nsPluginHost::IsJavaMIMEType(mime);
+
   // now, we need to find all the PARAM tags that are children of us
   // however, be careful not to include any PARAMs that don't have us
   // as a direct parent. For nested object (or applet) tags, be sure
@@ -1222,6 +1145,23 @@ nsresult nsPluginInstanceOwner::EnsureCachedAttrParamArrays()
     mNumCachedAttrs++;
   }
 
+  // (Bug 738396) java has quirks in its codebase parsing, pass the
+  // absolute codebase URI as content sees it.
+  bool addCodebase = false;
+  nsAutoCString codebaseStr;
+  if (isJava) {
+    nsCOMPtr<nsIObjectLoadingContent> objlc = do_QueryInterface(mContent);
+    NS_ENSURE_TRUE(objlc, NS_ERROR_UNEXPECTED);
+    nsCOMPtr<nsIURI> codebaseURI;
+    nsresult rv = objlc->GetBaseURI(getter_AddRefs(codebaseURI));
+    NS_ENSURE_SUCCESS(rv, rv);
+    codebaseURI->GetSpec(codebaseStr);
+    if (!mContent->HasAttr(kNameSpaceID_None, nsGkAtoms::codebase)) {
+      mNumCachedAttrs++;
+      addCodebase = true;
+    }
+  }
+
   mCachedAttrParamNames  = (char**)NS_Alloc(sizeof(char*) * (mNumCachedAttrs + 1 + mNumCachedParams));
   NS_ENSURE_TRUE(mCachedAttrParamNames,  NS_ERROR_OUT_OF_MEMORY);
   mCachedAttrParamValues = (char**)NS_Alloc(sizeof(char*) * (mNumCachedAttrs + 1 + mNumCachedParams));
@@ -1266,7 +1206,7 @@ nsresult nsPluginInstanceOwner::EnsureCachedAttrParamArrays()
     FixUpURLS(name, value);
 
     mCachedAttrParamNames [nextAttrParamIndex] = ToNewUTF8String(name);
-    if (!wmodeType.IsEmpty() && 
+    if (!wmodeType.IsEmpty() &&
         0 == PL_strcasecmp(mCachedAttrParamNames[nextAttrParamIndex], "wmode")) {
       mCachedAttrParamValues[nextAttrParamIndex] = ToNewUTF8String(NS_ConvertUTF8toUTF16(wmodeType));
 
@@ -1275,9 +1215,18 @@ nsresult nsPluginInstanceOwner::EnsureCachedAttrParamArrays()
         mNumCachedAttrs--;
         wmodeSet = true;
       }
+    } else if (isJava && 0 == PL_strcasecmp(mCachedAttrParamNames[nextAttrParamIndex], "codebase")) {
+      mCachedAttrParamValues[nextAttrParamIndex] = ToNewUTF8String(NS_ConvertUTF8toUTF16(codebaseStr));
     } else {
       mCachedAttrParamValues[nextAttrParamIndex] = ToNewUTF8String(value);
     }
+    nextAttrParamIndex++;
+  }
+
+  // Potentially add CODEBASE attribute
+  if (addCodebase) {
+    mCachedAttrParamNames [nextAttrParamIndex] = ToNewUTF8String(NS_LITERAL_STRING("codebase"));
+    mCachedAttrParamValues[nextAttrParamIndex] = ToNewUTF8String(NS_ConvertUTF8toUTF16(codebaseStr));
     nextAttrParamIndex++;
   }
 
@@ -1306,7 +1255,10 @@ nsresult nsPluginInstanceOwner::EnsureCachedAttrParamArrays()
   nextAttrParamIndex++;
 
   // Add PARAM name/value pairs.
-  for (uint16_t i = 0; i < mNumCachedParams; i++) {
+
+  // We may decrement mNumCachedParams below
+  uint16_t totalParams = mNumCachedParams;
+  for (uint16_t i = 0; i < totalParams; i++) {
     nsIDOMElement* param = ourParams.ObjectAt(i);
     if (!param) {
       continue;
@@ -1316,7 +1268,7 @@ nsresult nsPluginInstanceOwner::EnsureCachedAttrParamArrays()
     nsAutoString value;
     param->GetAttribute(NS_LITERAL_STRING("name"), name); // check for empty done above
     param->GetAttribute(NS_LITERAL_STRING("value"), value);
-    
+
     FixUpURLS(name, value);
 
     /*
@@ -1331,6 +1283,12 @@ nsresult nsPluginInstanceOwner::EnsureCachedAttrParamArrays()
      */
     name.Trim(" \n\r\t\b", true, true, false);
     value.Trim(" \n\r\t\b", true, true, false);
+    if (isJava && name.EqualsIgnoreCase("codebase")) {
+      // We inserted normalized codebase above, don't include other versions in
+      // params
+      mNumCachedParams--;
+      continue;
+    }
     mCachedAttrParamNames [nextAttrParamIndex] = ToNewUTF8String(name);
     mCachedAttrParamValues[nextAttrParamIndex] = ToNewUTF8String(value);
     nextAttrParamIndex++;
@@ -1798,7 +1756,7 @@ void nsPluginInstanceOwner::ExitFullScreen(jobject view) {
 nsresult nsPluginInstanceOwner::DispatchFocusToPlugin(nsIDOMEvent* aFocusEvent)
 {
 #ifdef MOZ_WIDGET_ANDROID
-  {
+  if (mInstance) {
     ANPEvent event;
     event.inSize = sizeof(ANPEvent);
     event.eventType = kLifecycle_ANPEventType;
@@ -1955,6 +1913,8 @@ nsresult nsPluginInstanceOwner::DispatchMouseToPlugin(nsIDOMEvent* aMouseEvent)
 nsresult
 nsPluginInstanceOwner::HandleEvent(nsIDOMEvent* aEvent)
 {
+  NS_ASSERTION(mInstance, "Should have a valid plugin instance or not receive events.");
+
   nsAutoString eventType;
   aEvent->GetType(eventType);
   if (eventType.EqualsLiteral("focus")) {
@@ -2585,13 +2545,12 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const nsGUIEvent& anEvent)
 nsresult
 nsPluginInstanceOwner::Destroy()
 {
-  if (mObjectFrame)
-    mObjectFrame->SetInstanceOwner(nullptr);
+  SetFrame(nullptr);
 
 #ifdef XP_MACOSX
   RemoveFromCARefreshTimer();
   if (mColorProfile)
-    ::CGColorSpaceRelease(mColorProfile);  
+    ::CGColorSpaceRelease(mColorProfile);
 #endif
 
   // unregister context menu listener
@@ -3018,10 +2977,7 @@ nsresult nsPluginInstanceOwner::Init(nsIContent* aContent)
   }
 
   // register context menu listener
-  mCXMenuListener = new nsPluginDOMContextMenuListener();
-  if (mCXMenuListener) {    
-    mCXMenuListener->Init(aContent);
-  }
+  mCXMenuListener = new nsPluginDOMContextMenuListener(aContent);
 
   mContent->AddEventListener(NS_LITERAL_STRING("focus"), this, false,
                              false);
@@ -3383,8 +3339,6 @@ nsPluginInstanceOwner::UpdateDocumentActiveState(bool aIsActive)
   if (mInstance) {
     if (!mPluginDocumentActiveState)
       RemovePluginView();
-    else if (mPluginDocumentActiveState && mFullScreen)
-      AddPluginView();
 
     mInstance->NotifyOnScreen(mPluginDocumentActiveState);
 
@@ -3461,7 +3415,7 @@ void nsPluginInstanceOwner::SetFrame(nsObjectFrame *aFrame)
     }
     mObjectFrame->FixupWindow(mObjectFrame->GetContentRectRelativeToSelf().Size());
     mObjectFrame->InvalidateFrame();
-    
+
     nsFocusManager* fm = nsFocusManager::GetFocusManager();
     const nsIContent* content = aFrame->GetContent();
     if (fm && content) {
@@ -3503,8 +3457,9 @@ already_AddRefed<nsIURI> nsPluginInstanceOwner::GetBaseURI() const
 
 // nsPluginDOMContextMenuListener class implementation
 
-nsPluginDOMContextMenuListener::nsPluginDOMContextMenuListener()
+nsPluginDOMContextMenuListener::nsPluginDOMContextMenuListener(nsIContent* aContent)
 {
+  aContent->AddEventListener(NS_LITERAL_STRING("contextmenu"), this, true);
 }
 
 nsPluginDOMContextMenuListener::~nsPluginDOMContextMenuListener()
@@ -3518,28 +3473,12 @@ NS_IMETHODIMP
 nsPluginDOMContextMenuListener::HandleEvent(nsIDOMEvent* aEvent)
 {
   aEvent->PreventDefault(); // consume event
-  
+
   return NS_OK;
 }
 
-nsresult nsPluginDOMContextMenuListener::Init(nsIContent* aContent)
-{
-  nsCOMPtr<nsIDOMEventTarget> receiver(do_QueryInterface(aContent));
-  if (receiver) {
-    receiver->AddEventListener(NS_LITERAL_STRING("contextmenu"), this, true);
-    return NS_OK;
-  }
-  
-  return NS_ERROR_NO_INTERFACE;
-}
-
-nsresult nsPluginDOMContextMenuListener::Destroy(nsIContent* aContent)
+void nsPluginDOMContextMenuListener::Destroy(nsIContent* aContent)
 {
   // Unregister context menu listener
-  nsCOMPtr<nsIDOMEventTarget> receiver(do_QueryInterface(aContent));
-  if (receiver) {
-    receiver->RemoveEventListener(NS_LITERAL_STRING("contextmenu"), this, true);
-  }
-  
-  return NS_OK;
+  aContent->RemoveEventListener(NS_LITERAL_STRING("contextmenu"), this, true);
 }

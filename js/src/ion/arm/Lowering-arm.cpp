@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,22 +41,14 @@ LIRGeneratorARM::useBoxFixed(LInstruction *lir, size_t n, MDefinition *mir, Regi
 bool
 LIRGeneratorARM::lowerConstantDouble(double d, MInstruction *mir)
 {
-    uint32_t index;
-    if (!lirGraph_.addConstantToPool(DoubleValue(d), &index))
-        return false;
-
-    LDouble *lir = new LDouble(LConstantIndex::FromIndex(index));
-    return define(lir, mir);
+    return define(new LDouble(d), mir);
 }
 
 bool
 LIRGeneratorARM::visitConstant(MConstant *ins)
 {
     if (ins->type() == MIRType_Double) {
-        uint32_t index;
-        if (!lirGraph_.addConstantToPool(ins->value(), &index))
-            return false;
-        LDouble *lir = new LDouble(LConstantIndex::FromIndex(index));
+        LDouble *lir = new LDouble(ins->value().toDouble());
         return define(lir, ins);
     }
 
@@ -237,9 +228,30 @@ LIRGeneratorARM::lowerForShift(LInstructionHelper<1, 2, 0> *ins, MDefinition *mi
 bool
 LIRGeneratorARM::lowerDivI(MDiv *div)
 {
+    // Division instructions are slow. Division by constant denominators can be
+    // rewritten to use other instructions.
+    if (div->rhs()->isConstant()) {
+        int32_t rhs = div->rhs()->toConstant()->value().toInt32();
+        // Check for division by a positive power of two, which is an easy and
+        // important case to optimize. Note that other optimizations are also
+        // possible; division by negative powers of two can be optimized in a
+        // similar manner as positive powers of two, and division by other
+        // constants can be optimized by a reciprocal multiplication technique.
+        int32_t shift;
+        JS_FLOOR_LOG2(shift, rhs);
+        if (rhs > 0 && 1 << shift == rhs) {
+            LDivPowTwoI *lir = new LDivPowTwoI(useRegisterAtStart(div->lhs()), shift);
+            if (div->fallible() && !assignSnapshot(lir))
+                return false;
+            return define(lir, div);
+        }
+    }
+
     LDivI *lir = new LDivI(useFixed(div->lhs(), r0), use(div->rhs(), r1),
                            tempFixed(r2), tempFixed(r3));
-    return assignSnapshot(lir) && defineFixed(lir, div, LAllocation(AnyRegister(r0)));
+    if (div->fallible() && !assignSnapshot(lir))
+        return false;
+    return defineFixed(lir, div, LAllocation(AnyRegister(r0)));
 }
 
 bool
@@ -258,18 +270,24 @@ LIRGeneratorARM::lowerModI(MMod *mod)
         int32_t rhs = mod->rhs()->toConstant()->value().toInt32();
         int32_t shift;
         JS_FLOOR_LOG2(shift, rhs);
-        if (1 << shift == rhs) {
+        if (rhs > 0 && 1 << shift == rhs) {
             LModPowTwoI *lir = new LModPowTwoI(useRegister(mod->lhs()), shift);
-            return (assignSnapshot(lir) && define(lir, mod));
+            if (mod->fallible() && !assignSnapshot(lir))
+                return false;
+            return define(lir, mod);
         } else if (shift < 31 && (1 << (shift+1)) - 1 == rhs) {
             LModMaskI *lir = new LModMaskI(useRegister(mod->lhs()), temp(LDefinition::GENERAL), shift+1);
-            return (assignSnapshot(lir) && define(lir, mod));
+            if (mod->fallible() && !assignSnapshot(lir))
+                return false;
+            return define(lir, mod);
         }
     }
     LModI *lir = new LModI(useFixed(mod->lhs(), r0), use(mod->rhs(), r1),
                            tempFixed(r2), tempFixed(r3), temp(LDefinition::GENERAL));
 
-    return assignSnapshot(lir) && defineFixed(lir, mod, LAllocation(AnyRegister(r1)));
+    if (mod->fallible() && !assignSnapshot(lir))
+        return false;
+    return defineFixed(lir, mod, LAllocation(AnyRegister(r1)));
 }
 
 bool
@@ -294,6 +312,12 @@ LIRGeneratorARM::newLTableSwitchV(MTableSwitch *tableswitch)
     return new LTableSwitchV(temp(), tempFloat(), tableswitch);
 }
 
+LGetPropertyCacheT *
+LIRGeneratorARM::newLGetPropertyCacheT(MGetPropertyCache *ins)
+{
+    return new LGetPropertyCacheT(useRegister(ins->object()), LDefinition::BogusTemp());
+}
+
 bool
 LIRGeneratorARM::visitGuardShape(MGuardShape *ins)
 {
@@ -309,10 +333,17 @@ LIRGeneratorARM::visitGuardShape(MGuardShape *ins)
 }
 
 bool
-LIRGeneratorARM::visitRecompileCheck(MRecompileCheck *ins)
+LIRGeneratorARM::visitGuardObjectType(MGuardObjectType *ins)
 {
-    LRecompileCheck *lir = new LRecompileCheck(temp(LDefinition::GENERAL));
-    return assignSnapshot(lir, Bailout_RecompileCheck) && add(lir, ins);
+    JS_ASSERT(ins->obj()->type() == MIRType_Object);
+
+    LDefinition tempObj = temp(LDefinition::OBJECT);
+    LGuardObjectType *guard = new LGuardObjectType(useRegister(ins->obj()), tempObj);
+    if (!assignSnapshot(guard))
+        return false;
+    if (!add(guard, ins))
+        return false;
+    return redefine(ins, ins->obj());
 }
 
 bool
@@ -330,6 +361,25 @@ LIRGeneratorARM::visitStoreTypedArrayElement(MStoreTypedArrayElement *ins)
     LAllocation index = useRegisterOrConstant(ins->index());
     LAllocation value = useRegisterOrNonDoubleConstant(ins->value());
     return add(new LStoreTypedArrayElement(elements, index, value), ins);
+}
+
+bool
+LIRGeneratorARM::visitStoreTypedArrayElementHole(MStoreTypedArrayElementHole *ins)
+{
+    JS_ASSERT(ins->elements()->type() == MIRType_Elements);
+    JS_ASSERT(ins->index()->type() == MIRType_Int32);
+    JS_ASSERT(ins->length()->type() == MIRType_Int32);
+
+    if (ins->isFloatArray())
+        JS_ASSERT(ins->value()->type() == MIRType_Double);
+    else
+        JS_ASSERT(ins->value()->type() == MIRType_Int32);
+
+    LUse elements = useRegister(ins->elements());
+    LAllocation length = useRegisterOrConstant(ins->length());
+    LAllocation index = useRegisterOrConstant(ins->index());
+    LAllocation value = useRegisterOrNonDoubleConstant(ins->value());
+    return add(new LStoreTypedArrayElementHole(elements, length, index, value), ins);
 }
 
 bool
@@ -355,3 +405,84 @@ LIRGeneratorARM::lowerUrshD(MUrsh *mir)
     LUrshD *lir = new LUrshD(useRegister(lhs), useRegisterOrConstant(rhs), temp());
     return define(lir, mir);
 }
+
+bool
+LIRGeneratorARM::visitAsmJSNeg(MAsmJSNeg *ins)
+{
+    if (ins->type() == MIRType_Int32)
+        return define(new LNegI(useRegisterAtStart(ins->input())), ins);
+
+    JS_ASSERT(ins->type() == MIRType_Double);
+    return define(new LNegD(useRegisterAtStart(ins->input())), ins);
+}
+bool
+LIRGeneratorARM::visitAsmJSUDiv(MAsmJSUDiv *div)
+{
+    LAsmJSDivOrMod *lir = new LAsmJSDivOrMod(useFixed(div->lhs(), r0),
+                                         useFixed(div->rhs(), r1),
+                                         tempFixed(r2), tempFixed(r3));
+    return defineFixed(lir, div, LAllocation(AnyRegister(r0)));
+}
+
+bool
+LIRGeneratorARM::visitAsmJSUMod(MAsmJSUMod *mod)
+{
+    LAsmJSDivOrMod *lir = new LAsmJSDivOrMod(useFixed(mod->lhs(), r0),
+                                         useFixed(mod->rhs(), r1),
+                                         tempFixed(r2), tempFixed(r3));
+    return defineFixed(lir, mod, LAllocation(AnyRegister(r1)));
+}
+
+bool
+LIRGeneratorARM::visitAsmJSUnsignedToDouble(MAsmJSUnsignedToDouble *ins)
+{
+    JS_ASSERT(ins->input()->type() == MIRType_Int32);
+    LUInt32ToDouble *lir = new LUInt32ToDouble(useRegisterAtStart(ins->input()));
+    return define(lir, ins);
+}
+
+bool
+LIRGeneratorARM::visitAsmJSStoreHeap(MAsmJSStoreHeap *ins)
+{
+    LAsmJSStoreHeap *lir;
+    switch (ins->viewType()) {
+      case ArrayBufferView::TYPE_INT8: case ArrayBufferView::TYPE_UINT8:
+      case ArrayBufferView::TYPE_INT16: case ArrayBufferView::TYPE_UINT16:
+      case ArrayBufferView::TYPE_INT32: case ArrayBufferView::TYPE_UINT32:
+        lir = new LAsmJSStoreHeap(useRegisterAtStart(ins->ptr()),
+                                  useRegisterAtStart(ins->value()));
+        break;
+      case ArrayBufferView::TYPE_FLOAT32:
+      case ArrayBufferView::TYPE_FLOAT64:
+        lir = new LAsmJSStoreHeap(useRegisterAtStart(ins->ptr()),
+                                  useRegisterAtStart(ins->value()));
+        break;
+      default: JS_NOT_REACHED("unexpected array type");
+    }
+
+    return add(lir, ins);
+}
+
+bool
+LIRGeneratorARM::visitAsmJSLoadFuncPtr(MAsmJSLoadFuncPtr *ins)
+{
+    return define(new LAsmJSLoadFuncPtr(useRegister(ins->index()), temp()), ins);
+}
+
+bool
+LIRGeneratorARM::lowerTruncateDToInt32(MTruncateToInt32 *ins)
+{
+    MDefinition *opd = ins->input();
+    JS_ASSERT(opd->type() == MIRType_Double);
+
+    return define(new LTruncateDToInt32(useRegister(opd), LDefinition::BogusTemp()), ins);
+}
+
+bool
+LIRGeneratorARM::visitStoreTypedArrayElementStatic(MStoreTypedArrayElementStatic *ins)
+{
+    JS_NOT_REACHED("NYI");
+    return true;
+}
+
+//__aeabi_uidiv

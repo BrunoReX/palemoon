@@ -15,8 +15,6 @@ namespace a11y {
 
 class DocAccessible;
 
-class nsAccEvent;
-
 // Constants used to point whether the event is from user input.
 enum EIsFromUserInput
 {
@@ -58,6 +56,9 @@ public:
     // eCoalesceSelectionChange: coalescence of selection change events.
     eCoalesceSelectionChange,
 
+    // eCoalesceStateChange: coalesce state change events.
+    eCoalesceStateChange,
+
      // eRemoveDupes : For repeat events, only the newest event in queue
      //    will be emitted.
     eRemoveDupes,
@@ -79,11 +80,6 @@ public:
 
   Accessible* GetAccessible() const { return mAccessible; }
   DocAccessible* GetDocAccessible() const { return mAccessible->Document(); }
-
-  /**
-   * Create and return an XPCOM object for accessible event object.
-   */
-  virtual already_AddRefed<nsAccEvent> CreateXPCOMObject();
 
   /**
    * Down casting.
@@ -120,7 +116,7 @@ protected:
   EEventRule mEventRule;
   nsRefPtr<Accessible> mAccessible;
 
-  friend class NotificationController;
+  friend class EventQueue;
   friend class AccReorderEvent;
 };
 
@@ -135,17 +131,15 @@ public:
                       bool aIsEnabled,
                       EIsFromUserInput aIsFromUserInput = eAutoDetect) :
     AccEvent(nsIAccessibleEvent::EVENT_STATE_CHANGE, aAccessible,
-             aIsFromUserInput, eAllowDupes),
+             aIsFromUserInput, eCoalesceStateChange),
              mState(aState), mIsEnabled(aIsEnabled) { }
 
   AccStateChangeEvent(Accessible* aAccessible, uint64_t aState) :
     AccEvent(::nsIAccessibleEvent::EVENT_STATE_CHANGE, aAccessible,
-             eAutoDetect, eAllowDupes), mState(aState)
+             eAutoDetect, eCoalesceStateChange), mState(aState)
     { mIsEnabled = (mAccessible->State() & mState) != 0; }
 
   // AccEvent
-  virtual already_AddRefed<nsAccEvent> CreateXPCOMObject();
-
   static const EventGroup kEventGroup = eStateChangeEvent;
   virtual unsigned int GetEventGroups() const
   {
@@ -159,6 +153,8 @@ public:
 private:
   uint64_t mState;
   bool mIsEnabled;
+
+  friend class EventQueue;
 };
 
 
@@ -173,8 +169,6 @@ public:
                      EIsFromUserInput aIsFromUserInput = eAutoDetect);
 
   // AccEvent
-  virtual already_AddRefed<nsAccEvent> CreateXPCOMObject();
-
   static const EventGroup kEventGroup = eTextChangeEvent;
   virtual unsigned int GetEventGroups() const
   {
@@ -193,7 +187,7 @@ private:
   bool mIsInserted;
   nsString mModifiedText;
 
-  friend class NotificationController;
+  friend class EventQueue;
   friend class AccReorderEvent;
 };
 
@@ -230,7 +224,7 @@ protected:
   nsRefPtr<Accessible> mParent;
   nsRefPtr<AccTextChangeEvent> mTextChangeEvent;
 
-  friend class NotificationController;
+  friend class EventQueue;
 };
 
 
@@ -243,8 +237,6 @@ public:
   AccHideEvent(Accessible* aTarget, nsINode* aTargetNode);
 
   // Event
-  virtual already_AddRefed<nsAccEvent> CreateXPCOMObject();
-
   static const EventGroup kEventGroup = eHideEvent;
   virtual unsigned int GetEventGroups() const
   {
@@ -260,7 +252,7 @@ protected:
   nsRefPtr<Accessible> mNextSibling;
   nsRefPtr<Accessible> mPrevSibling;
 
-  friend class NotificationController;
+  friend class EventQueue;
 };
 
 
@@ -328,7 +320,7 @@ protected:
    */
   nsTArray<AccMutationEvent*> mDependentEvents;
 
-  friend class NotificationController;
+  friend class EventQueue;
 };
 
 
@@ -344,8 +336,6 @@ public:
   virtual ~AccCaretMoveEvent() { }
 
   // AccEvent
-  virtual already_AddRefed<nsAccEvent> CreateXPCOMObject();
-
   static const EventGroup kEventGroup = eCaretMoveEvent;
   virtual unsigned int GetEventGroups() const
   {
@@ -358,7 +348,7 @@ public:
 private:
   int32_t mCaretOffset;
 
-  friend class NotificationController;
+  friend class EventQueue;
 };
 
 
@@ -395,7 +385,7 @@ private:
   uint32_t mPreceedingCount;
   AccSelChangeEvent* mPackedEvent;
 
-  friend class NotificationController;
+  friend class EventQueue;
 };
 
 
@@ -409,8 +399,6 @@ public:
                       int32_t aRowOrColIndex, int32_t aNumRowsOrCols);
 
   // AccEvent
-  virtual already_AddRefed<nsAccEvent> CreateXPCOMObject();
-
   static const EventGroup kEventGroup = eTableChangeEvent;
   virtual unsigned int GetEventGroups() const
   {
@@ -440,8 +428,6 @@ public:
   virtual ~AccVCChangeEvent() { }
 
   // AccEvent
-  virtual already_AddRefed<nsAccEvent> CreateXPCOMObject();
-
   static const EventGroup kEventGroup = eVirtualCursorChangeEvent;
   virtual unsigned int GetEventGroups() const
   {
@@ -481,6 +467,12 @@ public:
 private:
   AccEvent* mRawPtr;
 };
+
+/**
+ * Return a new xpcom accessible event for the given internal one.
+ */
+already_AddRefed<nsIAccessibleEvent>
+MakeXPCEvent(AccEvent* aEvent);
 
 } // namespace a11y
 } // namespace mozilla

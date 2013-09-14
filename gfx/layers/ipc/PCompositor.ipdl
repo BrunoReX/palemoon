@@ -7,31 +7,30 @@
 
 include LayersSurfaces;
 include protocol PGrallocBuffer;
-include protocol PLayers;
+include protocol PLayerTransaction;
+include "mozilla/layers/CompositorTypes.h";
 
-using mozilla::layers::LayersBackend;
 using mozilla::null_t;
+using mozilla::layers::TextureFactoryIdentifier;
+using mozilla::layers::LayersBackend;
 
 namespace mozilla {
 namespace layers {
 
+
 /**
  * The PCompositor protocol is used to manage communication between
  * the main thread and the compositor thread context. It's primary
- * purpose is to manage the PLayers sub protocol.
+ * purpose is to manage the PLayerTransaction sub protocol.
  */
 // This should really be 'sync', but we're using 'rpc' as a workaround
 // for Bug 716631.
 rpc protocol PCompositor
 {
-  manages PGrallocBuffer;
-  // A Compositor manages a single Layer Manager (PLayers)
-  manages PLayers;
+  // A Compositor manages a single Layer Manager (PLayerTransaction)
+  manages PLayerTransaction;
 
-parent:  
-
-  // Release disposable memory. This will clear the tile store (stale tiles).
-  async MemoryPressure();
+parent:
 
   // The child is about to be destroyed, so perform any necessary cleanup.
   sync WillStop();
@@ -54,12 +53,12 @@ parent:
   sync MakeSnapshot(SurfaceDescriptor inSnapshot)
     returns (SurfaceDescriptor outSnapshot);
 
-  sync PLayers(LayersBackend backendHint, uint64_t id)
-    returns (LayersBackend backend, int32_t maxTextureSize);
+  // Make sure any pending composites are started immediately and
+  // block until they are completed.
+  sync FlushRendering();
 
-  // FIXME/bug 783451
-  sync PGrallocBuffer(gfxIntSize size, uint32_t format, uint32_t usage)
-    returns (MaybeMagicGrallocBufferHandle handle);
+  sync PLayerTransaction(LayersBackend layersBackendHint, uint64_t id)
+    returns (TextureFactoryIdentifier textureFactoryIdentifier);
 };
 
 } // layers

@@ -44,6 +44,8 @@ class AudioClock
     // Get the current pitch preservation state.
     // Called on the audio thread.
     bool GetPreservesPitch();
+    // Get the number of frames written to the backend.
+    int64_t GetWritten();
   private:
     // This AudioStream holds a strong reference to this AudioClock. This
     // pointer is garanteed to always be valid.
@@ -75,8 +77,6 @@ class AudioClock
     int mInRate;
     // True if the we are timestretching, false if we are resampling.
     bool mPreservesPitch;
-    // The current playback rate.
-    double mPlaybackRate;
     // True if we are playing at the old playbackRate after it has been changed.
     bool mCompensatingLatency;
 };
@@ -105,6 +105,9 @@ public:
   // you may receive an implementation which forwards to a compositing process.
   static AudioStream* AllocateStream();
 
+  // Returns the maximum number of channels supported by the audio hardware.
+  static int MaxNumberOfChannels();
+
   // Initialize the audio stream. aNumChannels is the number of audio
   // channels (1 for mono, 2 for stereo, etc) and aRate is the sample rate
   // (22050Hz, 44100Hz, etc).
@@ -130,10 +133,17 @@ public:
   // Block until buffered audio data has been consumed.
   virtual void Drain() = 0;
 
-  // Pause audio playback
+  // Start the stream.
+  virtual void Start() = 0;
+
+  // Return the number of frames written so far in the stream. This allow the
+  // caller to check if it is safe to start the stream, if needed.
+  virtual int64_t GetWritten();
+
+  // Pause audio playback.
   virtual void Pause() = 0;
 
-  // Resume audio playback
+  // Resume audio playback.
   virtual void Resume() = 0;
 
   // Return the position in microseconds of the audio frame being played by
@@ -152,10 +162,6 @@ public:
   // Returns true when the audio stream is paused.
   virtual bool IsPaused() = 0;
 
-  // Returns the minimum number of audio frames which must be written before
-  // you can be sure that something will be played.
-  virtual int32_t GetMinWriteSize() = 0;
-
   int GetRate() { return mOutRate; }
   int GetChannels() { return mChannels; }
 
@@ -173,6 +179,8 @@ protected:
   // Output rate in Hz (characteristic of the playback rate)
   int mOutRate;
   int mChannels;
+  // Number of frames written to the buffers.
+  int64_t mWritten;
   AudioClock mAudioClock;
   nsAutoPtr<soundtouch::SoundTouch> mTimeStretcher;
 };

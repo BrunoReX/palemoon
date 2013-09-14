@@ -1,10 +1,11 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsclone_h___
-#define jsclone_h___
+#ifndef jsclone_h
+#define jsclone_h
 
 #include "jsapi.h"
 #include "jscntxt.h"
@@ -15,7 +16,7 @@
 namespace js {
 
 bool
-WriteStructuredClone(JSContext *cx, const Value &v, uint64_t **bufp, size_t *nbytesp,
+WriteStructuredClone(JSContext *cx, HandleValue v, uint64_t **bufp, size_t *nbytesp,
                      const JSStructuredCloneCallbacks *cb, void *cbClosure,
                      jsval transferable);
 
@@ -91,7 +92,7 @@ struct SCInput {
     uint64_t *end;
 };
 
-}
+} /* namespace js */
 
 struct JSStructuredCloneReader {
   public:
@@ -110,8 +111,9 @@ struct JSStructuredCloneReader {
 
     bool checkDouble(double d);
     JSString *readString(uint32_t nchars);
-    bool readTypedArray(uint32_t tag, uint32_t nelems, js::Value *vp);
+    bool readTypedArray(uint32_t arrayType, uint32_t nelems, js::Value *vp, bool v1Read = false);
     bool readArrayBuffer(uint32_t nbytes, js::Value *vp);
+    bool readV1ArrayBuffer(uint32_t arrayType, uint32_t nelems, js::Value *vp);
     bool readId(jsid *idp);
     bool startRead(js::Value *vp);
 
@@ -141,7 +143,7 @@ struct JSStructuredCloneWriter {
         : out(out), objs(out.context()),
           counts(out.context()), ids(out.context()),
           memory(out.context()), callbacks(cb), closure(cbClosure),
-          transferable(tVal), transferableObjects(out.context()) { }
+          transferable(out.context(), tVal), transferableObjects(out.context()) { }
 
     bool init() { return transferableObjects.init() && parseTransferable() &&
                          memory.init() && writeTransferMap(); }
@@ -157,11 +159,11 @@ struct JSStructuredCloneWriter {
 
     bool writeString(uint32_t tag, JSString *str);
     bool writeId(jsid id);
-    bool writeArrayBuffer(JSHandleObject obj);
-    bool writeTypedArray(JSHandleObject obj);
-    bool startObject(JSHandleObject obj, bool *backref);
+    bool writeArrayBuffer(JS::HandleObject obj);
+    bool writeTypedArray(JS::HandleObject obj);
+    bool startObject(JS::HandleObject obj, bool *backref);
     bool startWrite(const js::Value &v);
-    bool traverseObject(JSHandleObject obj);
+    bool traverseObject(JS::HandleObject obj);
 
     bool parseTransferable();
     void reportErrorTransferable();
@@ -186,7 +188,7 @@ struct JSStructuredCloneWriter {
     // The "memory" list described in the HTML5 internal structured cloning algorithm.
     // memory is a superset of objs; items are never removed from Memory
     // until a serialization operation is finished
-    typedef js::HashMap<JSObject *, uint32_t> CloneMemory;
+    typedef js::AutoObjectUnsigned32HashMap CloneMemory;
     CloneMemory memory;
 
     // The user defined callbacks that will be used for cloning.
@@ -196,10 +198,10 @@ struct JSStructuredCloneWriter {
     void *closure;
 
     // List of transferable objects
-    jsval transferable;
-    js::HashSet<JSObject*> transferableObjects;
+    JS::RootedValue transferable;
+    js::AutoObjectHashSet transferableObjects;
 
     friend JSBool JS_WriteTypedArray(JSStructuredCloneWriter *w, jsval v);
 };
 
-#endif /* jsclone_h___ */
+#endif /* jsclone_h */

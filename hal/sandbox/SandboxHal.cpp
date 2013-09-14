@@ -5,7 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Hal.h"
-#include "mozilla/AppProcessPermissions.h"
+#include "mozilla/AppProcessChecker.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/hal_sandbox/PHalChild.h"
 #include "mozilla/hal_sandbox/PHalParent.h"
@@ -25,12 +25,12 @@ using namespace mozilla::hal;
 namespace mozilla {
 namespace hal_sandbox {
 
-static bool sHalChildIsLive = false;
+static bool sHalChildDestroyed = false;
 
 bool
-IsHalChildLive()
+HalChildDestroyed()
 {
-  return sHalChildIsLive;
+  return sHalChildDestroyed;
 }
 
 static PHalChild* sHal;
@@ -263,6 +263,13 @@ DisableSensorNotifications(SensorType aSensor) {
   Hal()->SendDisableSensorNotifications(aSensor);
 }
 
+//TODO: bug 852944 - IPC implementations of these
+void StartMonitoringGamepadStatus()
+{}
+
+void StopMonitoringGamepadStatus()
+{}
+
 void
 EnableWakeLockNotifications()
 {
@@ -276,11 +283,12 @@ DisableWakeLockNotifications()
 }
 
 void
-ModifyWakeLockInternal(const nsAString &aTopic,
-                       WakeLockControl aLockAdjust,
-                       WakeLockControl aHiddenAdjust,
-                       uint64_t aProcessID)
+ModifyWakeLock(const nsAString &aTopic,
+               WakeLockControl aLockAdjust,
+               WakeLockControl aHiddenAdjust,
+               uint64_t aProcessID)
 {
+  MOZ_ASSERT(aProcessID != CONTENT_PROCESS_ID_UNKNOWN);
   Hal()->SendModifyWakeLock(nsString(aTopic), aLockAdjust, aHiddenAdjust, aProcessID);
 }
 
@@ -331,9 +339,11 @@ SetAlarm(int32_t aSeconds, int32_t aNanoseconds)
 }
 
 void
-SetProcessPriority(int aPid, ProcessPriority aPriority)
+SetProcessPriority(int aPid,
+                   ProcessPriority aPriority,
+                   ProcessCPUPriority aCPUPriority)
 {
-  Hal()->SendSetProcessPriority(aPid, aPriority);
+  NS_RUNTIMEABORT("Only the main process may set processes' priorities.");
 }
 
 void
@@ -397,6 +407,18 @@ void
 FactoryReset()
 {
   Hal()->SendFactoryReset();
+}
+
+void
+StartDiskSpaceWatcher()
+{
+  NS_RUNTIMEABORT("StartDiskSpaceWatcher() can't be called from sandboxed contexts.");
+}
+
+void
+StopDiskSpaceWatcher()
+{
+  NS_RUNTIMEABORT("StopDiskSpaceWatcher() can't be called from sandboxed contexts.");
 }
 
 class HalParent : public PHalParent
@@ -712,8 +734,10 @@ public:
                      const WakeLockControl& aHiddenAdjust,
                      const uint64_t& aProcessID) MOZ_OVERRIDE
   {
+    MOZ_ASSERT(aProcessID != CONTENT_PROCESS_ID_UNKNOWN);
+
     // We allow arbitrary content to use wake locks.
-    hal::ModifyWakeLockInternal(aTopic, aLockAdjust, aHiddenAdjust, aProcessID);
+    hal::ModifyWakeLock(aTopic, aLockAdjust, aHiddenAdjust, aProcessID);
     return true;
   }
 
@@ -735,9 +759,6 @@ public:
   virtual bool
   RecvGetWakeLockInfo(const nsString &aTopic, WakeLockInformation *aWakeLockInfo) MOZ_OVERRIDE
   {
-    if (!AssertAppProcessPermission(this, "power")) {
-      return false;
-    }
     hal::GetWakeLockInfo(aTopic, aWakeLockInfo);
     return true;
   }
@@ -775,15 +796,6 @@ public:
     return true;
   }
 
-  virtual bool
-  RecvSetProcessPriority(const int& aPid, const ProcessPriority& aPriority)
-  {
-    // TODO As a security check, we should ensure that aPid is either the pid
-    // of our child, or the pid of one of the child's children.
-    hal::SetProcessPriority(aPid, aPriority);
-    return true;
-  }
-
   void Notify(const int64_t& aClockDeltaMS)
   {
     unused << SendNotifySystemClockChange(aClockDeltaMS);
@@ -810,7 +822,7 @@ public:
   virtual void
   ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE
   {
-    sHalChildIsLive = true;
+    sHalChildDestroyed = true;
   }
 
   virtual bool

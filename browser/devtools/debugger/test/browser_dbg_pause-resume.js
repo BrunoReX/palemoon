@@ -30,22 +30,22 @@ function testPause() {
 
   let button = gDebugger.document.getElementById("resume");
   is(button.getAttribute("tooltiptext"),
-     gL10N.getFormatStr("pauseButtonTooltip", [
-      gLH.prettyKey(gDebugger.document.getElementById("resumeKey"))]),
+     gL10N.getFormatStr("pauseButtonTooltip",
+      gLH.prettyKey(gDebugger.document.getElementById("resumeKey"))),
     "Button tooltip should be pause when running.");
 
   gDebugger.DebuggerController.activeThread.addOneTimeListener("paused", function() {
     Services.tm.currentThread.dispatch({ run: function() {
 
-      let frames = gDebugger.DebuggerView.StackFrames._container._list;
+      let frames = gDebugger.DebuggerView.StackFrames.widget._list;
       let childNodes = frames.childNodes;
 
       is(gDebugger.DebuggerController.activeThread.paused, true,
         "Should be paused after an interrupt request.");
 
       is(button.getAttribute("tooltiptext"),
-         gL10N.getFormatStr("resumeButtonTooltip", [
-          gLH.prettyKey(gDebugger.document.getElementById("resumeKey"))]),
+         gL10N.getFormatStr("resumeButtonTooltip",
+          gLH.prettyKey(gDebugger.document.getElementById("resumeKey"))),
         "Button tooltip should be resume when paused.");
 
       is(frames.querySelectorAll(".dbg-stackframe").length, 0,
@@ -69,8 +69,8 @@ function testResume() {
 
       let button = gDebugger.document.getElementById("resume");
       is(button.getAttribute("tooltiptext"),
-         gL10N.getFormatStr("pauseButtonTooltip", [
-          gLH.prettyKey(gDebugger.document.getElementById("resumeKey"))]),
+         gL10N.getFormatStr("pauseButtonTooltip",
+          gLH.prettyKey(gDebugger.document.getElementById("resumeKey"))),
         "Button tooltip should be pause when running.");
 
       closeDebuggerAndFinish();

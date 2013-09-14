@@ -7,15 +7,19 @@
 #include "gfxGDIShaper.h"
 #include "gfxUniscribeShaper.h"
 #include "gfxHarfBuzzShaper.h"
-#ifdef MOZ_GRAPHITE
+#include <algorithm>
 #include "gfxGraphiteShaper.h"
-#endif
 #include "gfxWindowsPlatform.h"
 #include "gfxContext.h"
+#include "mozilla/Preferences.h"
+#include "nsUnicodeProperties.h"
 
 #include "cairo-win32.h"
 
 #define ROUND(x) floor((x) + 0.5)
+
+using namespace mozilla;
+using namespace mozilla::unicode;
 
 static inline cairo_antialias_t
 GetCairoAntialiasOption(gfxFont::AntialiasOption anAntialiasOption)
@@ -44,11 +48,9 @@ gfxGDIFont::gfxGDIFont(GDIFontEntry *aFontEntry,
       mSpaceGlyph(0),
       mNeedsBold(aNeedsBold)
 {
-#ifdef MOZ_GRAPHITE
     if (FontCanSupportGraphite()) {
         mGraphiteShaper = new gfxGraphiteShaper(this);
     }
-#endif
     if (FontCanSupportHarfBuzz()) {
         mHarfBuzzShaper = new gfxHarfBuzzShaper(this);
     }
@@ -132,16 +134,19 @@ gfxGDIFont::ShapeText(gfxContext      *aContext,
         return false;
     }
 
-#ifdef MOZ_GRAPHITE
     if (mGraphiteShaper && gfxPlatform::GetPlatform()->UseGraphiteShaping()) {
         ok = mGraphiteShaper->ShapeText(aContext, aText,
                                         aOffset, aLength,
                                         aScript, aShapedText);
     }
-#endif
 
     if (!ok && mHarfBuzzShaper) {
-        if (gfxPlatform::GetPlatform()->UseHarfBuzzForScript(aScript)) {
+        if (gfxPlatform::GetPlatform()->UseHarfBuzzForScript(aScript) ||
+            (gfxWindowsPlatform::WindowsOSVersion() <
+                 gfxWindowsPlatform::kWindowsVista &&
+             ScriptShapingType(aScript) == SHAPING_INDIC &&
+             !Preferences::GetBool("gfx.font_rendering.winxp-indic-uniscribe",
+                                   false))) {
             ok = mHarfBuzzShaper->ShapeText(aContext, aText, aOffset, aLength,
                                             aScript, aShapedText);
         }
@@ -403,7 +408,7 @@ gfxGDIFont::Initialize()
         mMetrics->maxAscent = metrics.tmAscent;
         mMetrics->maxDescent = metrics.tmDescent;
         mMetrics->maxAdvance = metrics.tmMaxCharWidth;
-        mMetrics->aveCharWidth = NS_MAX<gfxFloat>(1, metrics.tmAveCharWidth);
+        mMetrics->aveCharWidth = std::max<gfxFloat>(1, metrics.tmAveCharWidth);
         // The font is monospace when TMPF_FIXED_PITCH is *not* set!
         // See http://msdn2.microsoft.com/en-us/library/ms534202(VS.85).aspx
         if (!(metrics.tmPitchAndFamily & TMPF_FIXED_PITCH)) {

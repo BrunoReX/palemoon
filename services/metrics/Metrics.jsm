@@ -4,17 +4,30 @@
 
 "use strict";
 
+#ifndef MERGED_COMPARTMENT
+
 this.EXPORTED_SYMBOLS = ["Metrics"];
 
-const {utils: Cu} = Components;
+const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
-Cu.import("resource://gre/modules/services/metrics/collector.jsm");
-Cu.import("resource://gre/modules/services/metrics/dataprovider.jsm");
-Cu.import("resource://gre/modules/services/metrics/storage.jsm");
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
+#endif
+
+// We concatenate the JSMs together to eliminate compartment overhead.
+// This is a giant hack until compartment overhead is no longer an
+// issue.
+#define MERGED_COMPARTMENT
+
+#include providermanager.jsm
+;
+#include dataprovider.jsm
+;
+#include storage.jsm
+;
 
 this.Metrics = {
-  Collector: Collector,
+  ProviderManager: ProviderManager,
   DailyValues: DailyValues,
   Measurement: Measurement,
   Provider: Provider,

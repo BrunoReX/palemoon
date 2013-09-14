@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "CSFLog.h"
+
 #include "CC_Common.h"
 
 #include "csf_common.h"
@@ -18,8 +20,6 @@ extern "C"
 
 using namespace std;
 using namespace CSF;
-
-#include "CSFLog.h"
 
 #define MAX_SUPPORTED_NUM_CALLS 100
 
@@ -104,7 +104,7 @@ vector<CC_CallPtr> CC_SIPCCLineInfo::getCalls (CC_LinePtr linePtr)
 
     for (int i=0; i<numCalls; i++)
     {
-        CC_CallPtr callPtr = CC_SIPCCCall::wrap(handles[i]);
+        CC_CallPtr callPtr = CC_SIPCCCall::wrap(handles[i]).get();
         callsVector.push_back(callPtr);
     }
 
@@ -122,7 +122,7 @@ vector<CC_CallPtr> CC_SIPCCLineInfo::getCallsByState (CC_LinePtr linePtr, cc_cal
 
     for (int i=0; i<numCalls; i++)
     {
-        CC_CallPtr callPtr = CC_SIPCCCall::wrap(handles[i]);
+        CC_CallPtr callPtr = CC_SIPCCCall::wrap(handles[i]).get();
         callsVector.push_back(callPtr);
     }
 

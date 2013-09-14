@@ -22,14 +22,14 @@ public:
 
   virtual void
   SetAdditionalStyleContext(int32_t          aIndex, 
-                            nsStyleContext*  aStyleContext);
+                            nsStyleContext*  aStyleContext) MOZ_OVERRIDE;
   virtual nsStyleContext*
-  GetAdditionalStyleContext(int32_t aIndex) const;
+  GetAdditionalStyleContext(int32_t aIndex) const MOZ_OVERRIDE;
 
-  NS_IMETHOD
+  virtual void
   Init(nsIContent*      aContent,
        nsIFrame*        aParent,
-       nsIFrame*        aPrevInFlow);
+       nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
 
   NS_IMETHOD
   TransmitAutomaticData() MOZ_OVERRIDE;
@@ -43,16 +43,14 @@ public:
   virtual nscoord
   GetIntrinsicWidth(nsRenderingContext* aRenderingContext) MOZ_OVERRIDE;
 
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
 protected:
   nsMathMLmrootFrame(nsStyleContext* aContext);
   virtual ~nsMathMLmrootFrame();
   
-  virtual int GetSkipSides() const { return 0; }
-
   nsMathMLChar mSqrChar;
   nsRect       mBarRect;
 };

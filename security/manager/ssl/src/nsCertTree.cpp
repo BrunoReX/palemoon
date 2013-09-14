@@ -284,14 +284,13 @@ nsCertTree::GetCertAtIndex(int32_t index, int32_t *outAbsoluteCertOffset)
   if (!certdi)
     return nullptr;
 
-  nsIX509Cert *rawPtr = nullptr;
+  nsCOMPtr<nsIX509Cert> ret;
   if (certdi->mCert) {
-    rawPtr = certdi->mCert;
+    ret = certdi->mCert;
   } else if (certdi->mAddonInfo) {
-    rawPtr = certdi->mAddonInfo->mCert;
+    ret = certdi->mAddonInfo->mCert;
   }
-  NS_IF_ADDREF(rawPtr);
-  return rawPtr;
+  return ret.forget();
 }
 
 //  If the row at index is a cert, return that cert.  Otherwise, return null.
@@ -928,33 +927,24 @@ nsCertTree::SetSelection(nsITreeSelection * aSelection)
   return NS_OK;
 }
 
-/* void getRowProperties (in long index, in nsISupportsArray properties); */
 NS_IMETHODIMP 
-nsCertTree::GetRowProperties(int32_t index, nsISupportsArray *properties)
+nsCertTree::GetRowProperties(int32_t index, nsAString& aProps)
 {
   return NS_OK;
 }
 
-/* void getCellProperties (in long row, in nsITreeColumn col, 
- *                         in nsISupportsArray properties); 
- */
 NS_IMETHODIMP 
 nsCertTree::GetCellProperties(int32_t row, nsITreeColumn* col, 
-                              nsISupportsArray* properties)
+                              nsAString& aProps)
 {
   return NS_OK;
 }
 
-/* void getColumnProperties (in nsITreeColumn col, 
- *                           in nsISupportsArray properties); 
- */
 NS_IMETHODIMP 
-nsCertTree::GetColumnProperties(nsITreeColumn* col, 
-                                nsISupportsArray* properties)
+nsCertTree::GetColumnProperties(nsITreeColumn* col, nsAString& aProps)
 {
   return NS_OK;
 }
-
 /* boolean isContainer (in long index); */
 NS_IMETHODIMP 
 nsCertTree::IsContainer(int32_t index, bool *_retval)

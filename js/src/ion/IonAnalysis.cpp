@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +8,7 @@
 #include "MIRGraph.h"
 #include "Ion.h"
 #include "IonAnalysis.h"
+#include "LIR.h"
 
 using namespace js;
 using namespace js::ion;
@@ -103,11 +103,11 @@ ion::EliminateDeadResumePointOperands(MIRGenerator *mir, MIRGraph &graph)
             // Walk the uses a second time, removing any in resume points after
             // the last use in a definition.
             for (MUseIterator uses(ins->usesBegin()); uses != ins->usesEnd(); ) {
-                if (uses->node()->isDefinition()) {
+                if (uses->consumer()->isDefinition()) {
                     uses++;
                     continue;
                 }
-                MResumePoint *mrp = uses->node()->toResumePoint();
+                MResumePoint *mrp = uses->consumer()->toResumePoint();
                 if (mrp->block() != *block ||
                     !mrp->instruction() ||
                     mrp->instruction() == *ins ||
@@ -188,8 +188,8 @@ IsPhiObservable(MPhi *phi, Observability observe)
 
       case ConservativeObservability:
         for (MUseIterator iter(phi->usesBegin()); iter != phi->usesEnd(); iter++) {
-            if (!iter->node()->isDefinition() ||
-                !iter->node()->toDefinition()->isPhi())
+            if (!iter->consumer()->isDefinition() ||
+                !iter->consumer()->toDefinition()->isPhi())
                 return true;
         }
         break;
@@ -197,17 +197,21 @@ IsPhiObservable(MPhi *phi, Observability observe)
 
     // If the Phi is of the |this| value, it must always be observable.
     uint32_t slot = phi->slot();
-    if (slot == 1)
+    CompileInfo &info = phi->block()->info();
+    if (info.fun() && slot == info.thisSlot())
         return true;
 
     // If the Phi is one of the formal argument, and we are using an argument
     // object in the function. The phi might be observable after a bailout.
     // For inlined frames this is not needed, as they are captured in the inlineResumePoint.
-    CompileInfo &info = phi->block()->info();
     if (info.fun() && info.hasArguments()) {
         uint32_t first = info.firstArgSlot();
-        if (first <= slot && slot - first < info.nargs())
+        if (first <= slot && slot - first < info.nargs()) {
+            // If arguments obj aliases formals, then the arg slots will never be used.
+            if (info.argsObjAliasesFormals())
+                return false;
             return true;
+        }
     }
     return false;
 }
@@ -529,7 +533,7 @@ TypeAnalyzer::adjustPhiInputs(MPhi *phi)
         if (in->type() == MIRType_Value)
             continue;
 
-        if (in->isUnbox()) {
+        if (in->isUnbox() && phi->typeIncludes(in->toUnbox()->input())) {
             // The input is being explicitly unboxed, so sneak past and grab
             // the original box.
             phi->replaceOperand(i, in->toUnbox()->input());
@@ -664,7 +668,7 @@ IntersectDominators(MBasicBlock *block1, MBasicBlock *block2)
             MBasicBlock *idom = finger2->immediateDominator();
             if (idom == finger2)
                 return NULL; // Empty intersection.
-            finger2 = finger2->immediateDominator();
+            finger2 = idom;
         }
     }
     return finger1;
@@ -701,8 +705,10 @@ ComputeImmediateDominators(MIRGraph &graph)
             // Find the first common dominator.
             for (size_t i = 1; i < block->numPredecessors(); i++) {
                 MBasicBlock *pred = block->getPredecessor(i);
-                if (pred->immediateDominator() != NULL)
-                    newIdom = IntersectDominators(pred, newIdom);
+                if (pred->immediateDominator() == NULL)
+                    continue;
+
+                newIdom = IntersectDominators(pred, newIdom);
 
                 // If there is no common dominator, the block self-dominates.
                 if (newIdom == NULL) {
@@ -780,10 +786,9 @@ ion::BuildDominatorTree(MIRGraph &graph)
         MBasicBlock *block = worklist.popCopy();
         block->setDomIndex(index);
 
-        for (size_t i = 0; i < block->numImmediatelyDominatedBlocks(); i++) {
-            if (!worklist.append(block->getImmediatelyDominatedBlock(i)))
-                return false;
-        }
+        if (!worklist.append(block->immediatelyDominatedBlocksBegin(),
+                             block->immediatelyDominatedBlocksEnd()))
+            return false;
         index++;
     }
 
@@ -876,17 +881,61 @@ CheckPredecessorImpliesSuccessor(MBasicBlock *A, MBasicBlock *B)
 }
 
 static bool
-CheckMarkedAsUse(MInstruction *ins, MDefinition *operand)
+CheckOperandImpliesUse(MInstruction *ins, MDefinition *operand)
 {
     for (MUseIterator i = operand->usesBegin(); i != operand->usesEnd(); i++) {
-        if (i->node()->isDefinition()) {
-            if (ins == i->node()->toDefinition())
-                return true;
-        }
+        if (i->consumer()->isDefinition() && i->consumer()->toDefinition() == ins)
+            return true;
     }
     return false;
 }
+
+static bool
+CheckUseImpliesOperand(MInstruction *ins, MUse *use)
+{
+    MNode *consumer = use->consumer();
+    uint32_t index = use->index();
+
+    if (consumer->isDefinition()) {
+        MDefinition *def = consumer->toDefinition();
+        return (def->getOperand(index) == ins);
+    }
+
+    JS_ASSERT(consumer->isResumePoint());
+    MResumePoint *res = consumer->toResumePoint();
+    return (res->getOperand(index) == ins);
+}
 #endif // DEBUG
+
+void
+ion::AssertBasicGraphCoherency(MIRGraph &graph)
+{
+#ifdef DEBUG
+    // Assert successor and predecessor list coherency.
+    uint32_t count = 0;
+    for (MBasicBlockIterator block(graph.begin()); block != graph.end(); block++) {
+        count++;
+
+        for (size_t i = 0; i < block->numSuccessors(); i++)
+            JS_ASSERT(CheckSuccessorImpliesPredecessor(*block, block->getSuccessor(i)));
+
+        for (size_t i = 0; i < block->numPredecessors(); i++)
+            JS_ASSERT(CheckPredecessorImpliesSuccessor(*block, block->getPredecessor(i)));
+
+        // Assert that use chains are valid for this instruction.
+        for (MInstructionIterator ins = block->begin(); ins != block->end(); ins++) {
+            for (uint32_t i = 0; i < ins->numOperands(); i++)
+                JS_ASSERT(CheckOperandImpliesUse(*ins, ins->getOperand(i)));
+        }
+        for (MInstructionIterator ins = block->begin(); ins != block->end(); ins++) {
+            for (MUseIterator i(ins->usesBegin()); i != ins->usesEnd(); i++)
+                JS_ASSERT(CheckUseImpliesOperand(*ins, *i));
+        }
+    }
+
+    JS_ASSERT(graph.numBlocks() == count);
+#endif
+}
 
 #ifdef DEBUG
 static void
@@ -912,25 +961,7 @@ void
 ion::AssertGraphCoherency(MIRGraph &graph)
 {
 #ifdef DEBUG
-    // Assert successor and predecessor list coherency.
-    uint32_t count = 0;
-    for (MBasicBlockIterator block(graph.begin()); block != graph.end(); block++) {
-        count++;
-
-        for (size_t i = 0; i < block->numSuccessors(); i++)
-            JS_ASSERT(CheckSuccessorImpliesPredecessor(*block, block->getSuccessor(i)));
-
-        for (size_t i = 0; i < block->numPredecessors(); i++)
-            JS_ASSERT(CheckPredecessorImpliesSuccessor(*block, block->getPredecessor(i)));
-
-        for (MInstructionIterator ins = block->begin(); ins != block->end(); ins++) {
-            for (uint32_t i = 0; i < ins->numOperands(); i++)
-                JS_ASSERT(CheckMarkedAsUse(*ins, ins->getOperand(i)));
-        }
-    }
-
-    JS_ASSERT(graph.numBlocks() == count);
-
+    AssertBasicGraphCoherency(graph);
     AssertReversePostOrder(graph);
 #endif
 }
@@ -1086,6 +1117,7 @@ ion::ExtractLinearInequality(MTest *test, BranchDirection direction,
     MDefinition *lhs = compare->getOperand(0);
     MDefinition *rhs = compare->getOperand(1);
 
+    // TODO: optimize Compare_UInt32
     if (compare->compareType() != MCompare::Compare_Int32)
         return false;
 
@@ -1252,8 +1284,8 @@ TryEliminateTypeBarrier(MTypeBarrier *barrier, bool *eliminated)
 {
     JS_ASSERT(!*eliminated);
 
-    const types::StackTypeSet *barrierTypes = barrier->typeSet();
-    const types::StackTypeSet *inputTypes = barrier->input()->typeSet();
+    const types::StackTypeSet *barrierTypes = barrier->resultTypeSet();
+    const types::StackTypeSet *inputTypes = barrier->input()->resultTypeSet();
 
     if (!barrierTypes || !inputTypes)
         return true;
@@ -1325,10 +1357,9 @@ ion::EliminateRedundantChecks(MIRGraph &graph)
         MBasicBlock *block = worklist.popCopy();
 
         // Add all immediate dominators to the front of the worklist.
-        for (size_t i = 0; i < block->numImmediatelyDominatedBlocks(); i++) {
-            if (!worklist.append(block->getImmediatelyDominatedBlock(i)))
-                return false;
-        }
+        if (!worklist.append(block->immediatelyDominatedBlocksBegin(),
+                             block->immediatelyDominatedBlocksEnd()))
+            return false;
 
         for (MDefinitionIterator iter(block); iter; ) {
             bool eliminated = false;
@@ -1339,6 +1370,11 @@ ion::EliminateRedundantChecks(MIRGraph &graph)
             } else if (iter->isTypeBarrier()) {
                 if (!TryEliminateTypeBarrier(iter->toTypeBarrier(), &eliminated))
                     return false;
+            } else if (iter->isConvertElementsToDoubles()) {
+                // Now that code motion passes have finished, replace any
+                // ConvertElementsToDoubles with the actual elements.
+                MConvertElementsToDoubles *ins = iter->toConvertElementsToDoubles();
+                ins->replaceAllUsesWith(ins->elements());
             }
 
             if (eliminated)
@@ -1350,6 +1386,100 @@ ion::EliminateRedundantChecks(MIRGraph &graph)
     }
 
     JS_ASSERT(index == graph.numBlocks());
+    return true;
+}
+
+// If the given block contains a goto and nothing interesting before that,
+// return the goto. Return NULL otherwise.
+static LGoto *
+FindLeadingGoto(LBlock *bb)
+{
+    for (LInstructionIterator ins(bb->begin()); ins != bb->end(); ins++) {
+        // Ignore labels.
+        if (ins->isLabel())
+            continue;
+        // Ignore empty move groups.
+        if (ins->isMoveGroup() && ins->toMoveGroup()->numMoves() == 0)
+            continue;
+        // If we have a goto, we're good to go.
+        if (ins->isGoto())
+            return ins->toGoto();
+        break;
+    }
+    return NULL;
+}
+
+// Eliminate blocks containing nothing interesting besides gotos. These are
+// often created by optimizer, which splits all critical edges. If these
+// splits end up being unused after optimization and register allocation,
+// fold them back away to avoid unnecessary branching.
+bool
+ion::UnsplitEdges(LIRGraph *lir)
+{
+    for (size_t i = 0; i < lir->numBlocks(); i++) {
+        LBlock *bb = lir->getBlock(i);
+        MBasicBlock *mirBlock = bb->mir();
+
+        // Renumber the MIR blocks as we go, since we may remove some.
+        mirBlock->setId(i);
+
+        // Register allocation is done by this point, so we don't need the phis
+        // anymore. Clear them to avoid needed to keep them current as we edit
+        // the CFG.
+        bb->clearPhis();
+        mirBlock->discardAllPhis();
+
+        // First make sure the MIR block looks sane. Some of these checks may be
+        // over-conservative, but we're attempting to keep everything in MIR
+        // current as we modify the LIR, so only proceed if the MIR is simple.
+        if (mirBlock->numPredecessors() == 0 || mirBlock->numSuccessors() != 1 ||
+            !mirBlock->resumePointsEmpty() || !mirBlock->begin()->isGoto())
+        {
+            continue;
+        }
+
+        // The MIR block is empty, but check the LIR block too (in case the
+        // register allocator inserted spill code there, or whatever).
+        LGoto *theGoto = FindLeadingGoto(bb);
+        if (!theGoto)
+            continue;
+        MBasicBlock *target = theGoto->target();
+        if (target == mirBlock || target != mirBlock->getSuccessor(0))
+            continue;
+
+        // If we haven't yet cleared the phis for the successor, do so now so
+        // that the CFG manipulation routines don't trip over them.
+        if (!target->phisEmpty()) {
+            target->discardAllPhis();
+            target->lir()->clearPhis();
+        }
+
+        // Edit the CFG to remove lir/mirBlock and reconnect all its edges.
+        for (size_t j = 0; j < mirBlock->numPredecessors(); j++) {
+            MBasicBlock *mirPred = mirBlock->getPredecessor(j);
+
+            for (size_t k = 0; k < mirPred->numSuccessors(); k++) {
+                if (mirPred->getSuccessor(k) == mirBlock) {
+                    mirPred->replaceSuccessor(k, target);
+                    if (!target->addPredecessorWithoutPhis(mirPred))
+                        return false;
+                }
+            }
+
+            LInstruction *predTerm = *mirPred->lir()->rbegin();
+            for (size_t k = 0; k < predTerm->numSuccessors(); k++) {
+                if (predTerm->getSuccessor(k) == mirBlock)
+                    predTerm->setSuccessor(k, target);
+            }
+        }
+        target->removePredecessor(mirBlock);
+
+        // Zap the block.
+        lir->removeBlock(i);
+        lir->mir().removeBlock(mirBlock);
+        --i;
+    }
+
     return true;
 }
 

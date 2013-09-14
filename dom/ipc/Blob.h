@@ -25,6 +25,10 @@ class nsIInputStream;
 
 namespace mozilla {
 namespace dom {
+
+class ContentParent;
+class ContentChild;
+
 namespace ipc {
 
 enum ActorFlavorEnum
@@ -34,14 +38,17 @@ enum ActorFlavorEnum
 };
 
 template <ActorFlavorEnum>
-struct BlobTraits
-{ };
+struct BlobTraits;
 
 template <>
 struct BlobTraits<Parent>
 {
   typedef mozilla::dom::PBlobParent ProtocolType;
   typedef mozilla::dom::PBlobStreamParent StreamType;
+  typedef mozilla::dom::ParentBlobConstructorParams ConstructorParamsType;
+  typedef mozilla::dom::ChildBlobConstructorParams
+          OtherSideConstructorParamsType;
+  typedef mozilla::dom::ContentParent ConcreteContentManagerType;
 
   // BaseType on the parent side is a bit more complicated than for the child
   // side. In the case of nsIInputStreams backed by files we need to ensure that
@@ -54,6 +61,28 @@ struct BlobTraits<Parent>
   // are currently in flight.
   class BaseType : public ProtocolType
   {
+  public:
+    static const ChildBlobConstructorParams&
+    GetBlobConstructorParams(const ConstructorParamsType& aParams)
+    {
+      return aParams.blobParams();
+    }
+
+    static void
+    SetBlobConstructorParams(ConstructorParamsType& aParams,
+                             const ChildBlobConstructorParams& aBlobParams)
+    {
+      aParams.blobParams() = aBlobParams;
+      aParams.optionalInputStreamParams() = mozilla::void_t();
+    }
+
+    static void
+    SetBlobConstructorParams(OtherSideConstructorParamsType& aParams,
+                             const ChildBlobConstructorParams& aBlobParams)
+    {
+      aParams = aBlobParams;
+    }
+
   protected:
     BaseType();
     virtual ~BaseType();
@@ -73,9 +102,36 @@ struct BlobTraits<Child>
 {
   typedef mozilla::dom::PBlobChild ProtocolType;
   typedef mozilla::dom::PBlobStreamChild StreamType;
+  typedef mozilla::dom::ChildBlobConstructorParams ConstructorParamsType;
+  typedef mozilla::dom::ParentBlobConstructorParams
+          OtherSideConstructorParamsType;
+  typedef mozilla::dom::ContentChild ConcreteContentManagerType;
+
 
   class BaseType : public ProtocolType
   {
+  public:
+    static const ChildBlobConstructorParams&
+    GetBlobConstructorParams(const ConstructorParamsType& aParams)
+    {
+      return aParams;
+    }
+
+    static void
+    SetBlobConstructorParams(ConstructorParamsType& aParams,
+                             const ChildBlobConstructorParams& aBlobParams)
+    {
+      aParams = aBlobParams;
+    }
+
+    static void
+    SetBlobConstructorParams(OtherSideConstructorParamsType& aParams,
+                             const ChildBlobConstructorParams& aBlobParams)
+    {
+      aParams.blobParams() = aBlobParams;
+      aParams.optionalInputStreamParams() = mozilla::void_t();
+    }
+
   protected:
     BaseType()
     { }
@@ -96,12 +152,15 @@ class Blob : public BlobTraits<ActorFlavor>::BaseType
 public:
   typedef typename BlobTraits<ActorFlavor>::ProtocolType ProtocolType;
   typedef typename BlobTraits<ActorFlavor>::StreamType StreamType;
+  typedef typename BlobTraits<ActorFlavor>::ConstructorParamsType
+          ConstructorParamsType;
+  typedef typename BlobTraits<ActorFlavor>::OtherSideConstructorParamsType
+          OtherSideConstructorParamsType;
   typedef typename BlobTraits<ActorFlavor>::BaseType BaseType;
   typedef RemoteBlob<ActorFlavor> RemoteBlobType;
   typedef mozilla::ipc::IProtocolManager<
                       mozilla::ipc::RPCChannel::RPCListener>::ActorDestroyReason
           ActorDestroyReason;
-  typedef mozilla::dom::BlobConstructorParams BlobConstructorParams;
 
 protected:
   nsIDOMBlob* mBlob;
@@ -119,7 +178,7 @@ public:
 
   // This create function is called on the receiving side.
   static Blob*
-  Create(const BlobConstructorParams& aParams);
+  Create(const ConstructorParamsType& aParams);
 
   // Get the blob associated with this actor. This may always be called on the
   // sending side. It may also be called on the receiving side unless this is a
@@ -141,10 +200,10 @@ private:
   Blob(nsIDOMBlob* aBlob);
 
   // This constructor is called on the receiving side.
-  Blob(const BlobConstructorParams& aParams);
+  Blob(const ConstructorParamsType& aParams);
 
-  void
-  SetRemoteBlob(nsRefPtr<RemoteBlobType>& aRemoteBlob);
+  static already_AddRefed<RemoteBlobType>
+  CreateRemoteBlob(const ConstructorParamsType& aParams);
 
   void
   NoteDyingRemoteBlob();

@@ -32,6 +32,7 @@
 #include "nsCRT.h"
 #include "nsNetUtil.h"
 #include "nsEscape.h"
+#include "nsIObserverService.h"
 
 #ifdef PR_LOGGING
 PRLogModuleInfo* gWin32ClipboardLog = nullptr;
@@ -56,6 +57,13 @@ nsClipboard::nsClipboard() : nsBaseClipboard()
 
   mIgnoreEmptyNotification = false;
   mWindow         = nullptr;
+
+  // Register for a shutdown notification so that we can flush data
+ // to the OS clipboard.
+  nsCOMPtr<nsIObserverService> observerService =
+    do_GetService("@mozilla.org/observer-service;1");
+  if (observerService)
+    observerService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, PR_FALSE);
 }
 
 //-------------------------------------------------------------------------
@@ -64,6 +72,19 @@ nsClipboard::nsClipboard() : nsBaseClipboard()
 nsClipboard::~nsClipboard()
 {
 
+}
+
+NS_IMPL_ISUPPORTS_INHERITED1(nsClipboard, nsBaseClipboard, nsIObserver)
+
+NS_IMETHODIMP
+nsClipboard::Observe(nsISupports *aSubject, const char *aTopic,
+                     const PRUnichar *aData)
+{
+  // This will be called on shutdown.
+  ::OleFlushClipboard();
+  ::CloseClipboard();
+
+  return NS_OK;
 }
 
 //-------------------------------------------------------------------------
@@ -924,6 +945,14 @@ nsClipboard::GetNativeClipboardData ( nsITransferable * aTransferable, int32_t a
 
 }
 
+NS_IMETHODIMP
+nsClipboard::EmptyClipboard(int32_t aWhichClipboard)
+{
+  if (aWhichClipboard == kGlobalClipboard && !mEmptyingForSetData) {
+    OleSetClipboard(NULL);
+  }
+  return nsBaseClipboard::EmptyClipboard(aWhichClipboard);
+}
 
 //-------------------------------------------------------------------------
 NS_IMETHODIMP nsClipboard::HasDataMatchingFlavors(const char** aFlavorList,

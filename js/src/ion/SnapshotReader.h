@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_snapshots_h__
-#define jsion_snapshots_h__
+#ifndef ion_SnapshotReader_h
+#define ion_SnapshotReader_h
 
 #include "IonTypes.h"
 #include "IonCode.h"
@@ -34,11 +33,6 @@ class SnapshotReader
     uint32_t framesRead_;         // Number of frame headers that have been read.
     uint32_t slotsRead_;          // Number of slots that have been read.
     bool resumeAfter_;
-
-#ifdef DEBUG
-    // In debug mode we include the JSScript in order to make a few assertions.
-    JSScript *script_;
-#endif
 
 #ifdef TRACK_SNAPSHOTS
   private:
@@ -237,5 +231,4 @@ class SnapshotReader
 }
 }
 
-#endif // jsion_snapshots_h__
-
+#endif /* ion_SnapshotReader_h */

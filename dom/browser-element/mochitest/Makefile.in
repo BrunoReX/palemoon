@@ -24,11 +24,11 @@ MOCHITEST_FILES = \
 		test_browserElement_NoPref.html \
 		test_browserElement_NoWhitelist.html \
 		browserElement_LoadEvents.js \
+		file_browserElement_LoadEvents.html \
 		test_browserElement_inproc_LoadEvents.html \
 		browserElement_DataURI.js \
 		test_browserElement_inproc_DataURI.html \
 		browserElement_ErrorSecurity.js \
-		test_browserElement_inproc_ErrorSecurity.html \
 		browserElement_Titlechange.js \
 		test_browserElement_inproc_Titlechange.html \
 		browserElement_TopBarrier.js \
@@ -159,10 +159,20 @@ MOCHITEST_FILES = \
 		browserElement_ReloadPostRequest.js \
 		browserElement_PurgeHistory.js \
 		test_browserElement_inproc_PurgeHistory.html \
+		browserElement_DocumentFirstPaint.js \
+		test_browserElement_inproc_DocumentFirstPaint.html \
+		browserElement_VisibilityChange.js \
+		test_browserElement_inproc_VisibilityChange.html \
 		$(NULL)
 
 # Disabled due to https://bugzilla.mozilla.org/show_bug.cgi?id=774100
 #		test_browserElement_inproc_Reload.html \
+
+# Disabled due to focus issues (no bug that I'm aware of)
+# 		test_browserElement_oop_KeyEvents.html \
+
+# Disable due to certificate issue (no bug that I'm aware of)
+#		test_browserElement_inproc_ErrorSecurity.html \
 
 # OOP tests don't work on native-fennec (bug 774939).
 #
@@ -174,6 +184,7 @@ MOCHITEST_FILES += \
 		browserElement_OpenMixedProcess.js \
 		file_browserElement_OpenMixedProcess.html \
 		test_browserElement_inproc_OpenMixedProcess.html \
+		test_browserElement_inproc_ErrorSecurity.html \
 		test_browserElement_oop_OpenMixedProcess.html \
 		test_browserElement_oop_LoadEvents.html \
 		test_browserElement_oop_DataURI.html \
@@ -185,11 +196,14 @@ MOCHITEST_FILES += \
 		test_browserElement_oop_Iconchange.html \
 		test_browserElement_oop_GetScreenshot.html \
 		test_browserElement_oop_BadScreenshot.html \
-		test_browserElement_oop_KeyEvents.html \
 		test_browserElement_oop_XFrameOptions.html \
 		test_browserElement_oop_XFrameOptionsDeny.html \
 		test_browserElement_oop_XFrameOptionsSameOrigin.html \
 		test_browserElement_oop_XFrameOptionsAllowFrom.html \
+		test_browserElement_oop_SendEvent.html \
+		test_browserElement_oop_SetVisible.html \
+		test_browserElement_oop_SetVisibleFrames.html \
+		test_browserElement_oop_SetVisibleFrames2.html \
 		test_browserElement_oop_FirstPaint.html \
 		test_browserElement_oop_Alert.html \
 		test_browserElement_oop_AlertInFrame.html \
@@ -212,7 +226,6 @@ MOCHITEST_FILES += \
 		test_browserElement_oop_Reload.html \
 		test_browserElement_oop_Stop.html \
 		test_browserElement_oop_ContextmenuEvents.html \
-		test_browserElement_oop_SendEvent.html \
 		test_browserElement_oop_ScrollEvent.html \
 		test_browserElement_oop_Auth.html \
 		test_browserElement_oop_RemoveBrowserElement.html \
@@ -222,19 +235,9 @@ MOCHITEST_FILES += \
 		test_browserElement_oop_FrameWrongURI.html \
 		test_browserElement_oop_ReloadPostRequest.html \
 		test_browserElement_oop_PurgeHistory.html \
+		test_browserElement_oop_DocumentFirstPaint.html \
+		test_browserElement_oop_VisibilityChange.html \
 	$(NULL)
-
-ifneq ($(MOZ_WIDGET_TOOLKIT),gtk2)
-MOCHITEST_FILES += \
-		test_browserElement_oop_SetVisible.html \
-		test_browserElement_oop_SetVisibleFrames.html \
-		test_browserElement_oop_SetVisibleFrames2.html \
-		$(NULL)
-else
-$(filter disabled-temporarily--bug-779753, test_browserElement_oop_SetVisible.html)
-$(filter disabled-temporarily--bug-779753, test_browserElement_oop_SetVisibleFrames.html)
-$(filter disabled-temporarily--bug-779753, test_browserElement_oop_SetVisibleFrames2.html)
-endif
 
 endif #}
 

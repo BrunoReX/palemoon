@@ -12,7 +12,10 @@
 #include "nsStyleStruct.h"
 #include "nsTHashtable.h"
 #include "mozilla/Likely.h"
+#include <algorithm>
+
 class nsIScrollableFrame;
+class gfxTextRun;
 
 namespace mozilla {
 namespace css {
@@ -61,8 +64,8 @@ class TextOverflow {
     AlignmentEdges() : mAssigned(false) {}
     void Accumulate(const nsRect& aRect) {
       if (MOZ_LIKELY(mAssigned)) {
-        x = NS_MIN(x, aRect.X());
-        xmost = NS_MAX(xmost, aRect.XMost());
+        x = std::min(x, aRect.X());
+        xmost = std::max(xmost, aRect.XMost());
       } else {
         x = aRect.X();
         xmost = aRect.XMost();
@@ -79,7 +82,7 @@ class TextOverflow {
     InnerClipEdges() : mAssignedLeft(false), mAssignedRight(false) {}
     void AccumulateLeft(const nsRect& aRect) {
       if (MOZ_LIKELY(mAssignedLeft)) {
-        mLeft = NS_MAX(mLeft, aRect.X());
+        mLeft = std::max(mLeft, aRect.X());
       } else {
         mLeft = aRect.X();
         mAssignedLeft = true;
@@ -87,7 +90,7 @@ class TextOverflow {
     }
     void AccumulateRight(const nsRect& aRect) {
       if (MOZ_LIKELY(mAssignedRight)) {
-        mRight = NS_MIN(mRight, aRect.XMost());
+        mRight = std::min(mRight, aRect.XMost());
       } else {
         mRight = aRect.XMost();
         mAssignedRight = true;
@@ -216,10 +219,8 @@ class TextOverflow {
 
     // The current width of the marker, the range is [0 .. mIntrinsicWidth].
     nscoord                        mWidth;
-    // The intrinsic width of the marker string.
+    // The intrinsic width of the marker.
     nscoord                        mIntrinsicWidth;
-    // The marker text.
-    nsString                       mMarkerString;
     // The style for this side.
     const nsStyleTextOverflowSide* mStyle;
     // True if there is visible overflowing inline content on this side.

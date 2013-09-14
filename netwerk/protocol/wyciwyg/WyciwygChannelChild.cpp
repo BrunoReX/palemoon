@@ -4,6 +4,8 @@
 
 #include "nsWyciwyg.h"
 
+#include "base/compiler_specific.h"
+
 #include "mozilla/net/NeckoChild.h"
 #include "WyciwygChannelChild.h"
 #include "mozilla/dom/TabChild.h"
@@ -38,9 +40,10 @@ WyciwygChannelChild::WyciwygChannelChild()
   , mCharsetSource(kCharsetUninitialized)
   , mState(WCC_NEW)
   , mIPCOpen(false)
-  , mEventQ(NS_ISUPPORTS_CAST(nsIWyciwygChannel*, this))
+  , mSentAppData(false)
 {
   LOG(("Creating WyciwygChannelChild @%x\n", this));
+  mEventQ = new ChannelEventQueue(NS_ISUPPORTS_CAST(nsIWyciwygChannel*, this));
 }
 
 WyciwygChannelChild::~WyciwygChannelChild()
@@ -114,8 +117,8 @@ WyciwygChannelChild::RecvOnStartRequest(const nsresult& statusCode,
                                         const nsCString& charset,
                                         const nsCString& securityInfo)
 {
-  if (mEventQ.ShouldEnqueue()) {
-    mEventQ.Enqueue(new WyciwygStartRequestEvent(this, statusCode,
+  if (mEventQ->ShouldEnqueue()) {
+    mEventQ->Enqueue(new WyciwygStartRequestEvent(this, statusCode,
                                                  contentLength, source,
                                                  charset, securityInfo));
   } else {
@@ -131,7 +134,7 @@ WyciwygChannelChild::OnStartRequest(const nsresult& statusCode,
                                     const nsCString& charset,
                                     const nsCString& securityInfo)
 {
-  LOG(("WyciwygChannelChild::RecvOnStartRequest [this=%x]\n", this));
+  LOG(("WyciwygChannelChild::RecvOnStartRequest [this=%p]\n", this));
 
   mState = WCC_ONSTART;
 
@@ -169,8 +172,8 @@ bool
 WyciwygChannelChild::RecvOnDataAvailable(const nsCString& data,
                                          const uint64_t& offset)
 {
-  if (mEventQ.ShouldEnqueue()) {
-    mEventQ.Enqueue(new WyciwygDataAvailableEvent(this, data, offset));
+  if (mEventQ->ShouldEnqueue()) {
+    mEventQ->Enqueue(new WyciwygDataAvailableEvent(this, data, offset));
   } else {
     OnDataAvailable(data, offset);
   }
@@ -181,7 +184,7 @@ void
 WyciwygChannelChild::OnDataAvailable(const nsCString& data,
                                      const uint64_t& offset)
 {
-  LOG(("WyciwygChannelChild::RecvOnDataAvailable [this=%x]\n", this));
+  LOG(("WyciwygChannelChild::RecvOnDataAvailable [this=%p]\n", this));
 
   if (mCanceled)
     return;
@@ -230,8 +233,8 @@ private:
 bool
 WyciwygChannelChild::RecvOnStopRequest(const nsresult& statusCode)
 {
-  if (mEventQ.ShouldEnqueue()) {
-    mEventQ.Enqueue(new WyciwygStopRequestEvent(this, statusCode));
+  if (mEventQ->ShouldEnqueue()) {
+    mEventQ->Enqueue(new WyciwygStopRequestEvent(this, statusCode));
   } else {
     OnStopRequest(statusCode);
   }
@@ -241,7 +244,7 @@ WyciwygChannelChild::RecvOnStopRequest(const nsresult& statusCode)
 void
 WyciwygChannelChild::OnStopRequest(const nsresult& statusCode)
 {
-  LOG(("WyciwygChannelChild::RecvOnStopRequest [this=%x status=%u]\n",
+  LOG(("WyciwygChannelChild::RecvOnStopRequest [this=%p status=%u]\n",
            this, statusCode));
 
   { // We need to ensure that all IPDL message dispatching occurs
@@ -287,8 +290,8 @@ class WyciwygCancelEvent : public ChannelEvent
 bool
 WyciwygChannelChild::RecvCancelEarly(const nsresult& statusCode)
 {
-  if (mEventQ.ShouldEnqueue()) {
-    mEventQ.Enqueue(new WyciwygCancelEvent(this, statusCode));
+  if (mEventQ->ShouldEnqueue()) {
+    mEventQ->Enqueue(new WyciwygCancelEvent(this, statusCode));
   } else {
     CancelEarly(statusCode);
   }
@@ -297,7 +300,7 @@ WyciwygChannelChild::RecvCancelEarly(const nsresult& statusCode)
 
 void WyciwygChannelChild::CancelEarly(const nsresult& statusCode)
 {
-  LOG(("WyciwygChannelChild::CancelEarly [this=%x]\n", this));
+  LOG(("WyciwygChannelChild::CancelEarly [this=%p]\n", this));
   
   if (mCanceled)
     return;
@@ -568,11 +571,19 @@ WyciwygChannelChild::Open(nsIInputStream **_retval)
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+static mozilla::dom::TabChild*
+GetTabChild(nsIChannel* aChannel)
+{
+  nsCOMPtr<nsITabChild> iTabChild;
+  NS_QueryNotificationCallbacks(aChannel, iTabChild);
+  return iTabChild ? static_cast<mozilla::dom::TabChild*>(iTabChild.get()) : nullptr;
+}
+
 /* void asyncOpen (in nsIStreamListener aListener, in nsISupports aContext); */
 NS_IMETHODIMP
 WyciwygChannelChild::AsyncOpen(nsIStreamListener *aListener, nsISupports *aContext)
 {
-  LOG(("WyciwygChannelChild::AsyncOpen [this=%x]\n", this));
+  LOG(("WyciwygChannelChild::AsyncOpen [this=%p]\n", this));
 
   // The only places creating wyciwyg: channels should be
   // HTMLDocument::OpenCommon and session history.  Both should be setting an
@@ -593,22 +604,18 @@ WyciwygChannelChild::AsyncOpen(nsIStreamListener *aListener, nsISupports *aConte
   URIParams originalURI;
   SerializeURI(mOriginalURI, originalURI);
 
-  mozilla::dom::TabChild* tabChild = nullptr;
-  nsCOMPtr<nsITabChild> iTabChild;
-  NS_QueryNotificationCallbacks(mCallbacks, mLoadGroup,
-                                NS_GET_IID(nsITabChild),
-                                getter_AddRefs(iTabChild));
-  if (iTabChild) {
-    tabChild = static_cast<mozilla::dom::TabChild*>(iTabChild.get());
+  mozilla::dom::TabChild* tabChild = GetTabChild(this);
+  if (MissingRequiredTabChild(tabChild, "wyciwyg")) {
+    return NS_ERROR_ILLEGAL_VALUE;
   }
 
   SendAsyncOpen(originalURI, mLoadFlags, IPC::SerializedLoadContext(this), tabChild);
 
+  mSentAppData = true;
   mState = WCC_OPENED;
 
   return NS_OK;
 }
-
 
 //-----------------------------------------------------------------------------
 // nsIWyciwygChannel
@@ -620,6 +627,12 @@ WyciwygChannelChild::WriteToCacheEntry(const nsAString & aData)
 {
   NS_ENSURE_TRUE((mState == WCC_INIT) ||
                  (mState == WCC_ONWRITE), NS_ERROR_UNEXPECTED);
+
+  if (!mSentAppData) {
+    mozilla::dom::TabChild* tabChild = GetTabChild(this);
+    SendAppData(IPC::SerializedLoadContext(this), tabChild);
+    mSentAppData = true;
+  }
 
   SendWriteToCacheEntry(PromiseFlatString(aData));
   mState = WCC_ONWRITE;

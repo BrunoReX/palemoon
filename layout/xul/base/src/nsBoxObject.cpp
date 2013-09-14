@@ -32,8 +32,6 @@ using namespace mozilla::dom;
 
 // Implement our nsISupports methods
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsBoxObject)
-
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsBoxObject)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsBoxObject)
 
@@ -186,12 +184,12 @@ nsBoxObject::GetOffsetRect(nsIntRect& aRect)
     }
   
     // For the origin, add in the border for the frame
-    const nsStyleBorder* border = frame->GetStyleBorder();
+    const nsStyleBorder* border = frame->StyleBorder();
     origin.x += border->GetComputedBorderWidth(NS_SIDE_LEFT);
     origin.y += border->GetComputedBorderWidth(NS_SIDE_TOP);
 
     // And subtract out the border for the parent
-    const nsStyleBorder* parentBorder = parent->GetStyleBorder();
+    const nsStyleBorder* parentBorder = parent->StyleBorder();
     origin.x -= parentBorder->GetComputedBorderWidth(NS_SIDE_LEFT);
     origin.y -= parentBorder->GetComputedBorderWidth(NS_SIDE_TOP);
 

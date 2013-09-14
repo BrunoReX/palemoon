@@ -15,30 +15,6 @@
 using namespace mozilla;
 using namespace dom;
 
-// DOMCI_NODE_DATA needs to be outside our namespaces
-DOMCI_NODE_DATA(Comment, Comment)
-
-nsresult
-NS_NewCommentNode(nsIContent** aInstancePtrResult,
-                  nsNodeInfoManager *aNodeInfoManager)
-{
-  NS_PRECONDITION(aNodeInfoManager, "Missing nodeinfo manager");
-
-  *aInstancePtrResult = nullptr;
-
-  nsCOMPtr<nsINodeInfo> ni = aNodeInfoManager->GetCommentNodeInfo();
-  NS_ENSURE_TRUE(ni, NS_ERROR_OUT_OF_MEMORY);
-
-  Comment *instance = new Comment(ni.forget());
-  if (!instance) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  NS_ADDREF(*aInstancePtrResult = instance);
-
-  return NS_OK;
-}
-
 namespace mozilla {
 namespace dom {
 
@@ -46,17 +22,8 @@ Comment::~Comment()
 {
 }
 
-// QueryInterface implementation for Comment
-NS_INTERFACE_TABLE_HEAD(Comment)
-  NS_NODE_INTERFACE_TABLE3(Comment, nsIDOMNode, nsIDOMCharacterData,
-                           nsIDOMComment)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Comment)
-NS_INTERFACE_MAP_END_INHERITING(nsGenericDOMDataNode)
-
-
-NS_IMPL_ADDREF_INHERITED(Comment, nsGenericDOMDataNode)
-NS_IMPL_RELEASE_INHERITED(Comment, nsGenericDOMDataNode)
-
+NS_IMPL_ISUPPORTS_INHERITED3(Comment, nsGenericDOMDataNode, nsIDOMNode,
+                             nsIDOMCharacterData, nsIDOMComment)
 
 bool
 Comment::IsNodeOfType(uint32_t aFlags) const
@@ -93,10 +60,23 @@ Comment::List(FILE* out, int32_t aIndent) const
 }
 #endif
 
-JSObject*
-Comment::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+/* static */ already_AddRefed<Comment>
+Comment::Constructor(const GlobalObject& aGlobal, const nsAString& aData,
+                     ErrorResult& aRv)
 {
-  return CommentBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.Get());
+  if (!window || !window->GetDoc()) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+
+  return window->GetDoc()->CreateComment(aData);
+}
+
+JSObject*
+Comment::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
+{
+  return CommentBinding::Wrap(aCx, aScope, this);
 }
 
 } // namespace dom

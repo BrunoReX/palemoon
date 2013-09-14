@@ -9,6 +9,7 @@
 #include "nsContentUtils.h"
 #include "nsDOMClassInfoID.h"
 #include "DocumentType.h"
+#include "nsTextNode.h"
 
 namespace mozilla {
 namespace dom {
@@ -26,10 +27,9 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMImplementation)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(DOMImplementation)
 
 JSObject*
-DOMImplementation::WrapObject(JSContext* aCx, JSObject* aScope,
-                              bool* aTriedToWrap)
+DOMImplementation::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 {
-  return DOMImplementationBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return DOMImplementationBinding::Wrap(aCx, aScope, this);
 }
 
 bool
@@ -114,12 +114,8 @@ DOMImplementation::CreateDocument(const nsAString& aNamespaceURI,
       return NS_ERROR_DOM_NAMESPACE_ERR;
     }
   }
-  else if (DOMStringIsNull(aQualifiedName) &&
-           !DOMStringIsNull(aNamespaceURI)) {
-    return NS_ERROR_DOM_NAMESPACE_ERR;
-  }
 
-  nsCOMPtr<nsIScriptGlobalObject> scriptHandlingObject =
+  nsCOMPtr<nsIGlobalObject> scriptHandlingObject =
     do_QueryReferent(mScriptObject);
 
   NS_ENSURE_STATE(!mScriptObject || scriptHandlingObject);
@@ -187,7 +183,7 @@ DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
   NS_ENSURE_SUCCESS(rv, rv);
 
 
-  nsCOMPtr<nsIScriptGlobalObject> scriptHandlingObject =
+  nsCOMPtr<nsIGlobalObject> scriptHandlingObject =
     do_QueryReferent(mScriptObject);
 
   NS_ENSURE_STATE(!mScriptObject || scriptHandlingObject);
@@ -203,36 +199,36 @@ DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
   nsCOMPtr<nsIDocument> doc = do_QueryInterface(document);
 
   nsCOMPtr<nsIContent> root;
-  rv = doc->CreateElem(NS_LITERAL_STRING("html"), NULL, kNameSpaceID_XHTML,
+  rv = doc->CreateElem(NS_LITERAL_STRING("html"), nullptr, kNameSpaceID_XHTML,
                        getter_AddRefs(root));
   NS_ENSURE_SUCCESS(rv, rv);
   rv = doc->AppendChildTo(root, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIContent> head;
-  rv = doc->CreateElem(NS_LITERAL_STRING("head"), NULL, kNameSpaceID_XHTML,
+  rv = doc->CreateElem(NS_LITERAL_STRING("head"), nullptr, kNameSpaceID_XHTML,
                        getter_AddRefs(head));
   NS_ENSURE_SUCCESS(rv, rv);
   rv = root->AppendChildTo(head, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIContent> title;
-  rv = doc->CreateElem(NS_LITERAL_STRING("title"), NULL, kNameSpaceID_XHTML,
-                       getter_AddRefs(title));
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = head->AppendChildTo(title, false);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (!DOMStringIsNull(aTitle)) {
+    nsCOMPtr<nsIContent> title;
+    rv = doc->CreateElem(NS_LITERAL_STRING("title"), nullptr,
+                         kNameSpaceID_XHTML, getter_AddRefs(title));
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = head->AppendChildTo(title, false);
+    NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIContent> titleText;
-  rv = NS_NewTextNode(getter_AddRefs(titleText), doc->NodeInfoManager());
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = titleText->SetText(aTitle, false);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = title->AppendChildTo(titleText, false);
-  NS_ENSURE_SUCCESS(rv, rv);
+    nsRefPtr<nsTextNode> titleText = new nsTextNode(doc->NodeInfoManager());
+    rv = titleText->SetText(aTitle, false);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = title->AppendChildTo(titleText, false);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   nsCOMPtr<nsIContent> body;
-  rv = doc->CreateElem(NS_LITERAL_STRING("body"), NULL, kNameSpaceID_XHTML,
+  rv = doc->CreateElem(NS_LITERAL_STRING("body"), nullptr, kNameSpaceID_XHTML,
                        getter_AddRefs(body));
   NS_ENSURE_SUCCESS(rv, rv);
   rv = root->AppendChildTo(body, false);
@@ -246,12 +242,14 @@ DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
 }
 
 already_AddRefed<nsIDocument>
-DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
+DOMImplementation::CreateHTMLDocument(const Optional<nsAString>& aTitle,
                                       ErrorResult& aRv)
 {
   nsCOMPtr<nsIDocument> document;
   nsCOMPtr<nsIDOMDocument> domDocument;
-  aRv = CreateHTMLDocument(aTitle, getter_AddRefs(document),
+  aRv = CreateHTMLDocument(aTitle.WasPassed() ? aTitle.Value()
+                                              : NullString(),
+                           getter_AddRefs(document),
                            getter_AddRefs(domDocument));
   return document.forget();
 }

@@ -3,17 +3,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#pragma once
+#ifndef mozilla_dom_SVGAnimatedAngle_h
+#define mozilla_dom_SVGAnimatedAngle_h
 
 #include "nsWrapperCache.h"
 #include "nsSVGElement.h"
-#include "SVGAngle.h"
 #include "mozilla/Attributes.h"
 
 class nsSVGAngle;
 
 namespace mozilla {
 namespace dom {
+
+class SVGAngle;
 
 class SVGAnimatedAngle MOZ_FINAL : public nsISupports,
                                    public nsWrapperCache
@@ -29,15 +31,10 @@ public:
   }
   ~SVGAnimatedAngle();
 
-  NS_IMETHOD GetBaseVal(nsISupports **aBaseVal)
-    { *aBaseVal = BaseVal().get(); return NS_OK; }
-
-  NS_IMETHOD GetAnimVal(nsISupports **aAnimVal)
-    { *aAnimVal = AnimVal().get(); return NS_OK; }
-
   // WebIDL
   nsSVGElement* GetParentObject() { return mSVGElement; }
-  virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope, bool* aTriedToWrap);
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
   already_AddRefed<SVGAngle> BaseVal();
   already_AddRefed<SVGAngle> AnimVal();
 
@@ -49,3 +46,4 @@ protected:
 } //namespace dom
 } //namespace mozilla
 
+#endif // mozilla_dom_SVGAnimatedAngle_h

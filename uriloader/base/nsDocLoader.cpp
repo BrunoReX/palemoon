@@ -191,8 +191,8 @@ nsDocLoader::~nsDocLoader()
 /*
  * Implementation of ISupports methods...
  */
-NS_IMPL_THREADSAFE_ADDREF(nsDocLoader)
-NS_IMPL_THREADSAFE_RELEASE(nsDocLoader)
+NS_IMPL_ADDREF(nsDocLoader)
+NS_IMPL_RELEASE(nsDocLoader)
 
 NS_INTERFACE_MAP_BEGIN(nsDocLoader)
    NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIRequestObserver)
@@ -235,13 +235,8 @@ NS_IMETHODIMP nsDocLoader::GetInterface(const nsIID& aIID, void** aSink)
 already_AddRefed<nsDocLoader>
 nsDocLoader::GetAsDocLoader(nsISupports* aSupports)
 {
-  if (!aSupports) {
-    return nullptr;
-  }
-  
-  nsDocLoader* ptr;
-  CallQueryInterface(aSupports, &ptr);
-  return ptr;
+  nsRefPtr<nsDocLoader> ret = do_QueryObject(aSupports);
+  return ret.forget();
 }
 
 /* static */
@@ -263,21 +258,11 @@ NS_IMETHODIMP
 nsDocLoader::Stop(void)
 {
   nsresult rv = NS_OK;
-  int32_t count, i;
 
   PR_LOG(gDocLoaderLog, PR_LOG_DEBUG, 
          ("DocLoader:%p: Stop() called\n", this));
 
-  count = mChildList.Count();
-
-  nsCOMPtr<nsIDocumentLoader> loader;
-  for (i=0; i < count; i++) {
-    loader = ChildAt(i);
-
-    if (loader) {
-      (void) loader->Stop();
-    }
-  }
+  NS_OBSERVER_ARRAY_NOTIFY_XPCOM_OBSERVERS(mChildList, nsDocLoader, Stop, ());
 
   if (mLoadGroup)
     rv = mLoadGroup->Cancel(NS_BINDING_ABORTED);
@@ -343,11 +328,8 @@ nsDocLoader::IsBusy()
   }
 
   /* check its child document loaders... */
-  int32_t count, i;
-
-  count = mChildList.Count();
-
-  for (i=0; i < count; i++) {
+  uint32_t count = mChildList.Length();
+  for (uint32_t i=0; i < count; i++) {
     nsIDocumentLoader* loader = ChildAt(i);
 
     // This is a safe cast, because we only put nsDocLoader objects into the
@@ -418,13 +400,11 @@ nsDocLoader::Destroy()
 void
 nsDocLoader::DestroyChildren()
 {
-  int32_t i, count;
-  
-  count = mChildList.Count();
+  uint32_t count = mChildList.Length();
   // if the doc loader still has children...we need to enumerate the
   // children and make them null out their back ptr to the parent doc
   // loader
-  for (i=0; i < count; i++)
+  for (uint32_t i=0; i < count; i++)
   {
     nsIDocumentLoader* loader = ChildAt(i);
 
@@ -950,6 +930,44 @@ nsDocLoader::GetDOMWindow(nsIDOMWindow **aResult)
 }
 
 NS_IMETHODIMP
+nsDocLoader::GetDOMWindowID(uint64_t *aResult)
+{
+  *aResult = 0;
+
+  nsCOMPtr<nsIDOMWindow> window;
+  nsresult rv = GetDOMWindow(getter_AddRefs(window));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsPIDOMWindow> piwindow = do_QueryInterface(window);
+  NS_ENSURE_STATE(piwindow);
+
+  MOZ_ASSERT(piwindow->IsOuterWindow());
+  *aResult = piwindow->WindowID();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDocLoader::GetIsTopLevel(bool *aResult)
+{
+  *aResult = false;
+
+  nsCOMPtr<nsIDOMWindow> window;
+  GetDOMWindow(getter_AddRefs(window));
+  if (window) {
+    nsCOMPtr<nsPIDOMWindow> piwindow = do_QueryInterface(window);
+    NS_ENSURE_STATE(piwindow);
+
+    nsCOMPtr<nsIDOMWindow> topWindow;
+    nsresult rv = piwindow->GetTop(getter_AddRefs(topWindow));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    *aResult = piwindow == topWindow;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDocLoader::GetIsLoadingDocument(bool *aIsLoadingDocument)
 {
   *aIsLoadingDocument = mIsLoadingDocument;
@@ -961,9 +979,9 @@ int64_t nsDocLoader::GetMaxTotalProgress()
 {
   int64_t newMaxTotal = 0;
 
-  int32_t count = mChildList.Count();
+  uint32_t count = mChildList.Length();
   nsCOMPtr<nsIWebProgress> webProgress;
-  for (int32_t i=0; i < count; i++) 
+  for (uint32_t i=0; i < count; i++) 
   {
     int64_t individualProgress = 0;
     nsIDocumentLoader* docloader = ChildAt(i);
@@ -1664,15 +1682,8 @@ NS_IMETHODIMP nsDocLoader::SetPriority(int32_t aPriority)
   if (p)
     p->SetPriority(aPriority);
 
-  int32_t count = mChildList.Count();
-
-  nsDocLoader *loader;
-  for (int32_t i=0; i < count; i++) {
-    loader = static_cast<nsDocLoader*>(ChildAt(i));
-    if (loader) {
-      loader->SetPriority(aPriority);
-    }
-  }
+  NS_OBSERVER_ARRAY_NOTIFY_XPCOM_OBSERVERS(mChildList, nsDocLoader,
+                                           SetPriority, (aPriority));
 
   return NS_OK;
 }
@@ -1686,15 +1697,8 @@ NS_IMETHODIMP nsDocLoader::AdjustPriority(int32_t aDelta)
   if (p)
     p->AdjustPriority(aDelta);
 
-  int32_t count = mChildList.Count();
-
-  nsDocLoader *loader;
-  for (int32_t i=0; i < count; i++) {
-    loader = static_cast<nsDocLoader*>(ChildAt(i));
-    if (loader) {
-      loader->AdjustPriority(aDelta);
-    }
-  }
+  NS_OBSERVER_ARRAY_NOTIFY_XPCOM_OBSERVERS(mChildList, nsDocLoader,
+                                           AdjustPriority, (aDelta));
 
   return NS_OK;
 }

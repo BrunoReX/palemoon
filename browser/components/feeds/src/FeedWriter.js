@@ -44,14 +44,13 @@ function makeURI(aURLSpec, aCharset) {
   return null;
 }
 
-const XML_NS = "http://www.w3.org/XML/1998/namespace"
+const XML_NS = "http://www.w3.org/XML/1998/namespace";
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 const TYPE_MAYBE_FEED = "application/vnd.mozilla.maybe.feed";
 const TYPE_MAYBE_AUDIO_FEED = "application/vnd.mozilla.maybe.audio.feed";
 const TYPE_MAYBE_VIDEO_FEED = "application/vnd.mozilla.maybe.video.feed";
 const URI_BUNDLE = "chrome://browser/locale/feeds/subscribe.properties";
-const FEEDHANDLER_URI = "about:feeds";
 
 const PREF_SELECTED_APP = "browser.feeds.handlers.application";
 const PREF_SELECTED_WEB = "browser.feeds.handlers.webservice";
@@ -170,11 +169,15 @@ FeedWriter.prototype = {
 
   _setContentText: function FW__setContentText(id, text) {
     this._contentSandbox.element = this._document.getElementById(id);
-    this._contentSandbox.textNode = this._document.createTextNode(text);
+    this._contentSandbox.textNode = text.createDocumentFragment(this._contentSandbox.element);
     var codeStr =
       "while (element.hasChildNodes()) " +
       "  element.removeChild(element.firstChild);" +
       "element.appendChild(textNode);";
+    if (text.base) {
+      this._contentSandbox.spec = text.base.spec;
+      codeStr += "element.setAttributeNS('" + XML_NS + "', 'base', spec);";
+    }
     Cu.evalInSandbox(codeStr, this._contentSandbox);
     this._contentSandbox.element = null;
     this._contentSandbox.textNode = null;
@@ -362,7 +365,7 @@ FeedWriter.prototype = {
   _setTitleText: function FW__setTitleText(container) {
     if (container.title) {
       var title = container.title.plainText();
-      this._setContentText(TITLE_ID, title);
+      this._setContentText(TITLE_ID, container.title);
       this._contentSandbox.document = this._document;
       this._contentSandbox.title = title;
       var codeStr = "document.title = title;"
@@ -371,7 +374,7 @@ FeedWriter.prototype = {
 
     var feed = container.QueryInterface(Ci.nsIFeed);
     if (feed && feed.subtitle)
-      this._setContentText(SUBTITLE_ID, container.subtitle.plainText());
+      this._setContentText(SUBTITLE_ID, container.subtitle);
   },
 
   /**
@@ -440,7 +443,11 @@ FeedWriter.prototype = {
       // If the entry has a title, make it a link
       if (entry.title) {
         var a = this._document.createElementNS(HTML_NS, "a");
-        a.appendChild(this._document.createTextNode(entry.title.plainText()));
+        var span = this._document.createElementNS(HTML_NS, "span");
+        a.appendChild(span);
+        if (entry.title.base)
+          span.setAttributeNS(XML_NS, "base", entry.title.base.spec);
+        span.appendChild(entry.title.createDocumentFragment(a));
 
         // Entries are not required to have links, so entry.link can be null.
         if (entry.link)
@@ -1102,7 +1109,7 @@ FeedWriter.prototype = {
 
     var resolvedURI = Cc["@mozilla.org/network/io-service;1"].
                       getService(Ci.nsIIOService).
-                      newChannel(FEEDHANDLER_URI, null, null).URI;
+                      newChannel("about:feeds", null, null).URI;
 
     if (resolvedURI.equals(chan.URI))
       return chan.originalURI;

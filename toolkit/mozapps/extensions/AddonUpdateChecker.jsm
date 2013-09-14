@@ -392,6 +392,7 @@ function UpdateParser(aId, aUpdateKey, aUrl, aObserver) {
   this.id = aId;
   this.updateKey = aUpdateKey;
   this.observer = aObserver;
+  this.url = aUrl;
 
   this.timer = Cc["@mozilla.org/timer;1"].
                createInstance(Ci.nsITimer);
@@ -408,9 +409,11 @@ function UpdateParser(aId, aUpdateKey, aUrl, aObserver) {
   try {
     this.request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].
                    createInstance(Ci.nsIXMLHttpRequest);
-    this.request.open("GET", aUrl, true);
+    this.request.open("GET", this.url, true);
     this.request.channel.notificationCallbacks = new CertUtils.BadCertHandler(!requireBuiltIn);
     this.request.channel.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE;
+    // Prevent the request from writing to cache.
+    this.request.channel.loadFlags |= Ci.nsIRequest.INHIBIT_CACHING;
     this.request.overrideMimeType("text/xml");
     var self = this;
     this.request.addEventListener("load", function loadEventListener(event) { self.onLoad() }, false);
@@ -428,6 +431,7 @@ UpdateParser.prototype = {
   observer: null,
   request: null,
   timer: null,
+  url: null,
 
   /**
    * Called when the manifest has been successfully loaded.
@@ -454,14 +458,15 @@ UpdateParser.prototype = {
     }
 
     if (!Components.isSuccessCode(request.status)) {
-      WARN("Request failed: " + request.status);
+      WARN("Request failed: " + this.url + " - " + request.status);
       this.notifyError(AddonUpdateChecker.ERROR_DOWNLOAD_ERROR);
       return;
     }
 
     let channel = request.channel;
     if (channel instanceof Ci.nsIHttpChannel && !channel.requestSucceeded) {
-      WARN("Request failed: " + channel.responseStatus + ": " + channel.responseStatusText);
+      WARN("Request failed: " + this.url + " - " + channel.responseStatus +
+           ": " + channel.responseStatusText);
       this.notifyError(AddonUpdateChecker.ERROR_DOWNLOAD_ERROR);
       return;
     }
@@ -502,12 +507,13 @@ UpdateParser.prototype = {
     this.timer = null;
 
     if (!Components.isSuccessCode(this.request.status)) {
-      WARN("Request failed: " + this.request.status);
+      WARN("Request failed: " + this.url + " - " + this.request.status);
     }
     else if (this.request.channel instanceof Ci.nsIHttpChannel) {
       try {
         if (this.request.channel.requestSucceeded) {
-          WARN("Request failed: " + this.request.channel.responseStatus + ": " +
+          WARN("Request failed: " + this.url + " - " +
+               this.request.channel.responseStatus + ": " +
                this.request.channel.responseStatusText);
         }
       }

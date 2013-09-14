@@ -5,7 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "imgTools.h"
+
 #include "nsCOMPtr.h"
+#include "nsIDocument.h"
+#include "nsIDOMDocument.h"
 #include "nsString.h"
 #include "nsError.h"
 #include "imgLoader.h"
@@ -21,13 +24,11 @@
 #include "nsNetUtil.h"
 #include "nsContentUtils.h"
 #include "ImageFactory.h"
+#include "Image.h"
 #include "ScriptedNotificationObserver.h"
 #include "imgIScriptedNotificationObserver.h"
 
 using namespace mozilla::image;
-
-class nsIDOMDocument;
-class nsIDocument;
 
 /* ========== imgITools implementation ========== */
 
@@ -90,7 +91,7 @@ NS_IMETHODIMP imgTools::DecodeImage(nsIInputStream* aInStr,
   rv = image->OnImageDataAvailable(nullptr, nullptr, inStream, 0, uint32_t(length));
   NS_ENSURE_SUCCESS(rv, rv);
   // Let the Image know we've sent all the data.
-  rv = image->OnImageDataComplete(nullptr, nullptr, NS_OK);
+  rv = image->OnImageDataComplete(nullptr, nullptr, NS_OK, true);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // All done.
@@ -260,11 +261,14 @@ NS_IMETHODIMP imgTools::EncodeImageData(gfxImageSurface *aSurface,
 NS_IMETHODIMP imgTools::GetFirstImageFrame(imgIContainer *aContainer,
                                            gfxImageSurface **aSurface)
 {
-  nsRefPtr<gfxImageSurface> frame;
-  nsresult rv = aContainer->CopyFrame(imgIContainer::FRAME_CURRENT, true,
-                                      getter_AddRefs(frame));
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_TRUE(frame, NS_ERROR_NOT_AVAILABLE);
+  nsRefPtr<gfxASurface> surface;
+  aContainer->GetFrame(imgIContainer::FRAME_FIRST,
+                       imgIContainer::FLAG_SYNC_DECODE,
+                       getter_AddRefs(surface));
+  NS_ENSURE_TRUE(surface, NS_ERROR_NOT_AVAILABLE);
+
+  nsRefPtr<gfxImageSurface> frame(surface->CopyToARGB32ImageSurface());
+  NS_ENSURE_TRUE(frame, NS_ERROR_FAILURE);
   NS_ENSURE_TRUE(frame->Width() && frame->Height(), NS_ERROR_FAILURE);
 
   frame.forget(aSurface);

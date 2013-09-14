@@ -1,6 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=99:
- *
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -384,10 +383,10 @@ class ReferenceFinder {
             JSObject *object = static_cast<JSObject *>(cell);
 
             /* Certain classes of object are for internal use only. */
-            if (object->isBlock() ||
-                object->isCall() ||
-                object->isWith() ||
-                object->isDeclEnv()) {
+            if (object->is<BlockObject>() ||
+                object->is<CallObject>() ||
+                object->is<WithObject>() ||
+                object->is<DeclEnvObject>()) {
                 return JSVAL_VOID;
             }
 
@@ -481,14 +480,14 @@ ReferenceFinder::Path::computeName(JSContext *cx)
 }
 
 bool
-ReferenceFinder::addReferrer(jsval referrer_, Path *path)
+ReferenceFinder::addReferrer(jsval referrerArg, Path *path)
 {
-    Rooted<jsval> referrer(context, referrer_);
+    RootedValue referrer(context, referrerArg);
 
-    if (!context->compartment->wrap(context, referrer.address()))
+    if (!context->compartment()->wrap(context, &referrer))
         return false;
 
-    js::ScopedFreePtr<char> pathName(path->computeName(context));
+    ScopedJSFreePtr<char> pathName(path->computeName(context));
     if (!pathName)
         return false;
 
@@ -539,7 +538,7 @@ FindReferences(JSContext *cx, unsigned argc, jsval *vp)
         return false;
     }
 
-    JS::Value target = JS_ARGV(cx, vp)[0];
+    RootedValue target(cx, JS_ARGV(cx, vp)[0]);
     if (!target.isObject()) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_UNEXPECTED_TYPE,
                              "argument", "not an object");

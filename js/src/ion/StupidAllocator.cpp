@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,7 +23,7 @@ LAllocation *
 StupidAllocator::stackLocation(uint32_t vreg)
 {
     LDefinition *def = virtualRegisters[vreg];
-    if (def->policy() == LDefinition::PRESET && def->output()->kind() == LAllocation::ARGUMENT)
+    if (def->policy() == LDefinition::PRESET && def->output()->isArgument())
         return def->output();
 
     return new LStackSlot(DefaultStackSlot(vreg), def->type() == LDefinition::DOUBLE);
@@ -47,10 +46,8 @@ StupidAllocator::init()
     if (!RegisterAllocator::init())
         return false;
 
-    if (!virtualRegisters.reserve(graph.numVirtualRegisters()))
+    if (!virtualRegisters.appendN((LDefinition *)NULL, graph.numVirtualRegisters()))
         return false;
-    for (size_t i = 0; i < graph.numVirtualRegisters(); i++)
-        virtualRegisters.infallibleAppend(NULL);
 
     for (size_t i = 0; i < graph.numBlocks(); i++) {
         LBlock *block = graph.getBlock(i);

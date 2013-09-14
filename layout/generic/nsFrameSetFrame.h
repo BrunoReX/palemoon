@@ -78,12 +78,12 @@ public:
 
   virtual ~nsHTMLFramesetFrame();
 
-  NS_IMETHOD Init(nsIContent*      aContent,
-                  nsIFrame*        aParent,
-                  nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
 
   NS_IMETHOD SetInitialChildList(ChildListID  aListID,
-                                 nsFrameList& aChildList);
+                                 nsFrameList& aChildList) MOZ_OVERRIDE;
 
   static bool    gDragInProgress;
 
@@ -100,9 +100,9 @@ public:
   NS_IMETHOD GetCursor(const nsPoint&    aPoint,
                        nsIFrame::Cursor& aCursor) MOZ_OVERRIDE;
 
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
   NS_IMETHOD Reflow(nsPresContext*          aPresContext,
                     nsHTMLReflowMetrics&     aDesiredSize,
@@ -178,8 +178,6 @@ protected:
 
   bool GetNoResize(nsIFrame* aChildFrame); 
   
-  virtual int GetSkipSides() const;
-
   void ReflowPlaceChild(nsIFrame*                aChild,
                         nsPresContext*          aPresContext,
                         const nsHTMLReflowState& aReflowState,

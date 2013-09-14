@@ -118,13 +118,15 @@ public:
 
   NetAddr mAddress;
 };
-    
+
 class AddrInfo {
 public:
-  AddrInfo(const char *host, const PRAddrInfo *prAddrInfo);
+  AddrInfo(const char *host, const PRAddrInfo *prAddrInfo, bool disableIPv4,
+           const char *cname);
   ~AddrInfo();
 
   char *mHostName;
+  char *mCanonicalName;
   LinkedList<NetAddrElement> mAddresses;
 };
 

@@ -1,4 +1,5 @@
-/* vim: set ts=4 sw=4 tw=99 et:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Copyright (C) 2011 Apple Inc. All rights reserved.
  *
@@ -24,13 +25,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef CheckedArithmetic_h
-#define CheckedArithmetic_h
+#ifndef yarr_CheckedArithmetic_h
+#define yarr_CheckedArithmetic_h
 
 #include "assembler/wtf/Assertions.h"
 
 #include <limits>
 #include "mozilla/StandardInteger.h"
+#include "mozilla/TypeTraits.h"
 
 #ifdef _MSC_VER
 # undef min
@@ -159,7 +161,7 @@ template <typename Target, typename Source> struct BoundsChecker<Target, Source,
     }
 };
 
-template <typename Target, typename Source, bool SameType = js::tl::IsSameType<Target, Source>::result> struct BoundsCheckElider;
+template <typename Target, typename Source, bool SameType = mozilla::IsSame<Target, Source>::value> struct BoundsCheckElider;
 template <typename Target, typename Source> struct BoundsCheckElider<Target, Source, true> {
     static bool inBounds(Source) { return true; }
 };
@@ -710,4 +712,4 @@ template <typename U, typename V, typename OverflowHandler> static inline Checke
 using WTF::Checked;
 using WTF::RecordOverflow;
 
-#endif
+#endif /* yarr_CheckedArithmetic_h */

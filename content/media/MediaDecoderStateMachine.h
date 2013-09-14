@@ -10,7 +10,7 @@ Each video element for a media file has two threads:
      hardware. This is done in a separate thread to ensure that the
      audio hardware gets a constant stream of data without
      interruption due to decoding or display. At some point
-     libsydneyaudio will be refactored to have a callback interface
+     AudioStream will be refactored to have a callback interface
      where it asks for data and an extra thread will no longer be
      needed.
 
@@ -70,12 +70,13 @@ to shut down the decode thread in order to conserve resources.
 During playback the audio thread will be idle (via a Wait() on the
 monitor) if the audio queue is empty. Otherwise it constantly pops
 audio data off the queue and plays it with a blocking write to the audio
-hardware (via AudioStream and libsydneyaudio).
+hardware (via AudioStream).
 
 */
 #if !defined(MediaDecoderStateMachine_h__)
 #define MediaDecoderStateMachine_h__
 
+#include "mozilla/Attributes.h"
 #include "nsThreadUtils.h"
 #include "MediaDecoder.h"
 #include "AudioAvailableEventManager.h"
@@ -115,6 +116,8 @@ public:
   // Enumeration for the valid decoding states
   enum State {
     DECODER_STATE_DECODING_METADATA,
+    DECODER_STATE_WAIT_FOR_RESOURCES,
+    DECODER_STATE_DORMANT,
     DECODER_STATE_DECODING,
     DECODER_STATE_SEEKING,
     DECODER_STATE_BUFFERING,
@@ -131,6 +134,11 @@ public:
   // calling this.
   void SetVolume(double aVolume);
   void SetAudioCaptured(bool aCapture);
+
+  // Check if the decoder needs to become dormant state.
+  bool IsDormantNeeded();
+  // Set/Unset dormant state.
+  void SetDormant(bool aDormant);
   void Shutdown();
 
   // Called from the main thread to get the duration. The decoder monitor
@@ -204,7 +212,7 @@ public:
   void StartBuffering();
 
   // State machine thread run function. Defers to RunStateMachine().
-  NS_IMETHOD Run();
+  NS_IMETHOD Run() MOZ_OVERRIDE;
 
   // This is called on the state machine thread and audio thread.
   // The decoder monitor must be obtained before calling this.
@@ -237,7 +245,7 @@ public:
     return mState == DECODER_STATE_SEEKING;
   }
 
-  nsresult GetBuffered(nsTimeRanges* aBuffered);
+  nsresult GetBuffered(TimeRanges* aBuffered);
 
   void SetPlaybackRate(double aPlaybackRate);
   void SetPreservesPitch(bool aPreservesPitch);
@@ -319,7 +327,7 @@ public:
   // shutting down. The decoder monitor must be held while calling this.
   bool IsShutdown();
 
-  void QueueMetadata(int64_t aPublishTime, int aChannels, int aRate, bool aHasAudio, MetadataTags* aTags);
+  void QueueMetadata(int64_t aPublishTime, int aChannels, int aRate, bool aHasAudio, bool aHasVideo, MetadataTags* aTags);
 
 protected:
   virtual uint32_t GetAmpleVideoFrames() { return mAmpleVideoFrames; }
@@ -329,7 +337,7 @@ private:
   public:
     WakeDecoderRunnable(MediaDecoderStateMachine* aSM)
       : mMutex("WakeDecoderRunnable"), mStateMachine(aSM) {}
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() MOZ_OVERRIDE
     {
       nsRefPtr<MediaDecoderStateMachine> stateMachine;
       {
@@ -491,6 +499,10 @@ private:
   // Moves the decoder into decoding state. Called on the state machine
   // thread. The decoder monitor must be held.
   void StartDecoding();
+
+  void StartWaitForResources();
+
+  void StartDecodeMetadata();
 
   // Returns true if we're currently playing. The decoder monitor must
   // be held.

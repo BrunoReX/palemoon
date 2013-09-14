@@ -8,8 +8,10 @@
 #include "SVGMotionSMILType.h"
 #include "nsSMILValue.h"
 #include "nsDebug.h"
-#include "nsSVGPathElement.h"
 #include "nsMathUtils.h"
+#include "nsISupportsUtils.h"
+#include "gfxPath.h"
+#include "nsTArray.h"
 #include <math.h>
 
 namespace mozilla {
@@ -141,7 +143,7 @@ struct MotionSegment
   } mU;
 };
 
-typedef nsTArray<MotionSegment> MotionSegmentArray;
+typedef FallibleTArray<MotionSegment> MotionSegmentArray;
 
 // Helper methods to cast nsSMILValue.mU.mPtr to the right pointer-type
 static MotionSegmentArray&
@@ -177,7 +179,7 @@ SVGMotionSMILType::Destroy(nsSMILValue& aValue) const
   delete arr;
 
   aValue.mU.mPtr = nullptr;
-  aValue.mType = &nsSMILNullType::sSingleton;
+  aValue.mType = nsSMILNullType::Singleton();
 }
 
 nsresult

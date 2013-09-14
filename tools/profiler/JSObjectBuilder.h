@@ -10,7 +10,7 @@
 
 class JSCustomObject;
 class JSCustomObjectBuilder;
-class JSContext;
+struct JSContext;
 class nsAString;
 
 /* this is handy wrapper around JSAPI to make it more pleasant to use.
@@ -54,7 +54,6 @@ private:
   void operator delete[](void*);
 
   JSContext *mCx;
-  JSObject *mObj;
   int mOk;
 };
 

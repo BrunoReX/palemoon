@@ -7,9 +7,8 @@
 #ifndef mozilla_dom_file_filerequest_h__
 #define mozilla_dom_file_filerequest_h__
 
+#include "mozilla/Attributes.h"
 #include "FileCommon.h"
-
-#include "nsIDOMFileRequest.h"
 
 #include "DOMRequest.h"
 
@@ -18,14 +17,10 @@ BEGIN_FILE_NAMESPACE
 class FileHelper;
 class LockedFile;
 
-class FileRequest : public mozilla::dom::DOMRequest,
-                    public nsIDOMFileRequest
+class FileRequest : public mozilla::dom::DOMRequest
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIDOMFILEREQUEST
-  NS_FORWARD_NSIDOMDOMREQUEST(DOMRequest::)
-  NS_FORWARD_NSIDOMEVENTTARGET_NOPREHANDLEEVENT(DOMRequest::)
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(FileRequest, DOMRequest)
 
   static already_AddRefed<FileRequest>
@@ -33,7 +28,7 @@ public:
 
   // nsIDOMEventTarget
   virtual nsresult
-  PreHandleEvent(nsEventChainPreVisitor& aVisitor);
+  PreHandleEvent(nsEventChainPreVisitor& aVisitor) MOZ_OVERRIDE;
 
   void
   OnProgress(uint64_t aProgress, uint64_t aProgressMax)
@@ -44,7 +39,7 @@ public:
   nsresult
   NotifyHelperCompleted(FileHelper* aFileHelper);
 
-private:
+protected:
   FileRequest(nsIDOMWindow* aWindow);
   ~FileRequest();
 
@@ -52,7 +47,6 @@ private:
   FireProgressEvent(uint64_t aLoaded, uint64_t aTotal);
 
   nsRefPtr<LockedFile> mLockedFile;
-  bool mIsFileRequest;
 };
 
 END_FILE_NAMESPACE

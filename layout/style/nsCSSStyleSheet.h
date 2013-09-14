@@ -10,6 +10,7 @@
 #define nsCSSStyleSheet_h_
 
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/Element.h"
 
 #include "nscore.h"
 #include "nsCOMPtr.h"
@@ -22,6 +23,7 @@
 #include "nsString.h"
 #include "mozilla/CORSMode.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsWrapperCache.h"
 
 class nsXMLNameSpaceMap;
 class nsCSSRuleProcessor;
@@ -93,7 +95,6 @@ private:
 //
 
 class CSSRuleListImpl;
-struct ChildSheetListBuilder;
 
 // CID for the nsCSSStyleSheet class
 // ca926f30-2a7e-477e-8467-803fb32af20a
@@ -104,19 +105,20 @@ struct ChildSheetListBuilder;
 
 class nsCSSStyleSheet MOZ_FINAL : public nsIStyleSheet,
                                   public nsIDOMCSSStyleSheet,
-                                  public nsICSSLoaderObserver
+                                  public nsICSSLoaderObserver,
+                                  public nsWrapperCache
 {
 public:
   nsCSSStyleSheet(mozilla::CORSMode aCORSMode);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsCSSStyleSheet,
-                                           nsIStyleSheet)
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsCSSStyleSheet,
+                                                         nsIStyleSheet)
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_CSS_STYLE_SHEET_IMPL_CID)
 
   // nsIStyleSheet interface
-  virtual nsIURI* GetSheetURI() const;
+  virtual nsIURI* GetSheetURI() const MOZ_OVERRIDE;
   virtual nsIURI* GetBaseURI() const MOZ_OVERRIDE;
   virtual void GetTitle(nsString& aTitle) const MOZ_OVERRIDE;
   virtual void GetType(nsString& aType) const MOZ_OVERRIDE;
@@ -174,8 +176,7 @@ public:
 
   void SetTitle(const nsAString& aTitle) { mTitle = aTitle; }
   void SetMedia(nsMediaList* aMedia);
-  void SetOwningNode(nsIDOMNode* aOwningNode) { mOwningNode = aOwningNode; /* Not ref counted */ }
-  nsIDOMNode* GetOwningNode() const { return mOwningNode; }
+  void SetOwningNode(nsINode* aOwningNode) { mOwningNode = aOwningNode; /* Not ref counted */ }
 
   void SetOwnerRule(mozilla::css::ImportRule* aOwnerRule) { mOwnerRule = aOwnerRule; /* Not ref counted */ }
   mozilla::css::ImportRule* GetOwnerRule() const { return mOwnerRule; }
@@ -185,7 +186,7 @@ public:
   already_AddRefed<nsCSSStyleSheet> Clone(nsCSSStyleSheet* aCloneParent,
                                           mozilla::css::ImportRule* aCloneOwnerRule,
                                           nsIDocument* aCloneDocument,
-                                          nsIDOMNode* aCloneOwningNode) const;
+                                          nsINode* aCloneOwningNode) const;
 
   bool IsModified() const { return mDirty; }
 
@@ -210,7 +211,7 @@ public:
 
   // nsICSSLoaderObserver interface
   NS_IMETHOD StyleSheetLoaded(nsCSSStyleSheet* aSheet, bool aWasAlternate,
-                              nsresult aStatus);
+                              nsresult aStatus) MOZ_OVERRIDE;
 
   enum EnsureUniqueInnerResult {
     // No work was needed to ensure a unique inner.
@@ -247,12 +248,64 @@ public:
   // Get this style sheet's CORS mode
   mozilla::CORSMode GetCORSMode() const { return mInner->mCORSMode; }
 
+  mozilla::dom::Element* GetScopeElement() const { return mScopeElement; }
+  void SetScopeElement(mozilla::dom::Element* aScopeElement)
+  {
+    mScopeElement = aScopeElement;
+  }
+
+  // WebIDL StyleSheet API
+  // Our nsIStyleSheet::GetType is a const method, so it ends up
+  // ambiguous with with the XPCOM version.  Just disambiguate.
+  void GetType(nsString& aType) {
+    const_cast<const nsCSSStyleSheet*>(this)->GetType(aType);
+  }
+  // Our XPCOM GetHref is fine for WebIDL
+  nsINode* GetOwnerNode() const { return mOwningNode; }
+  nsCSSStyleSheet* GetParentStyleSheet() const { return mParent; }
+  // Our nsIStyleSheet::GetTitle is a const method, so it ends up
+  // ambiguous with with the XPCOM version.  Just disambiguate.
+  void GetTitle(nsString& aTitle) {
+    const_cast<const nsCSSStyleSheet*>(this)->GetTitle(aTitle);
+  }
+  nsIDOMMediaList* Media();
+  bool Disabled() const { return mDisabled; }
+  // The XPCOM SetDisabled is fine for WebIDL
+
+  // WebIDL CSSStyleSheet API
+  // Can't be inline because we can't include ImportRule here.  And can't be
+  // called GetOwnerRule because that would be ambiguous with the ImportRule
+  // version.
+  nsIDOMCSSRule* GetDOMOwnerRule() const;
+  nsIDOMCSSRuleList* GetCssRules(mozilla::ErrorResult& aRv);
+  uint32_t InsertRule(const nsAString& aRule, uint32_t aIndex,
+                      mozilla::ErrorResult& aRv) {
+    uint32_t retval;
+    aRv = InsertRule(aRule, aIndex, &retval);
+    return retval;
+  }
+  void DeleteRule(uint32_t aIndex, mozilla::ErrorResult& aRv) {
+    aRv = DeleteRule(aIndex);
+  }
+
+  // WebIDL miscellaneous bits
+  mozilla::dom::ParentObject GetParentObject() const {
+    if (mOwningNode) {
+      return mozilla::dom::ParentObject(mOwningNode);
+    }
+
+    return mozilla::dom::ParentObject(static_cast<nsIStyleSheet*>(mParent),
+                                      mParent);
+  }
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
+
 private:
   nsCSSStyleSheet(const nsCSSStyleSheet& aCopy,
                   nsCSSStyleSheet* aParentToUse,
                   mozilla::css::ImportRule* aOwnerRuleToUse,
                   nsIDocument* aDocumentToUse,
-                  nsIDOMNode* aOwningNodeToUse);
+                  nsINode* aOwningNodeToUse);
 
   nsCSSStyleSheet(const nsCSSStyleSheet& aCopy) MOZ_DELETE;
   nsCSSStyleSheet& operator=(const nsCSSStyleSheet& aCopy) MOZ_DELETE;
@@ -294,9 +347,10 @@ protected:
 
   nsRefPtr<CSSRuleListImpl> mRuleCollection;
   nsIDocument*          mDocument; // weak ref; parents maintain this for their children
-  nsIDOMNode*           mOwningNode; // weak ref
+  nsINode*              mOwningNode; // weak ref
   bool                  mDisabled;
   bool                  mDirty; // has been modified 
+  nsRefPtr<mozilla::dom::Element> mScopeElement;
 
   nsCSSStyleSheetInner* mInner;
 

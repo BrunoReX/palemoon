@@ -13,7 +13,10 @@ let gDataNotificationInfoBar = {
 
   _DATA_REPORTING_NOTIFICATION: "data-reporting",
 
-  _notificationBox: null,
+  get _notificationBox() {
+    delete this._notificationBox;
+    return this._notificationBox = document.getElementById("global-notificationbox");
+  },
 
   get _log() {
     let log4moz = Cu.import("resource://services-common/log4moz.js", {}).Log4Moz;
@@ -35,42 +38,14 @@ let gDataNotificationInfoBar = {
     }
   },
 
-  _ensureNotificationBox: function () {
-    if (this._notificationBox) {
-      return;
-    }
-
-    let nb = document.createElementNS(
-      "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul",
-      "notificationbox"
-    );
-    nb.id = "data-notification-notify-bar";
-    nb.setAttribute("flex", "1");
-
-    let bottombox = document.getElementById("browser-bottombox");
-    bottombox.insertBefore(nb, bottombox.firstChild);
-
-    this._notificationBox = nb;
-  },
-
   _getDataReportingNotification: function (name=this._DATA_REPORTING_NOTIFICATION) {
-    if (!this._notificationBox) {
-      return undefined;
-    }
     return this._notificationBox.getNotificationWithValue(name);
   },
 
   _displayDataPolicyInfoBar: function (request) {
-    this._ensureNotificationBox();
-
     if (this._getDataReportingNotification()) {
       return;
     }
-
-    let policy = Cc["@mozilla.org/datareporting/service;1"]
-                   .getService(Ci.nsISupports)
-                   .wrappedJSObject
-                   .policy;
 
     let brandBundle = document.getElementById("bundle_brand");
     let appName = brandBundle.getString("brandShortName");
@@ -80,7 +55,7 @@ let gDataNotificationInfoBar = {
       "dataReportingNotification.message",
       [appName, vendorName]);
 
-    let actionTaken = false;
+    this._actionTaken = false;
 
     let buttons = [{
       label: gNavigatorBundle.getString("dataReportingNotification.button.label"),
@@ -92,9 +67,9 @@ let gDataNotificationInfoBar = {
         // This will ensure the checkbox is checked. The user has the option of
         // unchecking it.
         request.onUserAccept("info-bar-button-pressed");
-        actionTaken = true;
+        this._actionTaken = true;
         window.openAdvancedPreferences("dataChoicesTab");
-      },
+      }.bind(this),
     }];
 
     this._log.info("Creating data reporting policy notification.");
@@ -106,7 +81,7 @@ let gDataNotificationInfoBar = {
       buttons,
       function onEvent(event) {
         if (event == "removed") {
-          if (!actionTaken) {
+          if (!this._actionTaken) {
             request.onUserAccept("info-bar-dismissed");
           }
 
@@ -115,9 +90,6 @@ let gDataNotificationInfoBar = {
       }.bind(this)
     );
 
-    // Keep open until user closes it.
-    notification.persistence = -1;
-
     // Tell the notification request we have displayed the notification.
     request.onUserNotifyComplete();
   },
@@ -125,6 +97,7 @@ let gDataNotificationInfoBar = {
   _clearPolicyNotification: function () {
     let notification = this._getDataReportingNotification();
     if (notification) {
+      this._log.debug("Closing notification.");
       notification.close();
     }
   },
@@ -144,6 +117,10 @@ let gDataNotificationInfoBar = {
         break;
 
       case "datareporting:notify-data-policy:close":
+        // If this observer fires, it means something else took care of
+        // responding. Therefore, we don't need to do anything. So, we
+        // act like we took action and clear state.
+        this._actionTaken = true;
         this._clearPolicyNotification();
         break;
 

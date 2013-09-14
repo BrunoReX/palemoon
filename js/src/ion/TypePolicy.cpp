@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -98,32 +97,32 @@ ComparePolicy::adjustInputs(MInstruction *def)
 {
     JS_ASSERT(def->isCompare());
     MCompare *compare = def->toCompare();
-    MIRType type = compare->inputType();
 
     // Box inputs to get value
-    if (type == MIRType_Value)
+    if (compare->compareType() == MCompare::Compare_Unknown ||
+        compare->compareType() == MCompare::Compare_Value)
+    {
         return BoxInputsPolicy::adjustInputs(def);
+    }
 
-    // Nothing to do for undefined and null, lowering handles all types.
-    if (type == MIRType_Undefined || type == MIRType_Null)
-        return true;
-
-    // MIRType_Boolean specialization is done for "Anything === Bool"
+    // Compare_Boolean specialization is done for "Anything === Bool"
     // If the LHS is boolean, we set the specialization to Compare_Int32.
     // This matches other comparisons of the form bool === bool and
     // generated code of Compare_Int32 is more efficient.
-    if (type == MIRType_Boolean && def->getOperand(0)->type() == MIRType_Boolean) {
+    if (compare->compareType() == MCompare::Compare_Boolean &&
+        def->getOperand(0)->type() == MIRType_Boolean)
+    {
        compare->setCompareType(MCompare::Compare_Int32);
-       type = compare->inputType();
     }
 
-    // MIRType_Boolean specialization is done for "Anything === Bool"
+    // Compare_Boolean specialization is done for "Anything === Bool"
     // As of previous line Anything can't be Boolean
-    if (type == MIRType_Boolean) {
+    if (compare->compareType() == MCompare::Compare_Boolean) {
         // Unbox rhs that is definitely Boolean
         MDefinition *rhs = def->getOperand(1);
-
-        if (rhs->type() == MIRType_Value) {
+        if (rhs->type() != MIRType_Boolean) {
+            if (rhs->type() != MIRType_Value)
+                rhs = boxAt(def, rhs);
             MInstruction *unbox = MUnbox::New(rhs, MIRType_Boolean, MUnbox::Infallible);
             def->block()->insertBefore(def, unbox);
             def->replaceOperand(1, unbox);
@@ -134,7 +133,43 @@ ComparePolicy::adjustInputs(MInstruction *def)
         return true;
     }
 
+    // Compare_StrictString specialization is done for "Anything === String"
+    // If the LHS is string, we set the specialization to Compare_String.
+    if (compare->compareType() == MCompare::Compare_StrictString &&
+        def->getOperand(0)->type() == MIRType_String)
+    {
+       compare->setCompareType(MCompare::Compare_String);
+    }
+
+    // Compare_StrictString specialization is done for "Anything === String"
+    // As of previous line Anything can't be String
+    if (compare->compareType() == MCompare::Compare_StrictString) {
+        // Unbox rhs that is definitely String
+        MDefinition *rhs = def->getOperand(1);
+        if (rhs->type() != MIRType_String) {
+            if (rhs->type() != MIRType_Value)
+                rhs = boxAt(def, rhs);
+            MInstruction *unbox = MUnbox::New(rhs, MIRType_String, MUnbox::Infallible);
+            def->block()->insertBefore(def, unbox);
+            def->replaceOperand(1, unbox);
+        }
+
+        JS_ASSERT(def->getOperand(0)->type() != MIRType_String);
+        JS_ASSERT(def->getOperand(1)->type() == MIRType_String);
+        return true;
+    }
+
+    if (compare->compareType() == MCompare::Compare_Undefined ||
+        compare->compareType() == MCompare::Compare_Null)
+    {
+        // Nothing to do for undefined and null, lowering handles all types.
+        return true;
+    }
+
     // Convert all inputs to the right input type
+    MIRType type = compare->inputType();
+    JS_ASSERT(type == MIRType_Int32 || type == MIRType_Double ||
+              type == MIRType_Object || type == MIRType_String);
     for (size_t i = 0; i < 2; i++) {
         MDefinition *in = def->getOperand(i);
         if (in->type() == type)
@@ -143,13 +178,24 @@ ComparePolicy::adjustInputs(MInstruction *def)
         MInstruction *replace;
 
         // See BinaryArithPolicy::adjustInputs for an explanation of the following
-        if (in->type() == MIRType_Object || in->type() == MIRType_String)
+        if (in->type() == MIRType_Object || in->type() == MIRType_String ||
+            in->type() == MIRType_Undefined)
+        {
             in = boxAt(def, in);
+        }
 
         switch (type) {
-          case MIRType_Double:
-            replace = MToDouble::New(in);
+          case MIRType_Double: {
+            MToDouble::ConversionKind convert = MToDouble::NumbersOnly;
+            if (compare->compareType() == MCompare::Compare_DoubleMaybeCoerceLHS && i == 0)
+                convert = MToDouble::NonNullNonStringPrimitives;
+            else if (compare->compareType() == MCompare::Compare_DoubleMaybeCoerceRHS && i == 1)
+                convert = MToDouble::NonNullNonStringPrimitives;
+            if (convert == MToDouble::NumbersOnly && in->type() == MIRType_Boolean)
+                in = boxAt(def, in);
+            replace = MToDouble::New(in, convert);
             break;
+          }
           case MIRType_Int32:
             replace = MToInt32::New(in);
             break;
@@ -242,10 +288,11 @@ PowPolicy::adjustInputs(MInstruction *ins)
     return IntPolicy<1>::staticAdjustInputs(ins);
 }
 
+template <unsigned Op>
 bool
-StringPolicy::staticAdjustInputs(MInstruction *def)
+StringPolicy<Op>::staticAdjustInputs(MInstruction *def)
 {
-    MDefinition *in = def->getOperand(0);
+    MDefinition *in = def->getOperand(Op);
     if (in->type() == MIRType_String)
         return true;
 
@@ -259,9 +306,12 @@ StringPolicy::staticAdjustInputs(MInstruction *def)
     }
 
     def->block()->insertBefore(def, replace);
-    def->replaceOperand(0, replace);
+    def->replaceOperand(Op, replace);
     return true;
 }
+
+template bool StringPolicy<0>::staticAdjustInputs(MInstruction *ins);
+template bool StringPolicy<1>::staticAdjustInputs(MInstruction *ins);
 
 template <unsigned Op>
 bool
@@ -306,6 +356,7 @@ DoublePolicy<Op>::staticAdjustInputs(MInstruction *def)
 }
 
 template bool DoublePolicy<0>::staticAdjustInputs(MInstruction *def);
+template bool DoublePolicy<1>::staticAdjustInputs(MInstruction *def);
 
 template <unsigned Op>
 bool
@@ -322,6 +373,18 @@ BoxPolicy<Op>::staticAdjustInputs(MInstruction *ins)
 template bool BoxPolicy<0>::staticAdjustInputs(MInstruction *ins);
 template bool BoxPolicy<1>::staticAdjustInputs(MInstruction *ins);
 template bool BoxPolicy<2>::staticAdjustInputs(MInstruction *ins);
+
+bool
+ToDoublePolicy::staticAdjustInputs(MInstruction *ins)
+{
+    MDefinition *in = ins->getOperand(0);
+    if (in->type() != MIRType_Object && in->type() != MIRType_String)
+        return true;
+
+    in = boxAt(ins, in);
+    ins->replaceOperand(0, in);
+    return true;
+}
 
 template <unsigned Op>
 bool
@@ -345,6 +408,8 @@ ObjectPolicy<Op>::staticAdjustInputs(MInstruction *ins)
 
 template bool ObjectPolicy<0>::staticAdjustInputs(MInstruction *ins);
 template bool ObjectPolicy<1>::staticAdjustInputs(MInstruction *ins);
+template bool ObjectPolicy<2>::staticAdjustInputs(MInstruction *ins);
+template bool ObjectPolicy<3>::staticAdjustInputs(MInstruction *ins);
 
 bool
 CallPolicy::adjustInputs(MInstruction *ins)
@@ -395,15 +460,10 @@ InstanceOfPolicy::adjustInputs(MInstruction *def)
 }
 
 bool
-StoreTypedArrayPolicy::adjustInputs(MInstruction *ins)
+StoreTypedArrayPolicy::adjustValueInput(MInstruction *ins, int arrayType,
+                                        MDefinition *value, int valueOperand)
 {
-    MStoreTypedArrayElement *store = ins->toStoreTypedArrayElement();
-    JS_ASSERT(store->elements()->type() == MIRType_Elements);
-    JS_ASSERT(store->index()->type() == MIRType_Int32);
-
-    int arrayType = store->arrayType();
-    MDefinition *value = store->value();
-
+    MDefinition *curValue = value;
     // First, ensure the value is int32, boolean, double or Value.
     // The conversion is based on TypedArrayTemplate::setElementTail.
     switch (value->type()) {
@@ -431,8 +491,10 @@ StoreTypedArrayPolicy::adjustInputs(MInstruction *ins)
         break;
     }
 
-    if (value != store->value())
-        ins->replaceOperand(2, value);
+    if (value != curValue) {
+        ins->replaceOperand(valueOperand, value);
+        curValue = value;
+    }
 
     JS_ASSERT(value->type() == MIRType_Int32 ||
               value->type() == MIRType_Boolean ||
@@ -467,9 +529,41 @@ StoreTypedArrayPolicy::adjustInputs(MInstruction *ins)
         break;
     }
 
-    if (value != store->value())
-        ins->replaceOperand(2, value);
+    if (value != curValue) {
+        ins->replaceOperand(valueOperand, value);
+        curValue = value;
+    }
     return true;
+}
+
+bool
+StoreTypedArrayPolicy::adjustInputs(MInstruction *ins)
+{
+    MStoreTypedArrayElement *store = ins->toStoreTypedArrayElement();
+    JS_ASSERT(store->elements()->type() == MIRType_Elements);
+    JS_ASSERT(store->index()->type() == MIRType_Int32);
+
+    return adjustValueInput(ins, store->arrayType(), store->value(), 2);
+}
+
+bool
+StoreTypedArrayHolePolicy::adjustInputs(MInstruction *ins)
+{
+    MStoreTypedArrayElementHole *store = ins->toStoreTypedArrayElementHole();
+    JS_ASSERT(store->elements()->type() == MIRType_Elements);
+    JS_ASSERT(store->index()->type() == MIRType_Int32);
+    JS_ASSERT(store->length()->type() == MIRType_Int32);
+
+    return adjustValueInput(ins, store->arrayType(), store->value(), 3);
+}
+
+bool
+StoreTypedArrayElementStaticPolicy::adjustInputs(MInstruction *ins)
+{
+    MStoreTypedArrayElementStatic *store = ins->toStoreTypedArrayElementStatic();
+    JS_ASSERT(store->ptr()->type() == MIRType_Int32);
+
+    return adjustValueInput(ins, store->viewType(), store->value(), 1);
 }
 
 bool

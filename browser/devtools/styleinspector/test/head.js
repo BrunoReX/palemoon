@@ -4,15 +4,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 let tempScope = {};
-Cu.import("resource:///modules/devtools/CssLogic.jsm", tempScope);
-Cu.import("resource:///modules/devtools/CssHtmlTree.jsm", tempScope);
 Cu.import("resource:///modules/devtools/gDevTools.jsm", tempScope);
 let ConsoleUtils = tempScope.ConsoleUtils;
-let CssLogic = tempScope.CssLogic;
-let CssHtmlTree = tempScope.CssHtmlTree;
 let gDevTools = tempScope.gDevTools;
-Cu.import("resource:///modules/devtools/Target.jsm", tempScope);
-let TargetFactory = tempScope.TargetFactory;
+
+Cu.import("resource://gre/modules/devtools/Loader.jsm", tempScope);
+let devtools = tempScope.devtools;
+
+let TargetFactory = devtools.TargetFactory;
+let {CssHtmlTree} = devtools.require("devtools/styleinspector/computed-view");
+let {CssRuleView, _ElementStyle} = devtools.require("devtools/styleinspector/rule-view");
+let {CssLogic, CssSelector} = devtools.require("devtools/styleinspector/css-logic");
+
+let {
+  editableField,
+  getInplaceEditorForSpan: inplaceEditor
+} = devtools.require("devtools/shared/inplace-editor");
 Components.utils.import("resource://gre/modules/devtools/Console.jsm", tempScope);
 let console = tempScope.console;
 
@@ -93,6 +100,12 @@ function waitForEditorBlur(aEditor, aCallback)
       aCallback();
     });
   }, false);
+}
+
+function fireCopyEvent(element) {
+  let evt = element.ownerDocument.createEvent("Event");
+  evt.initEvent("copy", true, true);
+  element.dispatchEvent(evt);
 }
 
 function contextMenuClick(element) {

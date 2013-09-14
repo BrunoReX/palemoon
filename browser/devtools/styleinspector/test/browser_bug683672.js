@@ -12,9 +12,7 @@ let computedView;
 const TEST_URI = "http://example.com/browser/browser/devtools/styleinspector/test/browser_bug683672.html";
 
 let tempScope = {};
-Cu.import("resource:///modules/devtools/CssHtmlTree.jsm", tempScope);
-let CssHtmlTree = tempScope.CssHtmlTree;
-let PropertyView = tempScope.PropertyView;
+let {CssHtmlTree, PropertyView} = devtools.require("devtools/styleinspector/computed-view");
 
 function test()
 {
@@ -50,7 +48,6 @@ function selectNode(aInspector)
 function runTests()
 {
   testMatchedSelectors();
-  //testUnmatchedSelectors();
 
   info("finishing up");
   finishUp();
@@ -71,28 +68,6 @@ function testMatchedSelectors()
 
   is(propertyView.hasMatchedSelectors, true,
       "hasMatchedSelectors returns true");
-}
-
-function testUnmatchedSelectors()
-{
-  info("checking selector counts, unmatched rules and titles");
-  let body = content.document.body;
-  ok(body, "captain, we have a body");
-
-  info("selecting content.document.body");
-  inspector.selection.setNode(body);
-
-  is(body, computedView.viewedElement,
-      "style inspector node matches the selected node");
-
-  let propertyView = new PropertyView(computedView, "color");
-  let numUnmatchedSelectors = propertyView.propertyInfo.unmatchedSelectors.length;
-
-  is(numUnmatchedSelectors, 13,
-      "CssLogic returns the correct number of unmatched selectors for body");
-
-  is(propertyView.hasUnmatchedSelectors, true,
-      "hasUnmatchedSelectors returns true");
 }
 
 function finishUp()

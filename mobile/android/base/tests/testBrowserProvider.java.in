@@ -1,21 +1,16 @@
 #filter substitution
 package @ANDROID_PACKAGE_NAME@.tests;
 
-import @ANDROID_PACKAGE_NAME@.*;
-
 import android.content.ContentValues;
 import android.content.ContentUris;
 import android.content.ContentProviderResult;
 import android.content.ContentProviderOperation;
 import android.content.OperationApplicationException;
 import android.database.Cursor;
-import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
 
-import java.io.File;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Random;
 
@@ -327,8 +322,9 @@ public class testBrowserProvider extends ContentProviderTest {
                                null);
     }
 
+    @Override
     public void setUp() throws Exception {
-        super.setUp("@ANDROID_PACKAGE_NAME@.db.BrowserProvider", "AUTHORITY");
+        super.setUp("org.mozilla.gecko.db.BrowserProvider", "AUTHORITY");
         loadContractInfo();
 
         mTests.add(new TestSpecialFolders());
@@ -359,6 +355,8 @@ public class testBrowserProvider extends ContentProviderTest {
         mTests.add(new TestCombinedViewWithDeletedBookmark());
         mTests.add(new TestCombinedViewWithDeletedReadingListItem());
         mTests.add(new TestExpireHistory());
+
+        mTests.add(new TestBrowserProviderNotifications());
     }
 
     public void testBrowserProvider() throws Exception {
@@ -374,6 +372,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     abstract class Test implements Runnable {
+        @Override
         public void run() {
             try {
                 test();
@@ -544,6 +543,7 @@ public class testBrowserProvider extends ContentProviderTest {
             mAsserter.is(allFound, true, "Found all bulkInsert entries");
         }
 
+        @Override
         public void test() throws Exception {
             testApplyBatch();
             // Clean up
@@ -557,6 +557,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestSpecialFolders extends Test {
+        @Override
         public void test() throws Exception {
             Cursor c = mProvider.query(mBookmarksUri,
                                        new String[] { mBookmarksIdCol,
@@ -613,6 +614,7 @@ public class testBrowserProvider extends ContentProviderTest {
             return id;
         }
 
+        @Override
         public void test() throws Exception {
             ContentValues b = createOneBookmark();
             long id = ContentUris.parseId(mProvider.insert(mBookmarksUri, b));
@@ -673,6 +675,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestInsertBookmarksFavicons extends Test {
+        @Override
         public void test() throws Exception {
             ContentValues b = createOneBookmark();
 
@@ -710,6 +713,7 @@ public class testBrowserProvider extends ContentProviderTest {
             return id;
         }
 
+        @Override
         public void test() throws Exception {
             long id = insertOneBookmark();
 
@@ -769,6 +773,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestDeleteBookmarksFavicons extends Test {
+        @Override
         public void test() throws Exception {
             ContentValues b = createOneBookmark();
 
@@ -804,6 +809,7 @@ public class testBrowserProvider extends ContentProviderTest {
             return updated;
         }
 
+        @Override
         public void test() throws Exception {
             ContentValues b = createOneBookmark();
             long id = ContentUris.parseId(mProvider.insert(mBookmarksUri, b));
@@ -877,6 +883,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestUpdateBookmarksFavicons extends Test {
+        @Override
         public void test() throws Exception {
             ContentValues b = createOneBookmark();
 
@@ -930,8 +937,10 @@ public class testBrowserProvider extends ContentProviderTest {
             while (!c.isAfterLast()) {
                 String guid = c.getString(guidColumn);
                 long pos = c.getLong(posColumn);
-                mAsserter.is(pos, (long) i, "Position matches sequence.");
-                mAsserter.is(guid, items[i], "GUID matches sequence.");
+                if ((pos != i) || (guid == null) || (!guid.equals(items[i]))) {
+                    mAsserter.is(pos, (long) i, "Position matches sequence.");
+                    mAsserter.is(guid, items[i], "GUID matches sequence.");
+                }
                 ++i;
                 c.moveToNext();
             }
@@ -940,6 +949,7 @@ public class testBrowserProvider extends ContentProviderTest {
         }
 
         public static final int NUMBER_OF_CHILDREN = 1001;
+        @Override
         public void test() throws Exception {
             // Create the containing folder.
             ContentValues folder = createBookmark("FolderFolder", "", mMobileFolderId,
@@ -1006,6 +1016,7 @@ public class testBrowserProvider extends ContentProviderTest {
             return id;
         }
 
+        @Override
         public void test() throws Exception {
             ContentValues h = createOneHistoryEntry();
             long id = ContentUris.parseId(mProvider.insert(mHistoryUri, h));
@@ -1035,6 +1046,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestInsertHistoryFavicons extends Test {
+        @Override
         public void test() throws Exception {
             ContentValues h = createOneHistoryEntry();
 
@@ -1072,6 +1084,7 @@ public class testBrowserProvider extends ContentProviderTest {
             return id;
         }
 
+        @Override
         public void test() throws Exception {
             long id = insertOneHistoryEntry();
 
@@ -1106,6 +1119,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestDeleteHistoryFavicons extends Test {
+        @Override
         public void test() throws Exception {
             ContentValues h = createOneHistoryEntry();
 
@@ -1141,6 +1155,7 @@ public class testBrowserProvider extends ContentProviderTest {
             return updated;
         }
 
+        @Override
         public void test() throws Exception {
             ContentValues h = createOneHistoryEntry();
             long id = ContentUris.parseId(mProvider.insert(mHistoryUri, h));
@@ -1205,6 +1220,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestUpdateHistoryFavicons extends Test {
+        @Override
         public void test() throws Exception {
             ContentValues h = createOneHistoryEntry();
 
@@ -1253,6 +1269,7 @@ public class testBrowserProvider extends ContentProviderTest {
             return id;
         }
 
+        @Override
         public void test() throws Exception {
             Uri updateHistoryUriWithProfile = mHistoryUri.buildUpon().
                 appendQueryParameter("insert_if_needed", "true").
@@ -1351,6 +1368,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestInsertHistoryThumbnails extends Test {
+        @Override
         public void test() throws Exception {
             ContentValues h = createOneHistoryEntry();
 
@@ -1371,6 +1389,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestUpdateHistoryThumbnails extends Test {
+        @Override
         public void test() throws Exception {
             ContentValues h = createOneHistoryEntry();
 
@@ -1402,6 +1421,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestDeleteHistoryThumbnails extends Test {
+        @Override
         public void test() throws Exception {
             ContentValues h = createOneHistoryEntry();
 
@@ -1422,6 +1442,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestCombinedView extends Test {
+        @Override
         public void test() throws Exception {
             final String TITLE_1 = "Test Page 1";
             final String TITLE_2 = "Test Page 2";
@@ -1528,6 +1549,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestCombinedViewDisplay extends Test {
+        @Override
         public void test() throws Exception {
             final String TITLE_1 = "Test Page 1";
             final String TITLE_2 = "Test Page 2";
@@ -1587,6 +1609,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestCombinedViewWithDeletedBookmark extends Test {
+        @Override
         public void test() throws Exception {
             final String TITLE = "Test Page 1";
             final String URL = "http://example.com";
@@ -1625,6 +1648,7 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     class TestCombinedViewWithDeletedReadingListItem extends Test {
+        @Override
         public void test() throws Exception {
             final String TITLE = "Test Page 1";
             final String URL = "http://example.com";
@@ -1711,6 +1735,7 @@ public class testBrowserProvider extends ContentProviderTest {
             mAsserter.is(c.getCount(), count, count + " thumbnails entries found");
         }
 
+        @Override
         public void test() throws Exception {
             final int count = 3000;
             final int thumbCount = 15;
@@ -1770,9 +1795,95 @@ public class testBrowserProvider extends ContentProviderTest {
             c = mProvider.query(mHistoryUri, null, "", null, null);
             mAsserter.is(c.getCount(), 500, "500 history entries found");
 
-            // expiring with a aggressive priority should delete all but 10 thumbnails
+            // expiring with an aggressive priority should delete all but 10 thumbnails
             c = mProvider.query(mThumbnailsUri, null, null, null, null);
             mAsserter.is(c.getCount(), thumbCount, thumbCount + " thumbnails found");
+        }
+    }
+
+    /*
+     * Verify that insert, update, delete, and bulkInsert operations
+     * notify the ambient content resolver.  Each operation calls the
+     * content resolver notifyChange method synchronously, so it is
+     * okay to test sequentially.
+     */
+    class TestBrowserProviderNotifications extends Test {
+        public static final String LOGTAG = "TestBPNotifications";
+
+        protected void ensureOnlyChangeNotifiedStartsWith(Uri expectedUri, String operation) {
+            if (expectedUri == null) {
+                throw new IllegalArgumentException("expectedUri must not be null");
+            }
+
+            if (mResolver.notifyChangeList.size() != 1) {
+                // Log to help post-mortem debugging
+                Log.w(LOGTAG, "after operation, notifyChangeList = " + mResolver.notifyChangeList);
+            }
+
+            mAsserter.is(Long.valueOf(mResolver.notifyChangeList.size()),
+                         Long.valueOf(1),
+                         "Content observer was notified exactly once by " + operation);
+
+            Uri uri = mResolver.notifyChangeList.poll();
+
+            mAsserter.isnot(uri,
+                            null,
+                            "Notification from " + operation + " was valid");
+
+            mAsserter.ok(uri.toString().startsWith(expectedUri.toString()),
+                         "Content observer was notified exactly once by " + operation,
+                         uri.toString() + " starts with expected prefix " + expectedUri);
+        }
+
+        @Override
+        public void test() throws Exception {
+            // Insert
+            final ContentValues h = createOneHistoryEntry();
+
+            mResolver.notifyChangeList.clear();
+            long id = ContentUris.parseId(mProvider.insert(mHistoryUri, h));
+
+            mAsserter.isnot(Long.valueOf(id),
+                            Long.valueOf(-1),
+                            "Inserted item has valid id");
+
+            ensureOnlyChangeNotifiedStartsWith(mHistoryUri, "insert");
+
+            // Update
+            mResolver.notifyChangeList.clear();
+            h.put(mHistoryTitleCol, "http://newexample.com");
+
+            long numUpdated = mProvider.update(mHistoryUri, h,
+                                               mHistoryIdCol + " = ?",
+                                               new String[] { String.valueOf(id) });
+
+            mAsserter.is(Long.valueOf(numUpdated),
+                         Long.valueOf(1),
+                         "Correct number of items are updated");
+
+            ensureOnlyChangeNotifiedStartsWith(mHistoryUri, "update");
+
+            // Delete
+            mResolver.notifyChangeList.clear();
+            long numDeleted = mProvider.delete(mHistoryUri, null, null);
+
+            mAsserter.is(Long.valueOf(numDeleted),
+                         Long.valueOf(1),
+                         "Correct number of items are deleted");
+
+            ensureOnlyChangeNotifiedStartsWith(mHistoryUri, "delete");
+
+            // Bulk insert
+            final ContentValues[] hs = new ContentValues[] { createOneHistoryEntry() };
+
+            mResolver.notifyChangeList.clear();
+            long numBulkInserted = mProvider.bulkInsert(mHistoryUri, hs);
+
+            mAsserter.is(Long.valueOf(numBulkInserted),
+                         Long.valueOf(1),
+                         "Correct number of items are bulkInserted");
+
+            ensureOnlyChangeNotifiedStartsWith(mHistoryUri, "bulkInsert");
         }
     }
 }

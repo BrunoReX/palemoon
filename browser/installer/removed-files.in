@@ -17,6 +17,16 @@
 #ifdef MOZ_STATIC_JS
 @DLL_PREFIX@mozjs@DLL_SUFFIX@
 #endif
+#ifdef MOZ_FOLD_LIBS
+@DLL_PREFIX@nspr4@DLL_SUFFIX@
+@DLL_PREFIX@plds4@DLL_SUFFIX@
+@DLL_PREFIX@plc4@DLL_SUFFIX@
+@DLL_PREFIX@ssl3@DLL_SUFFIX@
+@DLL_PREFIX@smime3@DLL_SUFFIX@
+@DLL_PREFIX@nssutil3@DLL_SUFFIX@
+@DLL_PREFIX@mozsqlite3@DLL_SUFFIX@
+#endif
+@DLL_PREFIX@xpcom@DLL_SUFFIX@
 LICENSE
 browserconfig.properties
 chrome/US.jar
@@ -47,6 +57,7 @@ components/@DLL_PREFIX@myspell@DLL_SUFFIX@
 components/@DLL_PREFIX@spellchecker@DLL_SUFFIX@
 components/@DLL_PREFIX@spellchk@DLL_SUFFIX@
 #ifdef XP_MACOSX
+components/libalerts.dylib
 components/libalerts_s.dylib
 #endif
 components/aboutCertError.js
@@ -79,6 +90,8 @@ components/dom_telephony.xpt
 components/dom_wifi.xpt
 components/dom_system_b2g.xpt
 #endif
+components/dom_sms.xpt
+components/dom_webspeech.xpt
 components/uconvd.dll
 components/WeaveCrypto.js
 components/WeaveCrypto.manifest
@@ -91,11 +104,13 @@ components/nsProxyAutoConfig.manifest
 components/nsProxyAutoConfig.js
 D3DCompiler_42.dll
 d3dx9_42.dll
+d3dx9_43.dll
 defaults/pref/all.js
 defaults/pref/bug259708.js
 defaults/pref/bug307259.js
 defaults/pref/reporter.js
 defaults/pref/security-prefs.js
+defaults/pref/services-aitc.js
 defaults/pref/winpref.js
 defaults/pref/xpinstall.js
 defaults/preferences/services-aitc.js
@@ -882,13 +897,16 @@ xpicleanup@BIN_SUFFIX@
   chrome/pippki.jar
   chrome/toolkit.jar
   components/addonManager.js
+  components/Aitc.js
+  components/AitcComponents.manifest
   components/amContentHandler.js
   components/amWebInstallListener.js
+  components/binary.manifest
   components/browser.xpt
   components/BrowserElementParent.js
   components/BrowserElementParent.manifest
   components/BrowserElementPromptService.jsm
-  components/components.manifest
+  components/BrowserElementParent.jsm
   components/contentAreaDropListener.js
   components/contentSecurityPolicy.js
   components/crypto-SDR.js
@@ -1048,7 +1066,6 @@ xpicleanup@BIN_SUFFIX@
   modules/PluginProvider.jsm
   modules/PluralForm.jsm
   modules/PopupNotifications.jsm
-  modules/PropertyPanel.jsm
   modules/reflect.jsm
   modules/Services.jsm
   modules/services-common/async.js
@@ -1205,6 +1222,7 @@ xpicleanup@BIN_SUFFIX@
   components/dom_json.xpt
   components/dom_loadsave.xpt
   components/dom_offline.xpt
+  components/dom_push.xpt
   components/dom_range.xpt
   components/dom_sidebar.xpt
   components/dom_smil.xpt

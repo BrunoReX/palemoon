@@ -4,7 +4,6 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* $Id: sslt.h,v 1.23 2012/06/07 02:06:19 wtc%google.com Exp $ */
 
 #ifndef __sslt_h_
 #define __sslt_h_
@@ -89,7 +88,8 @@ typedef enum {
     ssl_mac_md5       = 1, 
     ssl_mac_sha       = 2, 
     ssl_hmac_md5      = 3, 	/* TLS HMAC version of mac_md5 */
-    ssl_hmac_sha      = 4 	/* TLS HMAC version of mac_sha */
+    ssl_hmac_sha      = 4, 	/* TLS HMAC version of mac_sha */
+    ssl_hmac_sha256   = 5
 } SSLMACAlgorithm;
 
 typedef enum {
@@ -175,16 +175,18 @@ typedef enum {
 /* Update SSL_MAX_EXTENSIONS whenever a new extension type is added. */
 typedef enum {
     ssl_server_name_xtn              = 0,
+    ssl_cert_status_xtn              = 5,
 #ifdef NSS_ENABLE_ECC
     ssl_elliptic_curves_xtn          = 10,
     ssl_ec_point_formats_xtn         = 11,
 #endif
+    ssl_signature_algorithms_xtn     = 13,
     ssl_use_srtp_xtn                 = 14,
     ssl_session_ticket_xtn           = 35,
     ssl_next_proto_nego_xtn          = 13172,
     ssl_renegotiation_info_xtn       = 0xff01	/* experimental number */
 } SSLExtensionType;
 
-#define SSL_MAX_EXTENSIONS             7
+#define SSL_MAX_EXTENSIONS             9
 
 #endif /* __sslt_h_ */

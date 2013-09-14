@@ -18,10 +18,15 @@
 
 namespace mozilla {
 
-static nsSVGAttrTearoffTable<void, DOMSVGPathSegList>
-  sSVGPathSegListTearoffTable;
+  static inline
+nsSVGAttrTearoffTable<void, DOMSVGPathSegList>&
+SVGPathSegListTearoffTable()
+{
+  static nsSVGAttrTearoffTable<void, DOMSVGPathSegList>
+    sSVGPathSegListTearoffTable;
+  return sSVGPathSegListTearoffTable;
+}
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(DOMSVGPathSegList)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(DOMSVGPathSegList)
   // No unlinking of mElement, we'd need to null out the value pointer (the
   // object it points to is held by the element) and null-check it everywhere.
@@ -50,10 +55,10 @@ DOMSVGPathSegList::GetDOMWrapper(void *aList,
                                  bool aIsAnimValList)
 {
   nsRefPtr<DOMSVGPathSegList> wrapper =
-    sSVGPathSegListTearoffTable.GetTearoff(aList);
+    SVGPathSegListTearoffTable().GetTearoff(aList);
   if (!wrapper) {
     wrapper = new DOMSVGPathSegList(aElement, aIsAnimValList);
-    sSVGPathSegListTearoffTable.AddTearoff(aList, wrapper);
+    SVGPathSegListTearoffTable().AddTearoff(aList, wrapper);
   }
   return wrapper.forget();
 }
@@ -61,7 +66,7 @@ DOMSVGPathSegList::GetDOMWrapper(void *aList,
 /* static */ DOMSVGPathSegList*
 DOMSVGPathSegList::GetDOMWrapperIfExists(void *aList)
 {
-  return sSVGPathSegListTearoffTable.GetTearoff(aList);
+  return SVGPathSegListTearoffTable().GetTearoff(aList);
 }
 
 DOMSVGPathSegList::~DOMSVGPathSegList()
@@ -71,14 +76,13 @@ DOMSVGPathSegList::~DOMSVGPathSegList()
   void *key = mIsAnimValList ?
     InternalAList().GetAnimValKey() :
     InternalAList().GetBaseValKey();
-  sSVGPathSegListTearoffTable.RemoveTearoff(key);
+  SVGPathSegListTearoffTable().RemoveTearoff(key);
 }
 
 JSObject*
-DOMSVGPathSegList::WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap)
+DOMSVGPathSegList::WrapObject(JSContext *cx, JS::Handle<JSObject*> scope)
 {
-  return mozilla::dom::SVGPathSegListBinding::Wrap(cx, scope, this,
-                                                   triedToWrap);
+  return mozilla::dom::SVGPathSegListBinding::Wrap(cx, scope, this);
 }
 
 void
@@ -389,8 +393,12 @@ DOMSVGPathSegList::ReplaceItem(DOMSVGPathSeg& aNewItem,
   // We use InternalList() to get oldArgCount since we may not have a DOM
   // wrapper at the index being replaced.
   uint32_t oldType = SVGPathSegUtils::DecodeType(InternalList().mData[internalIndex]);
-  uint32_t oldArgCount = SVGPathSegUtils::ArgCountForType(oldType);
-  uint32_t newArgCount = SVGPathSegUtils::ArgCountForType(domItem->Type());
+
+  // NOTE: ArgCountForType returns a (small) unsigned value, but we're
+  // intentionally putting it in a signed variable, because we're going to
+  // subtract these values and might produce something negative.
+  int32_t oldArgCount = SVGPathSegUtils::ArgCountForType(oldType);
+  int32_t newArgCount = SVGPathSegUtils::ArgCountForType(domItem->Type());
 
   float segAsRaw[1 + NS_SVG_PATH_SEG_MAX_ARGS];
   domItem->ToSVGPathSegEncodedData(segAsRaw);
@@ -408,7 +416,7 @@ DOMSVGPathSegList::ReplaceItem(DOMSVGPathSeg& aNewItem,
   // would end up reading bad data from InternalList()!
   domItem->InsertingIntoList(this, aIndex, IsAnimValList());
 
-  uint32_t delta = newArgCount - oldArgCount;
+  int32_t delta = newArgCount - oldArgCount;
   if (delta != 0) {
     for (uint32_t i = aIndex + 1; i < LengthNoFlush(); ++i) {
       mItems[i].mInternalDataIndex += delta;
@@ -446,7 +454,10 @@ DOMSVGPathSegList::RemoveItem(uint32_t aIndex,
 
   uint32_t internalIndex = mItems[aIndex].mInternalDataIndex;
   uint32_t segType = SVGPathSegUtils::DecodeType(InternalList().mData[internalIndex]);
-  uint32_t argCount = SVGPathSegUtils::ArgCountForType(segType);
+  // NOTE: ArgCountForType returns a (small) unsigned value, but we're
+  // intentionally putting it in a signed value, because we're going to
+  // negate it, and you can't negate an unsigned value.
+  int32_t argCount = SVGPathSegUtils::ArgCountForType(segType);
 
   // Now that we know we're removing, keep animVal list in sync as necessary.
   // Do this *before* touching InternalList() so the removed item can get its
@@ -505,7 +516,7 @@ DOMSVGPathSegList::
 void
 DOMSVGPathSegList::
   MaybeRemoveItemFromAnimValListAt(uint32_t aIndex,
-                                   uint32_t aArgCountForItem)
+                                   int32_t aArgCountForItem)
 {
   NS_ABORT_IF_FALSE(!IsAnimValList(), "call from baseVal to animVal");
 

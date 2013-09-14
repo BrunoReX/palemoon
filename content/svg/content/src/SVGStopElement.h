@@ -8,7 +8,6 @@
 
 #include "nsSVGElement.h"
 #include "nsSVGNumber2.h"
-#include "nsIDOMSVGStopElement.h"
 
 nsresult NS_NewSVGStopElement(nsIContent **aResult,
                               already_AddRefed<nsINodeInfo> aNodeInfo);
@@ -18,43 +17,27 @@ typedef nsSVGElement SVGStopElementBase;
 namespace mozilla {
 namespace dom {
 
-class SVGStopElement MOZ_FINAL : public SVGStopElementBase,
-                                 public nsIDOMSVGStopElement
+class SVGStopElement MOZ_FINAL : public SVGStopElementBase
 {
 protected:
   friend nsresult (::NS_NewSVGStopElement(nsIContent **aResult,
                                           already_AddRefed<nsINodeInfo> aNodeInfo));
   SVGStopElement(already_AddRefed<nsINodeInfo> aNodeInfo);
-  virtual JSObject* WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap) MOZ_OVERRIDE;
+  virtual JSObject* WrapNode(JSContext *aCx,
+                             JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
 public:
-  // interfaces:
-
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIDOMSVGSTOPELEMENT
-
-  // xxx If xpcom allowed virtual inheritance we wouldn't need to
-  // forward here :-(
-  NS_FORWARD_NSIDOMNODE_TO_NSINODE
-  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
-  NS_FORWARD_NSIDOMSVGELEMENT(SVGStopElementBase::)
-
   // nsIContent interface
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const MOZ_OVERRIDE;
 
-  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
-
-  virtual nsXPCClassInfo* GetClassInfo();
-
-  virtual nsIDOMNode* AsDOMNode() { return this; }
+  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const MOZ_OVERRIDE;
 
   // WebIDL
   already_AddRefed<nsIDOMSVGAnimatedNumber> Offset();
 
 protected:
 
-  virtual NumberAttributesInfo GetNumberInfo();
-  // nsIDOMSVGStopElement properties:
+  virtual NumberAttributesInfo GetNumberInfo() MOZ_OVERRIDE;
   nsSVGNumber2 mOffset;
   static NumberInfo sNumberInfo;
 };

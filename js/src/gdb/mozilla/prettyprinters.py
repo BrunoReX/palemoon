@@ -220,7 +220,9 @@ def implemented_types(t):
 
 template_regexp = re.compile("([\w_:]+)<")
 
-# Make a lookup function for objfile.
+# Construct and return a pretty-printer lookup function for objfile, or
+# return None if the objfile doesn't contain SpiderMonkey code
+# (specifically, definitions for SpiderMonkey types).
 def lookup_for_objfile(objfile):
     # Create a type cache for this objfile.
     try:
@@ -229,6 +231,7 @@ def lookup_for_objfile(objfile):
         if gdb.parameter("verbose"):
             gdb.write("objfile '%s' has no SpiderMonkey code; not registering pretty-printers\n"
                       % (objfile.filename,))
+        return None
 
     # Return a pretty-printer for |value|, if we have one. This is the lookup
     # function object we place in each gdb.Objfile's pretty-printers list, so it
@@ -312,7 +315,7 @@ def lookup_for_objfile(objfile):
 class Pointer(object):
     def __new__(cls, value, cache):
         # Don't try to provide pretty-printers for NULL pointers.
-        if value.type.code == gdb.TYPE_CODE_PTR and value == 0:
+        if value.type.strip_typedefs().code == gdb.TYPE_CODE_PTR and value == 0:
             return None
         return super(Pointer, cls).__new__(cls)
 
@@ -323,10 +326,13 @@ class Pointer(object):
     def to_string(self):
         # See comment above.
         assert not hasattr(self, 'display_hint') or self.display_hint() != 'string'
-        if self.value.type.code == gdb.TYPE_CODE_PTR:
+        concrete_type = self.value.type.strip_typedefs()
+        if concrete_type.code == gdb.TYPE_CODE_PTR:
             address = self.value.cast(self.cache.void_ptr_t)
-        elif self.value.type.code == gdb.TYPE_CODE_REF:
+        elif concrete_type.code == gdb.TYPE_CODE_REF:
             address = '@' + str(self.value.address.cast(self.cache.void_ptr_t))
+        else:
+            assert not "mozilla.prettyprinters.Pointer applied to bad value type"
         try:
             summary = self.summary()
         except gdb.MemoryError as r:

@@ -8,18 +8,7 @@
 
 #include "nsCycleCollectionNoteChild.h"
 #include "nsICanvasRenderingContextInternal.h"
-
-// Manual reflection of WebIDL typedefs
-typedef uint32_t WebGLenum;
-typedef uint32_t WebGLbitfield;
-typedef int32_t WebGLint;
-typedef int32_t WebGLsizei;
-typedef int64_t WebGLsizeiptr;
-typedef int64_t WebGLintptr;
-typedef uint32_t WebGLuint;
-typedef float WebGLfloat;
-typedef float WebGLclampf;
-typedef bool WebGLboolean;
+#include "WebGLTypes.h"
 
 namespace mozilla {
 
@@ -226,12 +215,12 @@ public:
     }
 
     T* operator->() const {
-        NS_ABORT_IF_FALSE(mRawPtr != 0, "You can't dereference a NULL WebGLRefPtr with operator->()!");
+        NS_ABORT_IF_FALSE(mRawPtr != 0, "You can't dereference a nullptr WebGLRefPtr with operator->()!");
         return get();
     }
 
     T& operator*() const {
-        NS_ABORT_IF_FALSE(mRawPtr != 0, "You can't dereference a NULL WebGLRefPtr with operator*()!");
+        NS_ABORT_IF_FALSE(mRawPtr != 0, "You can't dereference a nullptr WebGLRefPtr with operator*()!");
         return *get();
     }
 

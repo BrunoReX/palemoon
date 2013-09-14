@@ -6,34 +6,6 @@
 #include "mozilla/dom/CDATASection.h"
 #include "mozilla/dom/CDATASectionBinding.h"
 
-nsresult
-NS_NewXMLCDATASection(nsIContent** aInstancePtrResult,
-                      nsNodeInfoManager *aNodeInfoManager)
-{
-  using mozilla::dom::CDATASection;
-
-  NS_PRECONDITION(aNodeInfoManager, "Missing nodeinfo manager");
-
-  *aInstancePtrResult = nullptr;
-
-  nsCOMPtr<nsINodeInfo> ni;
-  ni = aNodeInfoManager->GetNodeInfo(nsGkAtoms::cdataTagName,
-                                     nullptr, kNameSpaceID_None,
-                                     nsIDOMNode::CDATA_SECTION_NODE);
-  NS_ENSURE_TRUE(ni, NS_ERROR_OUT_OF_MEMORY);
-
-  CDATASection *instance = new CDATASection(ni.forget());
-  if (!instance) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  NS_ADDREF(*aInstancePtrResult = instance);
-
-  return NS_OK;
-}
-
-DOMCI_NODE_DATA(CDATASection, mozilla::dom::CDATASection)
-
 namespace mozilla {
 namespace dom {
 
@@ -41,21 +13,14 @@ CDATASection::~CDATASection()
 {
 }
 
-
-// QueryInterface implementation for CDATASection
-NS_INTERFACE_TABLE_HEAD(CDATASection)
-  NS_NODE_INTERFACE_TABLE4(CDATASection, nsIDOMNode, nsIDOMCharacterData,
-                           nsIDOMText, nsIDOMCDATASection)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(CDATASection)
-NS_INTERFACE_MAP_END_INHERITING(nsGenericDOMDataNode)
-
-NS_IMPL_ADDREF_INHERITED(CDATASection, nsGenericDOMDataNode)
-NS_IMPL_RELEASE_INHERITED(CDATASection, nsGenericDOMDataNode)
+NS_IMPL_ISUPPORTS_INHERITED4(CDATASection, nsGenericDOMDataNode, nsIDOMNode,
+                             nsIDOMCharacterData, nsIDOMText,
+                             nsIDOMCDATASection)
 
 JSObject*
-CDATASection::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+CDATASection::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return CDATASectionBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return CDATASectionBinding::Wrap(aCx, aScope, this);
 }
 
 bool

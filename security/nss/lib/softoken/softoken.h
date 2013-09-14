@@ -4,7 +4,6 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* $Id: softoken.h,v 1.29 2013/02/05 02:19:52 ryan.sleevi%gmail.com Exp $ */
 
 #ifndef _SOFTOKEN_H_
 #define _SOFTOKEN_H_
@@ -138,11 +137,11 @@ SECStatus RSA_DecryptRaw(NSSLOWKEYPrivateKey *key, unsigned char *output,
 /*
 ** pepare an ECParam structure from DEREncoded params
  */
-extern SECStatus EC_FillParams(PRArenaPool *arena,
+extern SECStatus EC_FillParams(PLArenaPool *arena,
                                const SECItem *encodedParams, ECParams *params);
 extern SECStatus EC_DecodeParams(const SECItem *encodedParams, 
 				ECParams **ecparams);
-extern SECStatus EC_CopyParams(PRArenaPool *arena, ECParams *dstParams,
+extern SECStatus EC_CopyParams(PLArenaPool *arena, ECParams *dstParams,
               			const ECParams *srcParams);
 #endif
 
@@ -160,7 +159,7 @@ extern SECStatus EC_CopyParams(PRArenaPool *arena, ECParams *dstParams,
 ** NOTE: If arena is non-NULL, we re-allocate from there, otherwise
 ** we assume (and use) PR memory (re)allocation.
 */
-extern unsigned char * CBC_PadBuffer(PRArenaPool *arena, unsigned char *inbuf, 
+extern unsigned char * CBC_PadBuffer(PLArenaPool *arena, unsigned char *inbuf,
                                      unsigned int inlen, unsigned int *outlen,
 				     int blockSize);
 

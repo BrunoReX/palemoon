@@ -34,9 +34,12 @@ namespace {
 class nsPluginHangUITelemetry : public nsRunnable
 {
 public:
-  nsPluginHangUITelemetry(int aResponseCode, int aDontAskCode)
+  nsPluginHangUITelemetry(int aResponseCode, int aDontAskCode,
+                          uint32_t aResponseTimeMs, uint32_t aTimeoutMs)
     : mResponseCode(aResponseCode),
-      mDontAskCode(aDontAskCode)
+      mDontAskCode(aDontAskCode),
+      mResponseTimeMs(aResponseTimeMs),
+      mTimeoutMs(aTimeoutMs)
   {
   }
 
@@ -45,24 +48,33 @@ public:
   {
     mozilla::Telemetry::Accumulate(
               mozilla::Telemetry::PLUGIN_HANG_UI_USER_RESPONSE, mResponseCode);
-    mozilla::Telemetry::Accumulate(mozilla::Telemetry::PLUGIN_HANG_UI_DONT_ASK,
-                                   mDontAskCode);
+    mozilla::Telemetry::Accumulate(
+              mozilla::Telemetry::PLUGIN_HANG_UI_DONT_ASK, mDontAskCode);
+    mozilla::Telemetry::Accumulate(
+              mozilla::Telemetry::PLUGIN_HANG_UI_RESPONSE_TIME, mResponseTimeMs);
+    mozilla::Telemetry::Accumulate(
+              mozilla::Telemetry::PLUGIN_HANG_TIME, mTimeoutMs + mResponseTimeMs);
     return NS_OK;
   }
 
 private:
   int mResponseCode;
   int mDontAskCode;
+  uint32_t mResponseTimeMs;
+  uint32_t mTimeoutMs;
 };
 } // anonymous namespace
 
 namespace mozilla {
 namespace plugins {
 
-const DWORD PluginHangUIParent::kTimeout = 30000U;
-
-PluginHangUIParent::PluginHangUIParent(PluginModuleParent* aModule)
-  : mModule(aModule),
+PluginHangUIParent::PluginHangUIParent(PluginModuleParent* aModule,
+                                       const int32_t aHangUITimeoutPref,
+                                       const int32_t aChildTimeoutPref)
+  : mMutex("mozilla::plugins::PluginHangUIParent::mMutex"),
+    mModule(aModule),
+    mTimeoutPrefMs(static_cast<uint32_t>(aHangUITimeoutPref) * 1000U),
+    mIPCTimeoutMs(static_cast<uint32_t>(aChildTimeoutPref) * 1000U),
     mMainThreadMessageLoop(MessageLoop::current()),
     mIsShowing(false),
     mLastUserResponse(0),
@@ -77,8 +89,9 @@ PluginHangUIParent::PluginHangUIParent(PluginModuleParent* aModule)
 
 PluginHangUIParent::~PluginHangUIParent()
 {
-  if (mRegWait) {
-    ::UnregisterWaitEx(mRegWait, INVALID_HANDLE_VALUE);
+  { // Scope for lock
+    MutexAutoLock lock(mMutex);
+    UnwatchHangUIChildProcess(true);
   }
   if (mShowEvent) {
     ::CloseHandle(mShowEvent);
@@ -118,7 +131,7 @@ PluginHangUIParent::Init(const nsString& aPluginName)
   }
 
   nsresult rv;
-  rv = mMiniShm.Init(this, ::IsDebuggerPresent() ? INFINITE : kTimeout);
+  rv = mMiniShm.Init(this, ::IsDebuggerPresent() ? INFINITE : mIPCTimeoutMs);
   NS_ENSURE_SUCCESS(rv, false);
   nsCOMPtr<nsIProperties>
     directoryService(do_GetService(NS_DIRECTORY_SERVICE_CONTRACTID));
@@ -179,7 +192,7 @@ PluginHangUIParent::Init(const nsString& aPluginName)
     return false;
   }
   nsAutoString procHandleStr;
-  procHandleStr.AppendPrintf("%p", procHandle);
+  procHandleStr.AppendPrintf("%p", procHandle.Get());
   commandLine.AppendLooseValue(procHandleStr.get());
 
   // On Win7+, pass the application user model to the child, so it can
@@ -199,6 +212,10 @@ PluginHangUIParent::Init(const nsString& aPluginName)
     commandLine.AppendLooseValue(L"-");
   }
 
+  nsAutoString ipcTimeoutStr;
+  ipcTimeoutStr.AppendInt(mIPCTimeoutMs);
+  commandLine.AppendLooseValue(ipcTimeoutStr.get());
+
   std::wstring ipcCookie;
   rv = mMiniShm.GetCookie(ipcCookie);
   if (NS_FAILED(rv)) {
@@ -212,6 +229,7 @@ PluginHangUIParent::Init(const nsString& aPluginName)
   }
   mShowEvent = showEvent.Get();
 
+  MutexAutoLock lock(mMutex);
   STARTUPINFO startupInfo = { sizeof(STARTUPINFO) };
   PROCESS_INFORMATION processInfo = { NULL };
   BOOL isProcessCreated = ::CreateProcess(exePath.value().c_str(),
@@ -234,7 +252,7 @@ PluginHangUIParent::Init(const nsString& aPluginName)
                                   INFINITE,
                                   WT_EXECUTEDEFAULT | WT_EXECUTEONLYONCE);
     ::WaitForSingleObject(mShowEvent, ::IsDebuggerPresent() ? INFINITE
-                                                            : kTimeout);
+                                                            : mIPCTimeoutMs);
     // Setting this to true even if we time out on mShowEvent. This timeout 
     // typically occurs when the machine is thrashing so badly that 
     // plugin-hang-ui.exe is taking a while to start. If we didn't set 
@@ -251,6 +269,7 @@ VOID CALLBACK PluginHangUIParent::SOnHangUIProcessExit(PVOID aContext,
                                                        BOOLEAN aIsTimer)
 {
   PluginHangUIParent* object = static_cast<PluginHangUIParent*>(aContext);
+  MutexAutoLock lock(object->mMutex);
   // If the Hang UI child process died unexpectedly, act as if the UI cancelled
   if (object->IsShowing()) {
     object->RecvUserResponse(HANGUI_USER_RESPONSE_CANCEL);
@@ -258,12 +277,46 @@ VOID CALLBACK PluginHangUIParent::SOnHangUIProcessExit(PVOID aContext,
     // If plugin-hang-ui.exe was unexpectedly terminated, we need to re-enable.
     ::EnableWindow(object->mMainWindowHandle, TRUE);
   }
-  object->mMiniShm.CleanUp();
+}
+
+// A precondition for this function is that the caller has locked mMutex
+bool
+PluginHangUIParent::UnwatchHangUIChildProcess(bool aWait)
+{
+  mMutex.AssertCurrentThreadOwns();
+  if (mRegWait) {
+    // If aWait is false then we want to pass a NULL (i.e. default constructor)
+    // completionEvent
+    ScopedHandle completionEvent;
+    if (aWait) {
+      completionEvent.Set(::CreateEvent(NULL, FALSE, FALSE, NULL));
+      if (!completionEvent.IsValid()) {
+        return false;
+      }
+    }
+
+    // if aWait == false and UnregisterWaitEx fails with ERROR_IO_PENDING,
+    // it is okay to clear mRegWait; Windows is telling us that the wait's
+    // callback is running but will be cleaned up once the callback returns.
+    if (::UnregisterWaitEx(mRegWait, completionEvent) ||
+        !aWait && ::GetLastError() == ERROR_IO_PENDING) {
+      mRegWait = NULL;
+      if (aWait) {
+        // We must temporarily unlock mMutex while waiting for the registered
+        // wait callback to complete, or else we could deadlock.
+        MutexAutoUnlock unlock(mMutex);
+        ::WaitForSingleObject(completionEvent, INFINITE);
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 bool
 PluginHangUIParent::Cancel()
 {
+  MutexAutoLock lock(mMutex);
   bool result = mIsShowing && SendCancel();
   if (result) {
     mIsShowing = false;
@@ -283,11 +336,17 @@ PluginHangUIParent::SendCancel()
   return NS_SUCCEEDED(mMiniShm.Send());
 }
 
+// A precondition for this function is that the caller has locked mMutex
 bool
 PluginHangUIParent::RecvUserResponse(const unsigned int& aResponse)
 {
+  mMutex.AssertCurrentThreadOwns();
+  if (!mIsShowing && !(aResponse & HANGUI_USER_RESPONSE_CANCEL)) {
+    // Don't process a user response if a cancellation is already pending
+    return true;
+  }
   mLastUserResponse = aResponse;
-  mResponseTicks = GetTickCount();
+  mResponseTicks = ::GetTickCount();
   mIsShowing = false;
   // responseCode: 1 = Stop, 2 = Continue, 3 = Cancel
   int responseCode;
@@ -304,7 +363,9 @@ PluginHangUIParent::RecvUserResponse(const unsigned int& aResponse)
   }
   int dontAskCode = (aResponse & HANGUI_USER_RESPONSE_DONT_SHOW_AGAIN) ? 1 : 0;
   nsCOMPtr<nsIRunnable> workItem = new nsPluginHangUITelemetry(responseCode,
-                                                               dontAskCode);
+                                                               dontAskCode,
+                                                               LastShowDurationMs(),
+                                                               mTimeoutPrefMs);
   NS_DispatchToMainThread(workItem, NS_DISPATCH_NORMAL);
   return true;
 }
@@ -348,6 +409,10 @@ PluginHangUIParent::OnMiniShmEvent(MiniShmBase *aMiniShmObj)
   NS_ASSERTION(NS_SUCCEEDED(rv),
                "Couldn't obtain read pointer OnMiniShmEvent");
   if (NS_SUCCEEDED(rv)) {
+    // The child process has returned a response so we shouldn't worry about 
+    // its state anymore.
+    MutexAutoLock lock(mMutex);
+    UnwatchHangUIChildProcess(false);
     RecvUserResponse(response->mResponseBits);
   }
 }
@@ -364,7 +429,7 @@ PluginHangUIParent::OnMiniShmConnect(MiniShmBase* aMiniShmObj)
   }
   cmd->mCode = PluginHangUICommand::HANGUI_CMD_SHOW;
   if (NS_SUCCEEDED(aMiniShmObj->Send())) {
-    mShowTicks = GetTickCount();
+    mShowTicks = ::GetTickCount();
   }
   ::SetEvent(mShowEvent);
 }

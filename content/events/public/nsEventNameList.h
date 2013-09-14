@@ -363,19 +363,19 @@ EVENT(wheel,
       NS_WHEEL_WHEEL,
       EventNameType_All,
       NS_WHEEL_EVENT)
-// Gecko-specific extensions that apply to elements
 EVENT(copy,
       NS_COPY,
       EventNameType_HTMLXUL,
-      NS_EVENT)
+      NS_CLIPBOARD_EVENT)
 EVENT(cut,
       NS_CUT,
       EventNameType_HTMLXUL,
-      NS_EVENT)
+      NS_CLIPBOARD_EVENT)
 EVENT(paste,
       NS_PASTE,
       EventNameType_HTMLXUL,
-      NS_EVENT)
+      NS_CLIPBOARD_EVENT)
+// Gecko-specific extensions that apply to elements
 EVENT(beforescriptexecute,
       NS_BEFORE_SCRIPT_EXECUTE,
       EventNameType_HTMLXUL,
@@ -671,27 +671,27 @@ NON_IDL_EVENT(underflow,
 NON_IDL_EVENT(SVGLoad,
               NS_SVG_LOAD,
               EventNameType_None,
-              NS_SVG_EVENT)
+              NS_EVENT)
 NON_IDL_EVENT(SVGUnload,
               NS_SVG_UNLOAD,
               EventNameType_None,
-              NS_SVG_EVENT)
+              NS_EVENT)
 NON_IDL_EVENT(SVGAbort,
               NS_SVG_ABORT,
               EventNameType_None,
-              NS_SVG_EVENT)
+              NS_EVENT)
 NON_IDL_EVENT(SVGError,
               NS_SVG_ERROR,
               EventNameType_None,
-              NS_SVG_EVENT)
+              NS_EVENT)
 NON_IDL_EVENT(SVGResize,
               NS_SVG_RESIZE,
               EventNameType_None,
-              NS_SVG_EVENT)
+              NS_EVENT)
 NON_IDL_EVENT(SVGScroll,
               NS_SVG_SCROLL,
               EventNameType_None,
-              NS_SVG_EVENT)
+              NS_EVENT)
 
 NON_IDL_EVENT(SVGZoom,
               NS_SVG_ZOOM,
@@ -754,7 +754,42 @@ NON_IDL_EVENT(MozScrolledAreaChanged,
               EventNameType_None,
               NS_SCROLLAREA_EVENT)
 
+#ifdef MOZ_GAMEPAD
+NON_IDL_EVENT(gamepadbuttondown,
+              NS_GAMEPAD_BUTTONDOWN,
+              EventNameType_None,
+              NS_EVENT_NULL)
+NON_IDL_EVENT(gamepadbuttonup,
+              NS_GAMEPAD_BUTTONUP,
+              EventNameType_None,
+              NS_EVENT_NULL)
+NON_IDL_EVENT(gamepadaxismove,
+              NS_GAMEPAD_AXISMOVE,
+              EventNameType_None,
+              NS_EVENT_NULL)
+NON_IDL_EVENT(gamepadconnected,
+              NS_GAMEPAD_CONNECTED,
+              EventNameType_None,
+              NS_EVENT_NULL)
+NON_IDL_EVENT(gamepaddisconnected,
+              NS_GAMEPAD_DISCONNECTED,
+              EventNameType_None,
+              NS_EVENT_NULL)
+#endif
+
 // Simple gesture events
+NON_IDL_EVENT(MozSwipeGestureStart,
+              NS_SIMPLE_GESTURE_SWIPE_START,
+              EventNameType_None,
+              NS_SIMPLE_GESTURE_EVENT)
+NON_IDL_EVENT(MozSwipeGestureUpdate,
+              NS_SIMPLE_GESTURE_SWIPE_UPDATE,
+              EventNameType_None,
+              NS_SIMPLE_GESTURE_EVENT)
+NON_IDL_EVENT(MozSwipeGestureEnd,
+              NS_SIMPLE_GESTURE_SWIPE_END,
+              EventNameType_None,
+              NS_SIMPLE_GESTURE_EVENT)
 NON_IDL_EVENT(MozSwipeGesture,
               NS_SIMPLE_GESTURE_SWIPE,
               EventNameType_None,
@@ -791,8 +826,16 @@ NON_IDL_EVENT(MozPressTapGesture,
               NS_SIMPLE_GESTURE_PRESSTAP,
               EventNameType_None,
               NS_SIMPLE_GESTURE_EVENT)
-NON_IDL_EVENT(MozEdgeUIGesture,
-              NS_SIMPLE_GESTURE_EDGEUI,
+NON_IDL_EVENT(MozEdgeUIStarted,
+              NS_SIMPLE_GESTURE_EDGE_STARTED,
+              EventNameType_None,
+              NS_SIMPLE_GESTURE_EVENT)
+NON_IDL_EVENT(MozEdgeUICanceled,
+              NS_SIMPLE_GESTURE_EDGE_CANCELED,
+              EventNameType_None,
+              NS_SIMPLE_GESTURE_EVENT)
+NON_IDL_EVENT(MozEdgeUICompleted,
+              NS_SIMPLE_GESTURE_EDGE_COMPLETED,
               EventNameType_None,
               NS_SIMPLE_GESTURE_EVENT)
 
@@ -812,6 +855,16 @@ NON_IDL_EVENT(animationiteration,
               NS_ANIMATION_ITERATION,
               EventNameType_None,
               NS_ANIMATION_EVENT)
+
+NON_IDL_EVENT(audioprocess,
+              NS_AUDIO_PROCESS,
+              EventNameType_None,
+              NS_EVENT)
+
+NON_IDL_EVENT(complete,
+              NS_AUDIO_COMPLETE,
+              EventNameType_None,
+              NS_EVENT)
 
 #ifdef DEFINED_FORWARDED_EVENT
 #undef DEFINED_FORWARDED_EVENT

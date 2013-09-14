@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
+import org.mozilla.gecko.background.common.log.Logger;
 import org.mozilla.gecko.sync.crypto.KeyBundle;
 import org.mozilla.gecko.sync.crypto.PersistedCrypto5Keys;
 import org.mozilla.gecko.sync.stage.GlobalSyncStage.Stage;
@@ -339,7 +340,7 @@ public class SyncConfiguration implements CredentialsSource {
     try {
       ExtendedJSONObject o = ExtendedJSONObject.parseJSONObject(json);
       Map<String, Boolean> map = new HashMap<String, Boolean>();
-      for (Entry<String, Object> e : o.entryIterable()) {
+      for (Entry<String, Object> e : o.entrySet()) {
         String key = e.getKey();
         Boolean value = (Boolean) e.getValue();
         map.put(key, value);
@@ -464,7 +465,7 @@ public class SyncConfiguration implements CredentialsSource {
     return serverURL + "user/1.0/" + userPart;
   }
 
-  public String infoBaseURL() {
+  protected String infoBaseURL() {
     return clusterURL + GlobalSession.API_VERSION + "/" + username + "/info/";
   }
 

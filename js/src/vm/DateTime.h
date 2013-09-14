@@ -1,16 +1,15 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef DateTime_h___
-#define DateTime_h___
+#ifndef vm_DateTime_h
+#define vm_DateTime_h
 
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/MathAlgorithms.h"
 #include "mozilla/StandardInteger.h"
-
-#include <math.h>
 
 #include "NumericConversions.h"
 
@@ -36,12 +35,16 @@ const double msPerDay = msPerHour * HoursPerDay;
 const unsigned SecondsPerHour = 60 * 60;
 const unsigned SecondsPerDay = SecondsPerHour * 24;
 
+const double StartOfTime = -8.64e15;
+const double EndOfTime = 8.64e15;
+const double MaxTimeMagnitude = 8.64e15;
+
 /* ES5 15.9.1.14. */
 inline double
 TimeClip(double time)
 {
     /* Steps 1-2. */
-    if (!MOZ_DOUBLE_IS_FINITE(time) || fabs(time) > 8.64e15)
+    if (!mozilla::IsFinite(time) || mozilla::Abs(time) > MaxTimeMagnitude)
         return js_NaN;
 
     /* Step 3. */
@@ -98,15 +101,21 @@ class DateTimeInfo
 {
   public:
     DateTimeInfo();
-    int64_t getDSTOffsetMilliseconds(int64_t localTimeMilliseconds);
+
+    /*
+     * Get the DST offset in milliseconds at a UTC time.  This is usually
+     * either 0 or |msPerSecond * SecondsPerHour|, but at least one exotic time
+     * zone (Lord Howe Island, Australia) has a fractional-hour offset, just to
+     * keep things interesting.
+     */
+    int64_t getDSTOffsetMilliseconds(int64_t utcMilliseconds);
+
     void updateTimeZoneAdjustment();
 
     /* ES5 15.9.1.7. */
     double localTZA() { return localTZA_; }
 
   private:
-    int64_t computeDSTOffsetMilliseconds(int64_t localTimeSeconds);
-
     /*
      * The current local time zone adjustment, cached because retrieving this
      * dynamically is Slow, and a certain venerable benchmark which shall not
@@ -119,11 +128,25 @@ class DateTimeInfo
      */
     double localTZA_;
 
+    /*
+     * Compute the DST offset at the given UTC time in seconds from the epoch.
+     * (getDSTOffsetMilliseconds attempts to return a cached value, but in case
+     * of a cache miss it calls this method.  The cache is represented through
+     * the offset* and *{Start,End}Seconds fields below.)
+     */
+    int64_t computeDSTOffsetMilliseconds(int64_t utcSeconds);
+
     int64_t offsetMilliseconds;
-    int64_t rangeStartSeconds, rangeEndSeconds;
+    int64_t rangeStartSeconds, rangeEndSeconds; // UTC-based
 
     int64_t oldOffsetMilliseconds;
-    int64_t oldRangeStartSeconds, oldRangeEndSeconds;
+    int64_t oldRangeStartSeconds, oldRangeEndSeconds; // UTC-based
+
+    /*
+     * Cached offset in seconds from the current UTC time to the current
+     * local standard time (i.e. not including any offset due to DST).
+     */
+    int32_t utcToLocalStandardOffsetSeconds;
 
     static const int64_t MaxUnixTimeT = 2145859200; /* time_t 12/31/2037 */
 
@@ -134,4 +157,4 @@ class DateTimeInfo
 
 }  /* namespace js */
 
-#endif /* DateTime_h___ */
+#endif /* vm_DateTime_h */

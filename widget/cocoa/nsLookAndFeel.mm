@@ -5,13 +5,26 @@
 
 #include "nsLookAndFeel.h"
 #include "nsCocoaFeatures.h"
-#include "nsObjCExceptions.h"
 #include "nsIServiceManager.h"
 #include "nsNativeThemeColors.h"
 #include "nsStyleConsts.h"
+#include "nsCocoaFeatures.h"
 #include "gfxFont.h"
 
 #import <Cocoa/Cocoa.h>
+
+// This must be included last:
+#include "nsObjCExceptions.h"
+
+enum {
+  mozNSScrollerStyleLegacy       = 0,
+  mozNSScrollerStyleOverlay      = 1
+};
+typedef NSInteger mozNSScrollerStyle;
+
+@interface NSScroller(AvailableSinceLion)
++ (mozNSScrollerStyle)preferredScrollerStyle;
+@end
 
 nsLookAndFeel::nsLookAndFeel() : nsXPLookAndFeel()
 {
@@ -339,6 +352,12 @@ nsLookAndFeel::GetIntImpl(IntID aID, int32_t &aResult)
     case eIntID_ScrollSliderStyle:
       aResult = eScrollThumbStyle_Proportional;
       break;
+    case eIntID_UseOverlayScrollbars:
+      aResult = SystemWantsOverlayScrollbars() ? 1 : 0;
+      break;
+    case eIntID_AllowOverlayScrollbarsOverlap:
+      aResult = AllowOverlayScrollbarsOverlap() ? 1 : 0;
+      break;
     case eIntID_TreeOpenDelay:
       aResult = 1000;
       break;
@@ -368,6 +387,9 @@ nsLookAndFeel::GetIntImpl(IntID aID, int32_t &aResult)
       break;
     case eIntID_MacLionTheme:
       aResult = nsCocoaFeatures::OnLionOrLater();
+      break;
+    case eIntID_AlertNotificationOrigin:
+      aResult = NS_ALERT_TOP;
       break;
     case eIntID_TabFocusModel:
     {
@@ -409,6 +431,13 @@ nsLookAndFeel::GetIntImpl(IntID aID, int32_t &aResult)
     case eIntID_ScrollbarButtonAutoRepeatBehavior:
       aResult = 0;
       break;
+    case eIntID_SwipeAnimationEnabled:
+      aResult = 0;
+      if ([NSEvent respondsToSelector:@selector(
+            isSwipeTrackingFromScrollEventsEnabled)]) {
+        aResult = [NSEvent isSwipeTrackingFromScrollEventsEnabled] ? 1 : 0;
+      }
+      break;
     default:
       aResult = 0;
       res = NS_ERROR_FAILURE;
@@ -439,6 +468,22 @@ nsLookAndFeel::GetFloatImpl(FloatID aID, float &aResult)
   }
 
   return res;
+}
+
+bool nsLookAndFeel::UseOverlayScrollbars()
+{
+  return GetInt(eIntID_UseOverlayScrollbars) != 0;
+}
+
+bool nsLookAndFeel::SystemWantsOverlayScrollbars()
+{
+  return ([NSScroller respondsToSelector:@selector(preferredScrollerStyle)] &&
+          [NSScroller preferredScrollerStyle] == mozNSScrollerStyleOverlay);
+}
+
+bool nsLookAndFeel::AllowOverlayScrollbarsOverlap()
+{
+  return (UseOverlayScrollbars() && nsCocoaFeatures::OnMountainLionOrLater());
 }
 
 // copied from gfxQuartzFontCache.mm, maybe should go in a Cocoa utils
