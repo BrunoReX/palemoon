@@ -130,6 +130,10 @@ pref("general.smoothScroll.mouseWheel.durationMaxMS",500);
 pref("general.smoothScroll.scrollbars",true);
 pref("general.smoothScroll.scrollbars.durationMinMS",50);
 pref("general.smoothScroll.scrollbars.durationMaxMS",200);
+pref("general.smoothScroll.other",false);
+pref("general.smoothScroll.other.durationMinMS",200);
+pref("general.smoothScroll.other.durationMaxMS",600);
+
 
 // ****************** Misc. config ******************
 

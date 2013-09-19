@@ -669,8 +669,9 @@ nsCacheProfilePrefObserver::PermittedToSmartSize(nsIPrefBranch* branch, bool
         }
         // Set manual setting to MAX cache size as starting val for any
         // adjustment by user: (bug 559942 comment 65)
-        int32_t maxSize = mShouldUseOldMaxSmartSize ? OLD_MAX_CACHE_SIZE : MAX_CACHE_SIZE;
-        branch->SetIntPref(DISK_CACHE_CAPACITY_PREF, maxSize);
+        // Pale Moon: don't set this - the default should be used!
+        // int32_t maxSize = mShouldUseOldMaxSmartSize ? OLD_MAX_CACHE_SIZE : MAX_CACHE_SIZE;
+        // branch->SetIntPref(DISK_CACHE_CAPACITY_PREF, maxSize);
     }
 
     rv = branch->GetBoolPref(DISK_CACHE_SMART_SIZE_ENABLED_PREF,
@@ -1632,6 +1633,8 @@ public:
         // It is safe to call SetDiskSmartSize_Locked() without holding the lock
         // when we are on main thread and nsCacheService is initialized.
         nsCacheService::gService->SetDiskSmartSize_Locked();
+
+        // Pale Moon: don't set this - the default should be used!
 
 //        if (nsCacheService::gService->mObserver->PermittedToSmartSize(branch, false)) {
 //            rv = branch->SetIntPref(DISK_CACHE_CAPACITY_PREF, MAX_CACHE_SIZE);

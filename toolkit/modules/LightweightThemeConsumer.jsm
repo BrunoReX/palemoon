@@ -18,10 +18,11 @@ this.LightweightThemeConsumer =
   this._win = aDocument.defaultView;
   this._footerId = aDocument.documentElement.getAttribute("lightweightthemesfooter");
 
+/* Pale Moon: don't disable personas for PB mode
   if (PrivateBrowsingUtils.isWindowPrivate(this._win) &&
       !PrivateBrowsingUtils.permanentPrivateBrowsing) {
     return;
-  }
+  } */
 
   let screen = this._win.screen;
   this._lastScreenWidth = screen.width;
