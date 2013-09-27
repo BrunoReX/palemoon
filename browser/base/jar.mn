@@ -61,6 +61,7 @@ browser.jar:
 *       content/browser/browser-tabPreviews.xml       (content/browser-tabPreviews.xml)
 *       content/browser/chatWindow.xul                (content/chatWindow.xul)
         content/browser/content.js                    (content/content.js)
+        content/browser/imagedocument.png					(content/imagedocument.png)
 *       content/browser/padlock.xul                   (content/padlock.xul)
 *       content/browser/padlock.js                    (content/padlock.js)
 *       content/browser/padlock.css                   (content/padlock.css)

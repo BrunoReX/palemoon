@@ -41,6 +41,7 @@ toolkit.jar:
    content/global/filepicker.properties       (filepicker.properties)
 *+ content/global/globalOverlay.js            (globalOverlay.js)
 +  content/global/mozilla.xhtml               (mozilla.xhtml)
++  content/global/palemoon.xhtml              (palemoon.xhtml)
    content/global/nsDragAndDrop.js            (nsDragAndDrop.js)
    content/global/resetProfile.css            (resetProfile.css)
 *  content/global/resetProfile.js             (resetProfile.js)

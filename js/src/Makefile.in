@@ -413,6 +413,7 @@ SHARED_LIBRARY_LIBS += $(ICU_LIBS)
 # Prevent floating point errors caused by VC++ optimizations
 ifdef _MSC_VER
 # XXX We should add this to CXXFLAGS, too?
+CXXFLAGS += -fp:precise
 CFLAGS += -fp:precise
 
 ifeq ($(CPU_ARCH),x86)

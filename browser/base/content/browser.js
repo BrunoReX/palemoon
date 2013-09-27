@@ -2292,6 +2292,12 @@ function PageProxySetIcon (aURL)
   if (!gProxyFavIcon)
     return;
 
+  if (gBrowser.selectedBrowser.contentDocument instanceof ImageDocument) {
+    // PageProxyClearIcon();
+    gProxyFavIcon.setAttribute("src", "chrome://browser/content/imagedocument.png");
+    return;
+  }
+
   if (!aURL)
     PageProxyClearIcon();
   else if (gProxyFavIcon.getAttribute("src") != aURL)

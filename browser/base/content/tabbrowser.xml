@@ -786,17 +786,38 @@
             var browser = this.getBrowserForTab(aTab);
             var docURIObject = browser.contentDocument.documentURIObject;
             var icon = null;
-            if (browser.contentDocument instanceof ImageDocument) {
-              if (Services.prefs.getBoolPref("browser.chrome.site_icons")) {
-                let sz = Services.prefs.getIntPref("browser.chrome.image_icons.max_size");
+            <!-- Pale Moon: new image icon method, see bug #305986 -->
+            let req = browser.contentDocument.imageRequest;
+            let sz = Services.prefs.getIntPref("browser.chrome.image_icons.max_size");
+            if (browser.contentDocument instanceof ImageDocument && 
+                req && req.image) {
+              if (Services.prefs.getBoolPref("browser.chrome.site_icons") && sz) {
                 try {
-                  let req = browser.contentDocument.imageRequest;
-                  if (req &&
-                      req.image &&
-                      req.image.width <= sz &&
-                      req.image.height <= sz)
-                    icon = browser.currentURI;
-                } catch (e) { }
+                  <!-- Main method: draw on a hidden canvas -->
+                  var canvas = document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
+                  var tabImg = document.getAnonymousElementByAttribute(aTab, "anonid", "tab-icon");
+                  var w = tabImg.boxObject.width;
+                  var h = tabImg.boxObject.height;
+                  canvas.width = w;
+                  canvas.height = h;
+                  var ctx = canvas.getContext('2d');
+                  ctx.drawImage(browser.contentDocument.body.firstChild, 0, 0, w, h);
+                  icon = canvas.toDataURL();
+                }
+                catch (e) { 
+                  <!-- Fallback method in case canvas method fails, restricted by sz -->
+                  try {
+                  
+                    if (req &&
+                        req.image &&
+                        req.image.width <= sz &&
+                        req.image.height <= sz)
+                      icon = browser.currentURI;
+                  } 
+                  catch (e) { 
+                    <!-- Both methods fail (very large or corrupt image): icon remains null -->
+                  }
+                }
               }
             }
             // Use documentURIObject in the check for shouldLoadFavIcon so that we
@@ -4376,7 +4397,8 @@
                      layer="true" />
           <xul:image xbl:inherits="validate,src=image,fadein,pinned,selected"
                      class="tab-icon-image"
-                     role="presentation"/>
+                     role="presentation"
+                     anonid="tab-icon"/>
           <xul:label flex="1"
                      xbl:inherits="value=label,crop,accesskey,fadein,pinned,selected"
                      class="tab-text tab-label"

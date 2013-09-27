@@ -110,6 +110,8 @@ protected:
   float                         mVisibleHeight;
   int32_t                       mImageWidth;
   int32_t                       mImageHeight;
+  
+  nsAutoString 					  mBackgroundColor;
 
   bool                          mResizeImageByDefault;
   bool                          mClickResizingEnabled;

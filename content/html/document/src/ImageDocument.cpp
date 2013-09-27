@@ -53,9 +53,6 @@
 namespace mozilla {
 namespace dom {
 
-//Pale Moon: configurable BG color for top level
-nsAutoString mBackgroundColor;
- 
 class ImageListener : public MediaDocumentStreamListener
 {
 public:
@@ -350,7 +347,7 @@ ImageDocument::ShrinkToFit()
   
   mImageIsResized = true;
   
-  UpdateTitleAndCharset();
+  UpdateTitleAndCharset();  
 }
 
 NS_IMETHODIMP
@@ -582,25 +579,13 @@ ImageDocument::CreateSyntheticDocument()
   nsresult rv = MediaDocument::CreateSyntheticDocument();
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // Add the image element
   Element* body = GetBodyElement();
   if (!body) {
     NS_WARNING("no body on image document!");
     return NS_ERROR_FAILURE;
   }
 
-  //Pale Moon: implement mechanism for custom background color.
-
-  if (!mBackgroundColor.IsEmpty()) {
-    nsCSSValue color;
-    nsCSSParser parser;
-    if (parser.ParseColorString(mBackgroundColor, nullptr, 0, color)) {
-      nsAutoString styleAttr(NS_LITERAL_STRING("background-color: "));
-      styleAttr.Append(mBackgroundColor);
-      body->SetAttr(kNameSpaceID_None, nsGkAtoms::style, styleAttr, false);
-    }
-  }
-
-  // Add the image element
   nsCOMPtr<nsINodeInfo> nodeInfo;
   nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::img, nullptr,
                                            kNameSpaceID_XHTML,
@@ -618,12 +603,27 @@ ImageDocument::CreateSyntheticDocument()
 
   NS_ConvertUTF8toUTF16 srcString(src);
   // Make sure not to start the image load from here...
-  imageLoader->SetLoadingEnabled(false);
+  // imageLoader->SetLoadingEnabled(false);
   mImageContent->SetAttr(kNameSpaceID_None, nsGkAtoms::src, srcString, false);
   mImageContent->SetAttr(kNameSpaceID_None, nsGkAtoms::alt, srcString, false);
 
+  //Pale Moon: implement mechanism for custom background color.
+
+  if (!mBackgroundColor.IsEmpty()) {
+    nsCSSValue color;
+    nsCSSParser parser;
+    if (parser.ParseColorString(mBackgroundColor, nullptr, 0, color)) {
+      nsAutoString styleAttr(NS_LITERAL_STRING("background-color: "));
+      styleAttr.Append(mBackgroundColor);
+      body->SetAttr(kNameSpaceID_None, nsGkAtoms::style, styleAttr, false);
+    }
+  }
+
   body->AppendChildTo(mImageContent, false);
-  imageLoader->SetLoadingEnabled(true);
+  // imageLoader->SetLoadingEnabled(true);
+
+// PM
+  UpdateTitleAndCharset();
 
   return NS_OK;
 }
