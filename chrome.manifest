@@ -46,6 +46,7 @@ locale	status4evar	de		chrome/locale/de/
 locale	status4evar	es		chrome/locale/es/
 locale	status4evar	fr		chrome/locale/fr/
 locale	status4evar	fi		chrome/locale/fi/
+locale   status4evar hu-HU    chrome/locale/hu-HU/
 locale	status4evar	ja		chrome/locale/ja/
 locale	status4evar	kn-IN		chrome/locale/kn-IN/
 locale	status4evar	ko		chrome/locale/ko-KR/
@@ -53,6 +54,7 @@ locale	status4evar	ko-KR		chrome/locale/ko-KR/
 locale	status4evar	nl		chrome/locale/nl/
 locale	status4evar	pt-PT		chrome/locale/pt-PT/
 locale	status4evar	ru		chrome/locale/ru/
+locale   status4evar sv-SE		chrome/locale/sv-SE/
 locale	status4evar	zh		chrome/locale/zh/
 locale	status4evar	zh-CN		chrome/locale/zh/
 locale	status4evar	zh-TW		chrome/locale/zh-TW/
