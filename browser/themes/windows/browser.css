@@ -2246,7 +2246,7 @@ richlistitem[type~="action"][actiontype="switchtab"] > .ac-url-box > .ac-action-
 }
 
 .alltabs-item[selected="true"] {
-  font-weight: bold;
+/*  font-weight: bold; */
 }
 
 .alltabs-item[busy] > .menu-iconic-left > .menu-iconic-icon {
@@ -2307,6 +2307,33 @@ toolbar[mode="text"] toolbarbutton.chevron > .toolbarbutton-icon {
   list-style-image: url("chrome://global/skin/icons/loading_16.png");
   -moz-margin-end: 4px;
 }
+
+/* Pale Moon: Feed icon */
+#ub-feed-button,
+#ub-feed-button > .button-box,
+#ub-feed-button:hover:active > .button-box {
+  padding: 0px;
+  margin: 0px;
+  border: 0px; 
+  background-color: transparent !important;
+}
+
+#ub-feed-button {
+  -moz-appearance: none; 
+  min-width: 0px; 
+  list-style-image: url("chrome://browser/skin/feeds/feed-icons-16.png");
+  -moz-image-region: rect(0px 16px 16px 0px);
+}
+
+#ub-feed-button:hover {
+  -moz-image-region: rect(0px 32px 16px 16px);
+}
+
+#ub-feed-button[open="true"],
+#ub-feed-button:hover:active {
+  -moz-image-region: rect(0px 48px 16px 32px);
+}
+
 
 /* Bookmarks toolbar */
 #PlacesToolbarDropIndicator {

@@ -4567,10 +4567,12 @@
 
           this._setMenuitemAttributes(menuItem, aTab);
 
-          aTab.mCorrespondingMenuitem = menuItem;
-          menuItem.tab = aTab;
+          if (!aTab.mCorrespondingMenuitem) {
+            aTab.mCorrespondingMenuitem = menuItem;
+            menuItem.tab = aTab;
 
-          this.appendChild(menuItem);
+            this.appendChild(menuItem);
+          }
         ]]></body>
       </method>
 

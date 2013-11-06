@@ -2109,6 +2109,23 @@ sidebarheader > .tabs-closebutton > .toolbarbutton-text {
   display: none;
 }
 
+/* ----- PALE MOON: FEED CONTENT DISPLAY ---- */
+
+#ub-feed-button {
+  -moz-appearance: none; 
+  min-width: 0;
+  min-height: 0;
+  -moz-padding-start: 4px !important;
+  list-style-image: url("chrome://browser/skin/feed-icons.png");
+  -moz-image-region: rect(0px, 16px, 16px, 0px);
+}
+#ub-feed-button:hover {
+  -moz-image-region: rect(0px, 32px, 16px, 16px);
+}
+#ub-feed-button[open="true"],
+#ub-feed-button:hover:active {
+  -moz-image-region: rect(0px, 48px, 16px, 32px);
+}
 
 /* ----- THROBBER ----- */
 

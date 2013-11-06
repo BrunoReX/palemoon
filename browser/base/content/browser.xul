@@ -520,6 +520,19 @@
                    hidden="true"
                    tooltiptext="&pageReportIcon.tooltip;"
                    onclick="gPopupBlockerObserver.onReportButtonClick(event);"/>
+            <button type="menu"
+                    style="-moz-user-focus: none"
+                    class="plain urlbar-icon"
+                    id="ub-feed-button"
+                    collapsed="true"
+                    tooltiptext="&feedButton.tooltip;"
+                    onclick="return FeedHandler.onFeedButtonPMClick(event);">
+              <menupopup position="after_end"
+                         id="ub-feed-menu"
+                         onpopupshowing="return FeedHandler.buildFeedList(this);"
+                         oncommand="return FeedHandler.subscribeToFeed(null, event);"
+                         onclick="checkForMiddleClick(this, event);"/>
+            </button>                   
             <image id="star-button"
                    class="urlbar-icon"
                    onclick="BookmarkingUI.onCommand(event);"/>

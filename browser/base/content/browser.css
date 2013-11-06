@@ -266,6 +266,17 @@ panel[noactions] > richlistbox > richlistitem[type~="action"] > .ac-url-box > .a
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#urlbar-rich-result-popup");
 }
 
+/* Pale Moon: Address bar: Feeds */
+#ub-feed-button > .button-box > .box-inherit > .button-text,
+#ub-feed-button > .button-box > .button-menu-dropmarker {
+  display: none;
+}
+
+#ub-feed-menu > .feed-menuitem:-moz-locale-dir(rtl) {
+  direction: rtl;
+}
+
+
 #urlbar-container[combined] > #urlbar > #urlbar-icons > #go-button,
 #urlbar[pageproxystate="invalid"] > #urlbar-icons > .urlbar-icon:not(#go-button),
 #urlbar[pageproxystate="valid"] > #urlbar-icons > #go-button,

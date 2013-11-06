@@ -88,8 +88,8 @@ var padlock_PadLock =
       secbut.hidden = true;
       secbut.removeAttribute("level");
     }
-
-    secbut.setAttribute("tooltiptext", gBrowser.securityUI.tooltipText);
+    
+    secbut.setAttribute("tooltiptext", level);
   },
   prefbranch : null,
   onLoad: function() {

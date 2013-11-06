@@ -145,8 +145,8 @@ pref("browser.altClickSave", true); //SBaD,M! (#2)
 //plugin kill timeout
 pref("dom.ipc.plugins.timeoutSecs", 20);
 
-//Give people a choice for add-on updates.
-pref("extensions.update.autoUpdateDefault", false);
+//Automatically update extensions by default
+pref("extensions.update.autoUpdateDefault", true);
 
 //cache handling 1GB -> 250MB by default, disable automatic
 //max element size -> 4MB, caching anything larger is not recommended

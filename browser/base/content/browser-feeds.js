@@ -8,6 +8,23 @@
  * and shows UI when they are discovered.
  */
 var FeedHandler = {
+
+  /* Pale Moon: Address Bar: Feeds 
+   * The click handler for the Feed icon in the location bar. Opens the
+   * subscription page if user is not given a choice of feeds.
+   * (Otherwise the list of available feeds will be presented to the
+   * user in a popup menu.)
+   */
+  onFeedButtonPMClick: function(event) {
+    event.stopPropagation();
+
+    if (event.target.hasAttribute("feed") &&
+        event.eventPhase == Event.AT_TARGET &&
+        (event.button == 0 || event.button == 1)) {
+        this.subscribeToFeed(null, event);
+    }
+  },
+  
   /**
    * The click handler for the Feed icon in the toolbar. Opens the
    * subscription page if user is not given a choice of feeds.
@@ -53,6 +70,13 @@ var FeedHandler = {
 
     while (menuPopup.firstChild)
       menuPopup.removeChild(menuPopup.firstChild);
+
+    if (feeds.length == 1) {
+      var feedButtonPM = document.getElementById("ub-feed-button");
+      if (feedButtonPM)
+        feedButtonPM.setAttribute("feed", feeds[0].href);
+      return false;
+    }
 
     if (feeds.length <= 1)
       return false;
@@ -133,9 +157,21 @@ var FeedHandler = {
     var feeds = gBrowser.selectedBrowser.feeds;
     var haveFeeds = feeds && feeds.length > 0;
 
+    var feedButtonPM = document.getElementById("ub-feed-button");
+
     var feedButton = document.getElementById("feed-button");
+    
     if (feedButton)
       feedButton.disabled = !haveFeeds;
+    
+    if (feedButtonPM) {
+        if (!haveFeeds) {
+          feedButtonPM.collapsed = true;
+          feedButtonPM.removeAttribute("feed");
+        } else {
+          feedButtonPM.collapsed = !gPrefService.getBoolPref("browser.urlbar.rss");
+        }
+      }
 
     if (!haveFeeds) {
       this._feedMenuitem.setAttribute("disabled", "true");
@@ -145,9 +181,13 @@ var FeedHandler = {
     }
 
     if (feeds.length > 1) {
+      if (feedButtonPM)
+        feedButtonPM.removeAttribute("feed");
       this._feedMenuitem.setAttribute("hidden", "true");
       this._feedMenupopup.removeAttribute("hidden");
     } else {
+      if (feedButtonPM)
+        feedButtonPM.setAttribute("feed", feeds[0].href);
       this._feedMenuitem.setAttribute("feed", feeds[0].href);
       this._feedMenuitem.removeAttribute("disabled");
       this._feedMenuitem.removeAttribute("hidden");
@@ -171,6 +211,9 @@ var FeedHandler = {
     // If this addition was for the current browser, update the UI. For
     // background browsers, we'll update on tab switch.
     if (browserForLink == gBrowser.selectedBrowser) {
+      var feedButtonPM = document.getElementById("ub-feed-button");
+      if (feedButtonPM)
+        feedButtonPM.collapsed = !gPrefService.getBoolPref("browser.urlbar.rss");
       // Batch updates to avoid updating the UI for multiple onLinkAdded events
       // fired within 100ms of each other.
       if (this._updateFeedTimeout)
