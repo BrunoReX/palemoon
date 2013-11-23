@@ -2246,7 +2246,7 @@ richlistitem[type~="action"][actiontype="switchtab"] > .ac-url-box > .ac-action-
 }
 
 .alltabs-item[selected="true"] {
-/*  font-weight: bold; */
+  font-weight: bold; 
 }
 
 .alltabs-item[busy] > .menu-iconic-left > .menu-iconic-icon {

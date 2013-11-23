@@ -14,8 +14,8 @@ pref("security.ssl.require_safe_negotiation",  false);
 pref("security.ssl.warn_missing_rfc5746",  1);
 pref("security.ssl.enable_false_start", false);
 
-pref("security.ssl3.rsa_rc4_128_md5", false);
-pref("security.ssl3.rsa_rc4_128_sha", false);
+pref("security.ssl3.rsa_rc4_128_md5", true);
+pref("security.ssl3.rsa_rc4_128_sha", true);
 pref("security.ssl3.rsa_fips_des_ede3_sha", true);
 pref("security.ssl3.rsa_des_ede3_sha", true);
 pref("security.ssl3.dhe_rsa_camellia_256_sha", true);

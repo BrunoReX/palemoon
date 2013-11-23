@@ -3389,6 +3389,10 @@
             // Locking is neither in effect nor needed, so let tabs expand normally.
             if (isEndTab && !this._hasTabTempMaxWidth)
               return;
+              
+            //Pale Moon: Resize immediately if preffed
+            if (Services.prefs.getBoolPref("browser.tabs.resize_immediately"))
+              return;
 
             let numPinned = this.tabbrowser._numPinnedTabs;
             // Force tabs to stay the same width, unless we're closing the last tab,
@@ -4544,8 +4548,6 @@
           var tabstripBO = tabContainer.mTabstrip.scrollBoxObject;
           for (var i = 0; i < this.childNodes.length; i++) {
             let curTab = this.childNodes[i].tab;
-            if (!curTab) // "Tab Groups" menuitem and its menuseparator
-              continue;
             let curTabBO = curTab.boxObject;
             if (curTabBO.screenX >= tabstripBO.screenX &&
                 curTabBO.screenX + curTabBO.width <= tabstripBO.screenX + tabstripBO.width)
@@ -4625,7 +4627,7 @@
       <handler event="popuphidden">
       <![CDATA[
         // clear out the menu popup and remove the listeners
-        for (let i = this.childNodes.length - 1; i > 0; i--) {
+        for (let i = this.childNodes.length - 1; i >= 0; i--) {
           let menuItem = this.childNodes[i];
           if (menuItem.tab) {
             menuItem.tab.mCorrespondingMenuitem = null;

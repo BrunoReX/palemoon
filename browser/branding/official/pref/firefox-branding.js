@@ -176,7 +176,8 @@ pref("dom.max_script_run_time", 20); //Should be plenty for a page script to do 
 pref("media.webaudio.enabled", true);
 
 //Image decoding tweaks
-pref("image.mem.max_ms_before_yield", 20);
+pref("image.mem.max_ms_before_yield", 50);
+pref("image.mem.decode_bytes_at_a_time", 65536); //larger chunks
 
 //store sessions less frequently to prevent redundant mem usage by storing too much
 pref("browser.sessionstore.interval",60000); //every minute instead of every 10 seconds

@@ -342,7 +342,7 @@
 
           switch (aPrefName) {
             case "accessibility.typeaheadfind":
-              this._self._useTypeAheadFind = prefsvc.getBoolPref(aPrefName);
+              this._self._useTypeAheadFind = false; // prefsvc.getBoolPref(aPrefName);
               break;
             case "accessibility.typeaheadfind.linksonly":
               this._self._typeAheadLinksOnly = prefsvc.getBoolPref(aPrefName);
@@ -385,8 +385,8 @@
         prefsvc.addObserver("accessibility.typeaheadfind.casesensitive",
                             this._observer, false);
 
-        this._useTypeAheadFind =
-          prefsvc.getBoolPref("accessibility.typeaheadfind");
+        this._useTypeAheadFind = false;
+          // prefsvc.getBoolPref("accessibility.typeaheadfind");
         this._typeAheadLinksOnly =
           prefsvc.getBoolPref("accessibility.typeaheadfind.linksonly");
         this._typeAheadCaseSensitive =

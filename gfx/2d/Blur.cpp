@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <math.h>
 #include <string.h>
+#include <windows.h>
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Constants.h"
@@ -34,6 +35,55 @@ namespace gfx {
  * @param aSkipRect An area to skip blurring in.
  * XXX shouldn't we pass stride in separately here?
  */
+static DWORD NumberOfProcessors = 0;
+
+static void
+GetNumberOfLogicalProcessors(void)
+{
+    SYSTEM_INFO SystemInfo;
+
+    GetSystemInfo(&SystemInfo);
+    NumberOfProcessors = SystemInfo.dwNumberOfProcessors;
+}
+
+static void
+GetNumberOfProcessors(void)
+{
+    PSYSTEM_LOGICAL_PROCESSOR_INFORMATION SystemLogicalProcessorInformation = NULL;
+    DWORD SizeSystemLogicalProcessorInformation = 0;
+
+    while(!GetLogicalProcessorInformation(SystemLogicalProcessorInformation, &SizeSystemLogicalProcessorInformation)) {
+        if(SystemLogicalProcessorInformation) free(SystemLogicalProcessorInformation);
+
+        if(GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+            SystemLogicalProcessorInformation =
+                static_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION>(malloc(SizeSystemLogicalProcessorInformation));
+        } else {
+            GetNumberOfLogicalProcessors();
+            return;
+        }
+    }
+
+    DWORD ProcessorCore = 0;
+    PSYSTEM_LOGICAL_PROCESSOR_INFORMATION Ptr = SystemLogicalProcessorInformation;
+
+    for(DWORD Offset = sizeof SYSTEM_LOGICAL_PROCESSOR_INFORMATION;
+        Offset <= SizeSystemLogicalProcessorInformation;
+        Offset += sizeof SYSTEM_LOGICAL_PROCESSOR_INFORMATION) {
+        if(Ptr++->Relationship == RelationProcessorCore) ProcessorCore++;
+    }
+
+    free(SystemLogicalProcessorInformation);
+
+    if(ProcessorCore) {
+        NumberOfProcessors = ProcessorCore;
+    } else {
+        GetNumberOfLogicalProcessors();
+    }
+}
+ 
+ 
+ 
 static void
 BoxBlurHorizontal(unsigned char* aInput,
                   unsigned char* aOutput,
@@ -52,6 +102,10 @@ BoxBlurHorizontal(unsigned char* aInput,
         memcpy(aOutput, aInput, aWidth*aRows);
         return;
     }
+    
+    // Pale Moon: Processor check.
+    if(NumberOfProcessors == 0) GetNumberOfProcessors();
+    
     uint32_t reciprocal = uint32_t((uint64_t(1) << 32) / boxSize);
 
     for (int32_t y = 0; y < aRows; y++) {
@@ -66,7 +120,6 @@ BoxBlurHorizontal(unsigned char* aInput,
         }
 
         uint32_t alphaSum = 0;
-	#pragma omp parallel for
         for (int32_t i = 0; i < boxSize; i++) {
             int32_t pos = i - aLeftLobe;
             // See assertion above; if aWidth is zero, then we would have no
@@ -87,7 +140,6 @@ BoxBlurHorizontal(unsigned char* aInput,
                 // Recalculate the neighbouring alpha values for
                 // our new point on the surface.
                 alphaSum = 0;
-	#pragma omp parallel for
                 for (int32_t i = 0; i < boxSize; i++) {
                     int32_t pos = x + i - aLeftLobe;
                     // See assertion above; if aWidth is zero, then we would have no
@@ -143,7 +195,6 @@ BoxBlurVertical(unsigned char* aInput,
         }
 
         uint32_t alphaSum = 0;
-	#pragma omp parallel for
         for (int32_t i = 0; i < boxSize; i++) {
             int32_t pos = i - aTopLobe;
             // See assertion above; if aRows is zero, then we would have no
@@ -160,7 +211,6 @@ BoxBlurVertical(unsigned char* aInput,
                     break;
 
                 alphaSum = 0;
-	#pragma omp parallel for
                 for (int32_t i = 0; i < boxSize; i++) {
                     int32_t pos = y + i - aTopLobe;
                     // See assertion above; if aRows is zero, then we would have no
@@ -267,7 +317,6 @@ SpreadHorizontal(unsigned char* aInput,
             int32_t sMin = max(x - aRadius, 0);
             int32_t sMax = min(x + aRadius, aWidth - 1);
             int32_t v = 0;
-	#pragma omp parallel for
             for (int32_t s = sMin; s <= sMax; ++s) {
                 v = max<int32_t>(v, aInput[aStride * y + s]);
             }
@@ -313,7 +362,6 @@ SpreadVertical(unsigned char* aInput,
             int32_t sMin = max(y - aRadius, 0);
             int32_t sMax = min(y + aRadius, aRows - 1);
             int32_t v = 0;
-	#pragma omp parallel for
             for (int32_t s = sMin; s <= sMax; ++s) {
                 v = max<int32_t>(v, aInput[aStride * s + x]);
             }
@@ -683,7 +731,6 @@ AlphaBoxBlur::BoxBlur_C(uint8_t* aData,
   IntRect skipRect = mSkipRect;
   uint8_t *data = aData;
   int32_t stride = mStride;
-  #pragma omp parallel for
   for (int32_t y = 0; y < size.height; y++) {
     bool inSkipRectY = y > skipRect.y && y < skipRect.YMost();
 
