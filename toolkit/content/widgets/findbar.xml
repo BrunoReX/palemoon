@@ -1434,9 +1434,17 @@
           const TAF_LINKS_KEY = "'";
           const TAF_TEXT_KEY = "/";
 
+          var key = aEvent.charCode ? String.fromCharCode(aEvent.charCode) : null;
+          var manualstartFAYT = (key == TAF_LINKS_KEY || key == TAF_TEXT_KEY);
+
+          //Pale Moon: short exit before checking elements if not doing quickfind.
+          if (!manualstartFAYT && !this._useTypeAheadFind)
+            return;
+            
+          //Check page type/elements
           if (!this._shouldFastFind(aEvent))
             return;
-
+            
           if (this._findMode != this.FIND_NORMAL && this._quickFindTimeout) {
             if (!aEvent.charCode)
               return;
@@ -1448,8 +1456,6 @@
             return;
           }
 
-          var key = aEvent.charCode ? String.fromCharCode(aEvent.charCode) : null;
-          var manualstartFAYT = (key == TAF_LINKS_KEY || key == TAF_TEXT_KEY);
           var autostartFAYT = !manualstartFAYT && this._useTypeAheadFind &&
                               key && key != " ";
           if (manualstartFAYT || autostartFAYT) {
