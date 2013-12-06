@@ -3509,7 +3509,7 @@ let SessionStoreInternal = {
 
     // find available space on the screen where this window is being placed
     let screen = gScreenManager.screenForRect(aLeft, aTop, aWidth, aHeight);
-    if (screen) {
+    if (screen && !this._prefBranch.getBoolPref("sessionstore.exactPos")) {
       let screenLeft = {}, screenTop = {}, screenWidth = {}, screenHeight = {};
       screen.GetAvailRectDisplayPix(screenLeft, screenTop, screenWidth, screenHeight);
       // constrain the dimensions to the actual space available

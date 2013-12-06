@@ -30,9 +30,9 @@
 
       <!-- General tab -->
 <!-- Pale Moon: remove accessibility features, they confuse people anyway  -->
-<!--      <preference id="accessibility.browsewithcaret"   name="accessibility.browsewithcaret"   type="bool"/>
+<!--      <preference id="accessibility.browsewithcaret"   name="accessibility.browsewithcaret"   type="bool"/> -->
       <preference id="accessibility.typeaheadfind"     name="accessibility.typeaheadfind"     type="bool"/>
-      <preference id="accessibility.blockautorefresh"  name="accessibility.blockautorefresh"  type="bool"/> -->
+<!--      <preference id="accessibility.blockautorefresh"  name="accessibility.blockautorefresh"  type="bool"/> -->
 
       <preference id="general.autoScroll"              name="general.autoScroll"              type="bool"/>
       <preference id="general.smoothScroll"            name="general.smoothScroll"            type="bool"/>
@@ -151,22 +151,22 @@
 
           <!-- Accessibility -->
 <!-- Pale Moon: remove accessibility features, they confuse people anyway  -->
-<!--          <groupbox id="accessibilityGroup" align="start">
+          <groupbox id="accessibilityGroup" align="start">
             <caption label="&accessibility.label;"/>
 
-            <checkbox id="useCursorNavigation"
+<!--            <checkbox id="useCursorNavigation"
                       label="&useCursorNavigation.label;"
                       accesskey="&useCursorNavigation.accesskey;"
-                      preference="accessibility.browsewithcaret"/>
+                      preference="accessibility.browsewithcaret"/> -->
             <checkbox id="searchStartTyping"
                       label="&searchStartTyping.label;"
                       accesskey="&searchStartTyping.accesskey;"
                       preference="accessibility.typeaheadfind"/>
-            <checkbox id="blockAutoRefresh"
+<!--            <checkbox id="blockAutoRefresh"
                       label="&blockAutoRefresh.label;"
                       accesskey="&blockAutoRefresh.accesskey;"
-                      preference="accessibility.blockautorefresh"/>
-          </groupbox> -->
+                      preference="accessibility.blockautorefresh"/> -->
+          </groupbox>
 
           <!-- Browsing -->
           <groupbox id="browsingGroup" align="start">
