@@ -70,7 +70,7 @@ let Change = {
         else {
           document.getElementById("generatePassphraseButton").hidden = false;
           document.getElementById("passphraseBackupButtons").hidden = false;
-          this._passphraseBox.setAttribute("readonly", "true");
+          // this._passphraseBox.setAttribute("readonly", "true");
           let pp = Weave.Service.identity.syncKey;
           if (Weave.Utils.isPassphrase(pp))
              pp = Weave.Utils.hyphenatePassphrase(pp);
