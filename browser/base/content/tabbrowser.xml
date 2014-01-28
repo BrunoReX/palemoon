@@ -1906,6 +1906,20 @@
               }, 0, this.tabContainer);
             }
 
+            // Pale Moon: if resizing immediately, select the tab immediately to the left
+            // instead of the right (if not leftmost) to prevent focus swap and
+            // "selected tab not under cursor"
+            // FIXME: Tabs must be sliding in from the left for this, or it'd unfocus
+            // in the other direction! Disabled for now. Is there an easier way? :hover?
+            // Is this even needed when resizing immediately?...
+            
+            //if (Services.prefs.getBoolPref("browser.tabs.resize_immediately")) {
+            //  if (this.selectedTab._tPos > 1) {
+            //    let newPos = this.selectedTab._tPos - 1;
+            //    this.selectedTab = this.tabs[newPos];
+            //  }
+            //}
+
             // update tab positional properties and attributes
             this.selectedTab._selected = true;
             this.tabContainer._setPositionalAttributes();
@@ -3382,6 +3396,10 @@
             // be to the left of it, so we actually want the left tab to slide over.
             // This can't be done as easily in non-overflow mode, so we don't bother.
             if (aTab.owner)
+              return;
+
+            //Pale Moon: Resize immediately if preffed
+            if (Services.prefs.getBoolPref("browser.tabs.resize_immediately"))
               return;
 
             this._expandSpacerBy(tabWidth);

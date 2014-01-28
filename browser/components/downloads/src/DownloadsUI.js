@@ -62,7 +62,7 @@ DownloadsUI.prototype = {
 
   show: function DUI_show(aWindowContext, aDownload, aReason, aUsePrivateUI)
   {
-    if (DownloadsCommon.useToolkitUI) {
+    if (DownloadsCommon.useToolkitUI && !PrivateBrowsingUtils.isWindowPrivate(aWindowContext)) {
       this._toolkitUI.show(aWindowContext, aDownload, aReason, aUsePrivateUI);
       return;
     }

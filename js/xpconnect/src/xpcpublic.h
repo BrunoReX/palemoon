@@ -59,9 +59,18 @@ GetXBLScope(JSContext *cx, JSObject *contentScope);
 bool
 AllowXBLScope(JSCompartment *c);
 
+// Returns whether we will use an XBL scope for this compartment. This is
+// semantically equivalent to comparing global != GetXBLScope(global), but it
+// does not have the side-effect of eagerly creating the XBL scope if it does
+// not already exist.
+bool
+UseXBLScope(JSCompartment *c);
+
 bool
 IsSandboxPrototypeProxy(JSObject *obj);
 
+bool
+IsXrayWrapper(JSObject *obj);
 } /* namespace xpc */
 
 #define XPCONNECT_GLOBAL_FLAGS                                                \
@@ -333,6 +342,7 @@ nsIPrincipal *GetCompartmentPrincipal(JSCompartment *compartment);
 nsIPrincipal *GetObjectPrincipal(JSObject *obj);
 
 bool IsXBLScope(JSCompartment *compartment);
+bool IsInXBLScope(JSObject *obj);
 
 void DumpJSHeap(FILE* file);
 

@@ -3676,8 +3676,10 @@ var XULBrowserWindow = {
   startTime: 0,
   statusText: "",
   isBusy: false,
+/* Pale Moon: Don't hide navigation controls and toolbars for "special" pages. SBaD, M!
   inContentWhitelist: ["about:addons", "about:downloads", "about:permissions",
-                       "about:sync-progress", "about:preferences"],
+                       "about:sync-progress", "about:preferences"],*/
+  inContentWhitelist: [],
 
   QueryInterface: function (aIID) {
     if (aIID.equals(Ci.nsIWebProgressListener) ||

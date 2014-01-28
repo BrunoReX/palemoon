@@ -40,9 +40,20 @@ WifiGeoCoordsObject.prototype = {
                                     classDescription: "wifi geo position coords object"}),
 };
 
-function WifiGeoPositionObject(lat, lng, acc) {
-  this.coords = new WifiGeoCoordsObject(lat, lng, acc, 0, 0);
+function WifiGeoPositionObject(lat, lng, acc, cc, tz, zip, city, rc, region, country, isp, org, as) {
+  this.coords = new WifiGeoCoordsObject(lat, lng, acc, 0, null);
   this.address = null;
+  this.countrycode = cc;
+  this.timezone = tz;
+  this.zipcode = zip;
+  this.postalcode = zip;
+  this.city = city;
+  this.regioncode = rc;
+  this.region = region;
+  this.country = country;
+  this.isp = isp;
+  this.org = org;
+  this.as = as;
   this.timestamp = Date.now();
 }
 
@@ -170,8 +181,11 @@ WifiGeoPositionProvider.prototype = {
 
     // This is a background load
   
+/* Google
     xhr.open("POST", url, true);
     xhr.setRequestHeader("Content-Type", "application/json; charset=UTF-8");
+*/
+    xhr.open("GET", url, true);
     xhr.responseType = "json";
     xhr.mozBackgroundRequest = true;
     xhr.channel.loadFlags = Ci.nsIChannel.LOAD_ANONYMOUS;
@@ -184,7 +198,7 @@ WifiGeoPositionProvider.prototype = {
         if (xhr.status != 200) {
             return;
         }
-
+/* Google
         if (!xhr.response || !xhr.response.location) {
             return;
         }
@@ -192,6 +206,26 @@ WifiGeoPositionProvider.prototype = {
         let newLocation = new WifiGeoPositionObject(xhr.response.location.lat,
                                                     xhr.response.location.lng,
                                                     xhr.response.accuracy);
+*/
+
+//IP-API
+        if (!xhr.response || !xhr.response.status || xhr.response.status == 'fail') {
+            return;
+        }
+
+        let newLocation = new WifiGeoPositionObject(xhr.response.lat,
+                                                    xhr.response.lon,
+                                                    null, //accuracy not provided
+                                                    xhr.response.countryCode,
+                                                    xhr.response.timezone,
+                                                    xhr.response.zip,
+                                                    xhr.response.city,
+                                                    xhr.response.region,
+                                                    xhr.response.regionName,
+                                                    xhr.response.country,
+                                                    xhr.response.isp,
+                                                    xhr.response.org,
+                                                    xhr.response.as);
         
         Cc["@mozilla.org/geolocation/service;1"].getService(Ci.nsIGeolocationUpdate)
             .update(newLocation);

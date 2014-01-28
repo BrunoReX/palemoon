@@ -1252,5 +1252,6 @@ AddonWrapper.prototype = {
 AddonManagerPrivate.registerProvider(SocialAddonProvider, [
   new AddonManagerPrivate.AddonType(ADDON_TYPE_SERVICE, URI_EXTENSION_STRINGS,
                                     STRING_TYPE_NAME,
-                                    AddonManager.VIEW_TYPE_LIST, 10000)
+                                    AddonManager.VIEW_TYPE_LIST, 10000,
+                                    AddonManager.TYPE_UI_HIDE_EMPTY)
 ]);

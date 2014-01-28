@@ -9,7 +9,9 @@
 #include <algorithm>
 #include <math.h>
 #include <string.h>
+#ifdef WIN32
 #include <windows.h>
+#endif
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Constants.h"
@@ -35,20 +37,26 @@ namespace gfx {
  * @param aSkipRect An area to skip blurring in.
  * XXX shouldn't we pass stride in separately here?
  */
-static DWORD NumberOfProcessors = 0;
+static uint32_t NumberOfProcessors = 0;
 
 static void
 GetNumberOfLogicalProcessors(void)
 {
+#ifdef WIN32
     SYSTEM_INFO SystemInfo;
 
     GetSystemInfo(&SystemInfo);
     NumberOfProcessors = SystemInfo.dwNumberOfProcessors;
+#else
+    //Only check once on non-windows
+    NumberOfProcessors = 1;
+#endif
 }
 
 static void
 GetNumberOfProcessors(void)
 {
+#ifdef WIN32
     PSYSTEM_LOGICAL_PROCESSOR_INFORMATION SystemLogicalProcessorInformation = NULL;
     DWORD SizeSystemLogicalProcessorInformation = 0;
 
@@ -80,6 +88,10 @@ GetNumberOfProcessors(void)
     } else {
         GetNumberOfLogicalProcessors();
     }
+#else
+    //Only check once on non-windows
+    NumberOfProcessors = 1;
+#endif
 }
  
  
