@@ -45,19 +45,19 @@
 <!ENTITY status4evar.status.general.linkOver.caption "Collegamenti">
 <!ENTITY status4evar.status.linkOver.label "Visualizza collegamenti dopo:">
 <!ENTITY status4evar.status.linkOver.delay.show.label "Ritardo prima di visualizzare i collegamenti:">
-<!ENTITY status4evar.status.linkOver.delay.hide.label "Ritardo prima di nascondere i collegamenti::">
+<!ENTITY status4evar.status.linkOver.delay.hide.label "Ritardo prima di nascondere i collegamenti:">
 <!ENTITY status4evar.status.toolbar.maxLength.label "Lunghezza max testo stato:">
 <!ENTITY status4evar.status.urlbar.align.label "Allineamento stato:">
 <!ENTITY status4evar.status.urlbar.color.label "Colore stato:">
 <!ENTITY status4evar.status.currentUrl "Locazione attuale">
 <!ENTITY status4evar.status.statusText "Testo stato">
-<!ENTITY status4evar.status.urlbar.firefox.builtin.caption "Funzioni compatibilità Firefox">
+<!ENTITY status4evar.status.urlbar.firefox.builtin.caption "Funzioni compatibilitÃ  Firefox">
 <!ENTITY browser.urlbar.formatting.enabled.label "Abilita evidenziazione dominio">
 <!ENTITY browser.urlbar.trimming.enabled.label "Abilita mascheratura protocollo (http:// e ftp://)">
 <!ENTITY browser.urlbar.autofill.enabled.label "Abilita auto completamento URL">
 <!ENTITY status4evar.status.popup.invertMirror.label "Predefinito sul lato destro">
 <!ENTITY status4evar.status.popup.mouseMirror.label "Scambia lati quando passi sopra con il mouse">
-<!ENTITY status4evar.status.popup.findMirror.label "Avvia sul lato opposto quando la barra ricerca è aperta">
+<!ENTITY status4evar.status.popup.findMirror.label "Avvia sul lato opposto quando la barra ricerca Ã¨ aperta">
 <!ENTITY status4evar.progress.style.label "Usa uno stile personale">
 <!ENTITY status4evar.progress.urlbar.enable.label "Visualizza progresso nella barra indirizzi">
 <!ENTITY status4evar.progress.urlbar.line.label "Stile linea:">
@@ -84,5 +84,5 @@
 <!ENTITY status4evar.addonbar.closeButton "Visualizza pulsante Chiudi">
 <!ENTITY status4evar.advanced.warning "Queste funzioni avanzate possono causare problemi con altre estensioni. Le modifiche sono a tuo rischio.">
 <!ENTITY status4evar.advanced.urlbar.forceBinding "Tentativo di forzare il binding nella barra indirizzi.">
-<!ENTITY status4evar.advanced.urlbar.forceBinding.desc "Seleziona questo solo se hai problemi con il progresso nella barra indirizzi o se il etsto dello stato viene visualizzato non correttamente. Questo potenzialmente interromperà altre estensioni che provano a impostare un binding XML nella barra indirizzi.">
+<!ENTITY status4evar.advanced.urlbar.forceBinding.desc "Seleziona questo solo se hai problemi con il progresso nella barra indirizzi o se il etsto dello stato viene visualizzato non correttamente. Questo potenzialmente interromperÃ  altre estensioni che provano a impostare un binding XML nella barra indirizzi.">
 <!ENTITY status4evar.advanced.status.detectFullScreen "Rileva modo full screen e visualizza collegamenti/stato in modo appropriato.">
