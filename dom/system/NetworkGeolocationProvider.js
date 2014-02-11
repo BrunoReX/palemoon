@@ -99,14 +99,17 @@ WifiGeoPositionProvider.prototype = {
 
     LOG("startup called.  testing mode is" + gTestingEnabled);
 
-    // if we don't see anything in 5 seconds, kick of one IP geo lookup.
+    // if we don't see anything in 5 seconds, kick off one IP geo lookup.
     // if we are testing, just hammer this callback so that we are more or less
     // always sending data.  It doesn't matter if we have an access point or not.
+    // Pale Moon: hammering with 200ms is problematic for our geoIP provider. Testing
+    // mode adjusted to 1000 ms. Adjusted the initial interval to 2 seconds
+    // as well, which should be sufficient on modern, responsive geo hardware.
     this.timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
     if (!gTestingEnabled)
-      this.timer.initWithCallback(this, 5000, this.timer.TYPE_ONE_SHOT);
+      this.timer.initWithCallback(this, 2000, this.timer.TYPE_ONE_SHOT);
     else
-      this.timer.initWithCallback(this, 200, this.timer.TYPE_REPEATING_SLACK);
+      this.timer.initWithCallback(this, 1000, this.timer.TYPE_REPEATING_SLACK);
   },
 
   watch: function(c) {

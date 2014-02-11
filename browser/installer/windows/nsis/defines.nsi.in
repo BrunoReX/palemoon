@@ -10,7 +10,7 @@
 !define AB_CD                 "@AB_CD@"
 
 !define FileMainEXE           "@MOZ_APP_NAME@.exe"
-!define WindowClass           "FirefoxMessageWindow"
+!define WindowClass           "Pale MoonMessageWindow"
 !define DDEApplication        "Pale Moon"
 !define AppRegName            "Pale Moon"
 

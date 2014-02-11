@@ -62,17 +62,13 @@
 @media all and (-moz-windows-theme: aero) {
 
   #main-window::after {
-    top: -12px;
+    top: -11px;
     font-weight: normal;
     text-shadow: none;
     background-position: 2px 17px;
     text-align: center;
   }
 
-  #main-window[tabsontop=true]::after {
-    top: -13px;
-  }
-  
   #main-window[sizemode="maximized"]::after {
     top: -7px;
   }
@@ -157,13 +153,13 @@
 }
 
 
-/* Compositor style for glass */
+/* Compositor style for Win 8 */
 
 @media all and (-moz-windows-compositor) {
   @media not all and (-moz-windows-glass) {
 
     #main-window::after {
-      top: -10px;
+      top: -12px;
       font-size: 15px;
       background-position: 4px 17px;
     }

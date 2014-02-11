@@ -2836,6 +2836,41 @@ CanvasRenderingContext2D::SetMozDashOffset(double mozDashOffset)
   }
 }
 
+void
+CanvasRenderingContext2D::SetLineDash(const mozilla::dom::AutoSequence<double>& aSegments) {
+  FallibleTArray<mozilla::gfx::Float>& dash = CurrentState().dash;
+  dash.Clear();
+
+  for (uint32_t x = 0; x < aSegments.Length(); x++) {
+    dash.AppendElement(aSegments[x]);
+  }
+  if (aSegments.Length() % 2) { // If the number of elements is odd, concatenate again
+    for (uint32_t x = 0; x < aSegments.Length(); x++) {
+      dash.AppendElement(aSegments[x]);
+    }
+  }
+}
+
+void
+CanvasRenderingContext2D::GetLineDash(nsTArray<double>& aSegments) const {
+  const FallibleTArray<mozilla::gfx::Float>& dash = CurrentState().dash;
+  aSegments.Clear();
+
+  for (uint32_t x = 0; x < dash.Length(); x++) {
+    aSegments.AppendElement(dash[x]);
+  }
+}
+
+void
+CanvasRenderingContext2D::SetLineDashOffset(double mOffset) {
+  CurrentState().dashOffset = mOffset;
+}
+
+double
+CanvasRenderingContext2D::LineDashOffset() const {
+  return CurrentState().dashOffset;
+}
+
 bool
 CanvasRenderingContext2D::IsPointInPath(double x, double y, const CanvasWindingRule& winding)
 {
