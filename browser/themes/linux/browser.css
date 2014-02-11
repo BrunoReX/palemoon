@@ -16,6 +16,7 @@
 %define forwardTransitionLength 150ms
 %define conditionalForwardWithUrlbar       window:not([chromehidden~=toolbar]) :-moz-any(#nav-bar[currentset*="unified-back-forward-button,urlbar-container"][mode=icons],                #nav-bar:not([currentset])[mode=icons])                 > #unified-back-forward-button
 %define conditionalForwardWithUrlbar_small window:not([chromehidden~=toolbar]) :-moz-any(#nav-bar[currentset*="unified-back-forward-button,urlbar-container"][mode=icons][iconsize=small],#nav-bar:not([currentset])[mode=icons][iconsize=small]) > #unified-back-forward-button
+
 %define conditionalForwardWithUrlbarWidth 32
 %define conditionalForwardWithUrlbarWidth_small 24
 
@@ -570,12 +571,12 @@ toolbar[mode="full"] .toolbarbutton-1 > .toolbarbutton-menubutton-button {
   list-style-image: url("moz-icon://stock/gtk-go-back-rtl?size=toolbar&state=disabled");
 }
 
-#forward-button,
-@conditionalForwardWithUrlbar@ > #forward-button {
+#forward-button/*,
+ @conditionalForwardWithUrlbar@ > #forward-button */{
   list-style-image: url("moz-icon://stock/gtk-go-forward-ltr?size=toolbar");
 }
-#forward-button:-moz-locale-dir(rtl),
-@conditionalForwardWithUrlbar@ > #forward-button:-moz-locale-dir(rtl) {
+#forward-button:-moz-locale-dir(rtl)/*,
+@conditionalForwardWithUrlbar@ > #forward-button:-moz-locale-dir(rtl) */{
   list-style-image: url("moz-icon://stock/gtk-go-forward-rtl?size=toolbar");
 }
 
@@ -586,7 +587,7 @@ toolbar[mode="full"] .toolbarbutton-1 > .toolbarbutton-menubutton-button {
   list-style-image: url("moz-icon://stock/gtk-go-forward-rtl?size=toolbar&state=disabled");
 }
 
-@conditionalForwardWithUrlbar@:not([switchingtabs]) > #forward-button {
+/*@conditionalForwardWithUrlbar@:not([switchingtabs]) > #forward-button {
   transition: @forwardTransitionLength@ ease-out;
 }
 
@@ -594,7 +595,7 @@ toolbar[mode="full"] .toolbarbutton-1 > .toolbarbutton-menubutton-button {
   transform: scale(0);
   opacity: 0;
   pointer-events: none;
-}
+}*/
 
 #reload-button {
   list-style-image: url("moz-icon://stock/gtk-refresh?size=toolbar");
@@ -902,7 +903,7 @@ toolbar[iconsize="small"] #webrtc-status-button {
   -moz-box-orient: horizontal;
   -moz-box-align: stretch;
 }
-
+/*
 @conditionalForwardWithUrlbar@ + #urlbar-container {
   -moz-padding-start: @conditionalForwardWithUrlbarWidth@px;
   -moz-margin-start: -@conditionalForwardWithUrlbarWidth@px;
@@ -935,7 +936,7 @@ toolbar[iconsize="small"] #webrtc-status-button {
 }
 @conditionalForwardWithUrlbar_small@[forwarddisabled] + #urlbar-container > #urlbar:-moz-locale-dir(rtl) {
   margin-right: -@conditionalForwardWithUrlbarWidth_small@px;
-}
+}*/
 
 #urlbar-icons {
   -moz-box-align: center;
@@ -1037,20 +1038,54 @@ toolbar[iconsize="small"] #webrtc-status-button {
 }
 
 #urlbar[pageproxystate="valid"] > #identity-box.verifiedIdentity {
-  background-color: #fff;
-  color: hsl(92,100%,30%);
+  color: rgb(95,127,67);
   -moz-margin-end: 4px;
-  background-image: linear-gradient(hsla(92,81%,16%,0),
-                                    hsla(92,81%,16%,.2) 25%,
-                                    hsla(92,81%,16%,.2) 75%,
-                                    hsla(92,81%,16%,0));
+  background-image: linear-gradient(rgba(226,246,208,1),
+                                    rgba(203,235,177,1));
   background-position: right;
-  background-size: 1px;
+  background-repeat: no-repeat;
+}
+
+#urlbar[pageproxystate="valid"] > #identity-box.verifiedDomain {
+  color: rgb(51,87,137);
+  -moz-margin-end: 4px;
+  background-image: linear-gradient(rgba(220,231,245,1),
+                                    rgba(207,221,242,1));
+  background-position: right;
   background-repeat: no-repeat;
 }
 
 #identity-box.verifiedIdentity:-moz-locale-dir(rtl) {
   background-position: left;
+}
+
+/* URL bar shading for SSL */
+
+#urlbar[https_color="y"][security_level="broken"] {
+  box-shadow: inset 0 0 2px rgb(168,0,0);
+}
+
+#urlbar[https_color="y"][security_level="high"] {
+  box-shadow: inset 0 0 2px rgb(0,79,168);
+}
+
+#urlbar[https_color="y"][security_level="ev"] {
+  box-shadow: inset 0 0 2px rgb(0,168,0);
+}
+
+#urlbar[https_color="y"][security_level="broken"]:-moz-lwtheme-brighttext,
+#urlbar[https_color="y"][security_level="broken"]:not(:-moz-lwtheme) {
+  box-shadow: inset 0 0 4px rgb(168,0,0);
+}
+
+#urlbar[https_color="y"][security_level="high"]:-moz-lwtheme-brighttext,
+#urlbar[https_color="y"][security_level="high"]:not(:-moz-lwtheme) {
+  box-shadow: inset 0 0 4px rgb(0,79,168);
+}
+
+#urlbar[https_color="y"][security_level="ev"]:-moz-lwtheme-brighttext,
+#urlbar[https_color="y"][security_level="ev"]:not(:-moz-lwtheme) {
+  box-shadow: inset 0 0 4px rgb(0,168,0);
 }
 
 /* Identity popup icons */

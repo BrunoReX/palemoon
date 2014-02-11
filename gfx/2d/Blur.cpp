@@ -25,18 +25,6 @@ using namespace std;
 namespace mozilla {
 namespace gfx {
 
-/**
- * Box blur involves looking at one pixel, and setting its value to the average
- * of its neighbouring pixels.
- * @param aInput The input buffer.
- * @param aOutput The output buffer.
- * @param aLeftLobe The number of pixels to blend on the left.
- * @param aRightLobe The number of pixels to blend on the right.
- * @param aWidth The number of columns in the buffers.
- * @param aRows The number of rows in the buffers.
- * @param aSkipRect An area to skip blurring in.
- * XXX shouldn't we pass stride in separately here?
- */
 static uint32_t NumberOfProcessors = 0;
 
 static void
@@ -91,10 +79,21 @@ GetNumberOfProcessors(void)
 #else
     //Only check once on non-windows
     NumberOfProcessors = 1;
-#endif
+#endif  
 }
- 
- 
+
+/**
+ * Box blur involves looking at one pixel, and setting its value to the average
+ * of its neighbouring pixels.
+ * @param aInput The input buffer.
+ * @param aOutput The output buffer.
+ * @param aLeftLobe The number of pixels to blend on the left.
+ * @param aRightLobe The number of pixels to blend on the right.
+ * @param aWidth The number of columns in the buffers.
+ * @param aRows The number of rows in the buffers.
+ * @param aSkipRect An area to skip blurring in.
+ * XXX shouldn't we pass stride in separately here?
+ */
  
 static void
 BoxBlurHorizontal(unsigned char* aInput,

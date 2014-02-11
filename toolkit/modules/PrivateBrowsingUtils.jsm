@@ -17,7 +17,12 @@ const Ci = Components.interfaces;
 
 this.PrivateBrowsingUtils = {
   isWindowPrivate: function pbu_isWindowPrivate(aWindow) {
-    return this.privacyContextFromWindow(aWindow).usePrivateBrowsing;
+    try {
+      return this.privacyContextFromWindow(aWindow).usePrivateBrowsing;
+    } catch (e) {
+      //PB context not defined -> not private
+      return false;
+    }
   },
 
   privacyContextFromWindow: function pbu_privacyContextFromWindow(aWindow) {
