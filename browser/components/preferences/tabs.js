@@ -44,6 +44,15 @@ var gTabsPane = {
 #endif
 
   /**
+   * Pale Moon: synchronize warnOnClose and warnOnCloseOtherTabs
+   */
+  syncWarnOnClose: function() {
+    var warnOnClosePref = document.getElementById("browser.tabs.warnOnClose");
+    var warnOnCloseOtherPref = document.getElementById("browser.tabs.warnOnCloseOtherTabs");
+    warnOnCloseOtherPref.value = warnOnClosePref.value;
+  },
+  
+  /**
    * Determines where a link which opens a new window will open.
    *
    * @returns |true| if such links should be opened in new tabs
