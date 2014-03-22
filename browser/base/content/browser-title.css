@@ -13,6 +13,7 @@
     -moz-hyphens: auto;
     color: CaptionText;
     font-weight: bold;
+    text-align: left;
 }
 
 #main-window:-moz-window-inactive::after {
@@ -28,13 +29,13 @@
 
 
 #main-window::after {
-    padding: 0 130px; /* AppMenu button width offset */
+    padding: 0 132px; /* AppMenu button/wincontrols width offset */
     left: 0;
     right: 0;
 }
 
 #main-window[privatebrowsingmode=temporary]::after {
-    padding: 0px 130px 0px 148px; /* AppMenu button width offset for PB mode */
+    padding: 0px 132px 0px 152px; /* AppMenu button width offset for PB mode */
 }
 
 #main-window[sizemode="normal"]::after {
@@ -51,7 +52,6 @@
     top: -13px;
     text-shadow: none !important;
     background-position: 2px 18px;
-    text-align: left;
   }
 
 }
@@ -66,7 +66,6 @@
     font-weight: normal;
     text-shadow: none;
     background-position: 2px 17px;
-    text-align: center;
   }
 
   #main-window[sizemode="maximized"]::after {
@@ -83,16 +82,15 @@
   #main-window::after {
     top: -13px;
     color: black;
-    text-shadow: rgba(255,255,255,.8) 7px -1px 12px,
+    text-shadow: rgba(255,255,255,.6) 7px -1px 12px,
                  rgba(255,255,255,.6) 6px -1px 13px,
-                 rgba(255,255,255,.6) 5px -1px 14px,
-                 rgba(255,255,255,.8) -7px -1px 12px,
+                 rgba(255,255,255,.9) 5px -1px 14px,
+                 rgba(255,255,255,.6) -7px -1px 12px,
                  rgba(255,255,255,.6) -6px -1px 13px,
-                 rgba(255,255,255,.6) -5px -1px 14px;
+                 rgba(255,255,255,.9) -5px -1px 14px;
     z-index: -99999;
     background-position: 2px 18px;
     font-weight: bold;
-    text-align: center;
   }
 
   #main-window[sizemode="maximized"]::after {
@@ -123,7 +121,6 @@
     text-shadow: 1px 1px rgba(0, 0, 0, .6);
     top: -9px;
     background-position: 2px 17px;
-    text-align: left;
   }
 
   #main-window:-moz-window-inactive::after {
@@ -143,7 +140,6 @@
     text-shadow: 1px 1px rgba(0, 0, 0, .2);
     top: -9px;
     background-position: 2px 16px;
-    text-align: left;
   }
 
   #main-window:-moz-window-inactive::after {
@@ -159,9 +155,10 @@
   @media not all and (-moz-windows-glass) {
 
     #main-window::after {
-      top: -12px;
+      top: -13px;
       font-size: 15px;
       background-position: 4px 17px;
+      text-align: center;
     }
 
     #main-window[sizemode="maximized"]::after {

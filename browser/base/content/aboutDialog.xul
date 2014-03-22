@@ -45,7 +45,7 @@
 #ifdef HAVE_64BIT_OS
 #expand <label id="PMversion">Version: __MOZ_APP_VERSION__ (x64)</label>
 #else
-#expand <label id="PMversion">Version: __MOZ_APP_VERSION__</label>
+#expand <label id="PMversion">Version: __MOZ_APP_VERSION__ (x86)</label>
 #endif
         <label id="distribution" class="text-blurb"/>
         <label id="distributionId" class="text-blurb"/>

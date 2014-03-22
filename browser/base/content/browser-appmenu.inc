@@ -225,7 +225,7 @@
                      tooltip="bhTooltip"
                      popupsinherittooltip="true">
             <menuitem id="appmenu_showAllBookmarks"
-                      label="&showAllBookmarks2.label;"
+                      label="&palemoon.menu.allBookmarks.label;"
                       command="Browser:ShowAllBookmarks"
                       context=""
                       key="manBookmarkKb"/>

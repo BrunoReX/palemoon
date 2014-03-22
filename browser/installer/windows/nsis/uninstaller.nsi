@@ -300,23 +300,23 @@ Section "Uninstall"
   ${ResetWin8MetroSplash}
 !endif
 
-  ${un.RegCleanAppHandler} "FirefoxURL"
-  ${un.RegCleanAppHandler} "FirefoxHTML"
+  ${un.RegCleanAppHandler} "PaleMoonURL"
+  ${un.RegCleanAppHandler} "PaleMoonHTML"
   ${un.RegCleanProtocolHandler} "ftp"
   ${un.RegCleanProtocolHandler} "http"
   ${un.RegCleanProtocolHandler} "https"
 
   ClearErrors
-  ReadRegStr $R9 HKCR "FirefoxHTML" ""
-  ; Don't clean up the file handlers if the FirefoxHTML key still exists since
+  ReadRegStr $R9 HKCR "PaleMoonHTML" ""
+  ; Don't clean up the file handlers if the PaleMoonHTML key still exists since
   ; there should be a second installation that may be the default file handler
   ${If} ${Errors}
-    ${un.RegCleanFileHandler}  ".htm"   "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".html"  "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".shtml" "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".xht"   "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".xhtml" "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".webm"  "FirefoxHTML"
+    ${un.RegCleanFileHandler}  ".htm"   "PaleMoonHTML"
+    ${un.RegCleanFileHandler}  ".html"  "PaleMoonHTML"
+    ${un.RegCleanFileHandler}  ".shtml" "PaleMoonHTML"
+    ${un.RegCleanFileHandler}  ".xht"   "PaleMoonHTML"
+    ${un.RegCleanFileHandler}  ".xhtml" "PaleMoonHTML"
+    ${un.RegCleanFileHandler}  ".webm"  "PaleMoonHTML"
   ${EndIf}
 
   SetShellVarContext all  ; Set SHCTX to HKLM

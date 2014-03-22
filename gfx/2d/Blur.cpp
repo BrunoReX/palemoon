@@ -11,6 +11,8 @@
 #include <string.h>
 #ifdef WIN32
 #include <windows.h>
+#else
+#include "nspr.h"
 #endif
 
 #include "mozilla/CheckedInt.h"
@@ -27,19 +29,17 @@ namespace gfx {
 
 static uint32_t NumberOfProcessors = 0;
 
+
+#ifdef WIN32
 static void
 GetNumberOfLogicalProcessors(void)
 {
-#ifdef WIN32
     SYSTEM_INFO SystemInfo;
 
     GetSystemInfo(&SystemInfo);
     NumberOfProcessors = SystemInfo.dwNumberOfProcessors;
-#else
-    //Only check once on non-windows
-    NumberOfProcessors = 1;
-#endif
 }
+#endif
 
 static void
 GetNumberOfProcessors(void)
@@ -77,8 +77,15 @@ GetNumberOfProcessors(void)
         GetNumberOfLogicalProcessors();
     }
 #else
-    //Only check once on non-windows
-    NumberOfProcessors = 1;
+    //Use fallback check on non-windows
+    NumberOfProcessors = PR_GetNumberOfProcessors();
+    
+    if (NumberOfProcessors == 0 || !NumberOfProcessors)
+      NumberOfProcessors = 1;
+      
+    if (NumberOfProcessors > 8)
+      NumberOfProcessors = 8;
+    
 #endif  
 }
 
@@ -129,8 +136,9 @@ BoxBlurHorizontal(unsigned char* aInput,
             y = aSkipRect.YMost() - 1;
             continue;
         }
-
+        
         uint32_t alphaSum = 0;
+#pragma loop(hint_parallel(0))
         for (int32_t i = 0; i < boxSize; i++) {
             int32_t pos = i - aLeftLobe;
             // See assertion above; if aWidth is zero, then we would have no
@@ -139,6 +147,7 @@ BoxBlurHorizontal(unsigned char* aInput,
             pos = min(pos, aWidth - 1);
             alphaSum += aInput[aWidth * y + pos];
         }
+#pragma loop(hint_parallel(0))
         for (int32_t x = 0; x < aWidth; x++) {
             // Check whether we are within the skip rect. If so, go
             // to the next point outside the skip rect.
@@ -206,6 +215,7 @@ BoxBlurVertical(unsigned char* aInput,
         }
 
         uint32_t alphaSum = 0;
+#pragma loop(hint_parallel(0))
         for (int32_t i = 0; i < boxSize; i++) {
             int32_t pos = i - aTopLobe;
             // See assertion above; if aRows is zero, then we would have no
@@ -214,6 +224,7 @@ BoxBlurVertical(unsigned char* aInput,
             pos = min(pos, aRows - 1);
             alphaSum += aInput[aWidth * pos + x];
         }
+#pragma loop(hint_parallel(0))
         for (int32_t y = 0; y < aRows; y++) {
             if (inSkipRectX && y >= aSkipRect.y &&
                 y < aSkipRect.YMost()) {
@@ -314,7 +325,8 @@ SpreadHorizontal(unsigned char* aInput,
             y = aSkipRect.YMost() - 1;
             continue;
         }
-
+        
+#pragma loop(hint_parallel(0))
         for (int32_t x = 0; x < aWidth; x++) {
             // Check whether we are within the skip rect. If so, go
             // to the next point outside the skip rect.
@@ -360,6 +372,7 @@ SpreadVertical(unsigned char* aInput,
             continue;
         }
 
+#pragma loop(hint_parallel(0))
         for (int32_t y = 0; y < aRows; y++) {
             // Check whether we are within the skip rect. If so, go
             // to the next point outside the skip rect.
@@ -742,6 +755,7 @@ AlphaBoxBlur::BoxBlur_C(uint8_t* aData,
   IntRect skipRect = mSkipRect;
   uint8_t *data = aData;
   int32_t stride = mStride;
+#pragma loop(hint_parallel(0))
   for (int32_t y = 0; y < size.height; y++) {
     bool inSkipRectY = y > skipRect.y && y < skipRect.YMost();
 

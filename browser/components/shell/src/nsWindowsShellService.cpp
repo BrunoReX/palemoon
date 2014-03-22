@@ -85,18 +85,18 @@ OpenKeyForReading(HKEY aKeyRoot, const nsAString& aKeyName, HKEY* aKey)
 //    .htm .html .shtml .xht .xhtml 
 //   are mapped like so:
 //
-//   HKCU\SOFTWARE\Classes\.<ext>\      (default)         REG_SZ     FirefoxHTML
+//   HKCU\SOFTWARE\Classes\.<ext>\      (default)         REG_SZ     PaleMoonHTML
 //
 //   as aliases to the class:
 //
-//   HKCU\SOFTWARE\Classes\FirefoxHTML\
+//   HKCU\SOFTWARE\Classes\PaleMoonHTML\
 //     DefaultIcon                      (default)         REG_SZ     <apppath>,1
 //     shell\open\command               (default)         REG_SZ     <apppath> -osint -url "%1"
 //     shell\open\ddeexec               (default)         REG_SZ     <empty string>
 //
 // - Windows Vista and above Protocol Handler
 //
-//   HKCU\SOFTWARE\Classes\FirefoxURL\  (default)         REG_SZ     <appname> URL
+//   HKCU\SOFTWARE\Classes\PaleMoonURL\  (default)         REG_SZ     <appname> URL
 //                                      EditFlags         REG_DWORD  2
 //                                      FriendlyTypeName  REG_SZ     <appname> URL
 //     DefaultIcon                      (default)         REG_SZ     <apppath>,1
@@ -162,10 +162,10 @@ typedef struct {
 // default HTTP and HTTPS handler.
 static SETTING gSettings[] = {
   // File Handler Class
-  { MAKE_KEY_NAME1("FirefoxHTML", SOC), VAL_OPEN, OLD_VAL_OPEN },
+  { MAKE_KEY_NAME1("PaleMoonHTML", SOC), VAL_OPEN, OLD_VAL_OPEN },
 
   // Protocol Handler Class - for Vista and above
-  { MAKE_KEY_NAME1("FirefoxURL", SOC), VAL_OPEN, OLD_VAL_OPEN },
+  { MAKE_KEY_NAME1("PaleMoonURL", SOC), VAL_OPEN, OLD_VAL_OPEN },
 
   // Protocol Handlers
   { MAKE_KEY_NAME1("HTTP", DI), VAL_FILE_ICON },
@@ -179,10 +179,10 @@ static SETTING gSettings[] = {
 // are incorrect they are fixed without notifying the user.
 static SETTING gDDESettings[] = {
   // File Handler Class
-  { MAKE_KEY_NAME1("Software\\Classes\\FirefoxHTML", SOD) },
+  { MAKE_KEY_NAME1("Software\\Classes\\PaleMoonHTML", SOD) },
 
   // Protocol Handler Class - for Vista and above
-  { MAKE_KEY_NAME1("Software\\Classes\\FirefoxURL", SOD) },
+  { MAKE_KEY_NAME1("Software\\Classes\\PaleMoonURL", SOD) },
 
   // Protocol Handlers
   { MAKE_KEY_NAME1("Software\\Classes\\FTP", SOD) },
@@ -329,7 +329,7 @@ IsAARDefaultHTTP(IApplicationAssociationRegistration* pAAR,
   HRESULT hr = pAAR->QueryCurrentDefault(L"http", AT_URLPROTOCOL, AL_EFFECTIVE,
                                          &registeredApp);
   if (SUCCEEDED(hr)) {
-    LPCWSTR firefoxHTTPProgID = L"FirefoxURL";
+    LPCWSTR firefoxHTTPProgID = L"PaleMoonURL";
     *aIsDefaultBrowser = !wcsicmp(registeredApp, firefoxHTTPProgID);
     CoTaskMemFree(registeredApp);
   } else {
@@ -346,7 +346,7 @@ IsAARDefaultHTML(IApplicationAssociationRegistration* pAAR,
   HRESULT hr = pAAR->QueryCurrentDefault(L".html", AT_FILEEXTENSION, AL_EFFECTIVE,
                                          &registeredApp);
   if (SUCCEEDED(hr)) {
-    LPCWSTR firefoxHTMLProgID = L"FirefoxHTML";
+    LPCWSTR firefoxHTMLProgID = L"PaleMoonHTML";
     *aIsDefaultBrowser = !wcsicmp(registeredApp, firefoxHTMLProgID);
     CoTaskMemFree(registeredApp);
   } else {

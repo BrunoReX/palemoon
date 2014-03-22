@@ -572,12 +572,14 @@
 @BINPATH@/browser/extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}/install.rdf
 @BINPATH@/browser/extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}/icon.png
 ; Pale Moon status bar functionality
-@BINPATH@/distribution/bundles/statusbar@palemoon.org/chrome/*
-@BINPATH@/distribution/bundles/statusbar@palemoon.org/components/status4evar.js
-@BINPATH@/distribution/bundles/statusbar@palemoon.org/components/status4evar.xpt
-@BINPATH@/distribution/bundles/statusbar@palemoon.org/defaults/*
-@BINPATH@/distribution/bundles/statusbar@palemoon.org/install.rdf
-@BINPATH@/distribution/bundles/statusbar@palemoon.org/chrome.manifest
+; @BINPATH@/distribution/bundles/statusbar@palemoon.org/*
+; @BINPATH@/distribution/bundles/statusbar@palemoon.org/chrome/*
+; @BINPATH@/distribution/bundles/statusbar@palemoon.org/components/status4evar.js
+; @BINPATH@/distribution/bundles/statusbar@palemoon.org/components/status4evar.xpt
+; @BINPATH@/distribution/bundles/statusbar@palemoon.org/defaults/*
+; @BINPATH@/distribution/bundles/statusbar@palemoon.org/install.rdf
+; @BINPATH@/distribution/bundles/statusbar@palemoon.org/chrome.manifest
+; No longer handled here, but in packager.mk instead to exclude from omni/jar
 @BINPATH@/chrome/toolkit@JAREXT@
 @BINPATH@/chrome/toolkit.manifest
 @BINPATH@/chrome/recording.manifest

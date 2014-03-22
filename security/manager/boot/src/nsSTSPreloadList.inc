@@ -8,7 +8,7 @@
 /*****************************************************************************/
 
 #include "mozilla/StandardInteger.h"
-const PRTime gPreloadListExpirationTime = INT64_C(1402139132264000);
+const PRTime gPreloadListExpirationTime = INT64_C(1404558339048000);
 
 class nsSTSPreload
 {
@@ -19,6 +19,7 @@ class nsSTSPreload
 
 static const nsSTSPreload kSTSPreloadList[] = {
   { "accounts.google.com", true },
+  { "aclu.org", false },
   { "aladdinschools.appspot.com", false },
   { "alpha.irccloud.com", false },
   { "api.intercom.io", false },
@@ -34,8 +35,10 @@ static const nsSTSPreload kSTSPreloadList[] = {
   { "blog.linode.com", false },
   { "blog.lookout.com", false },
   { "blog.torproject.org", false },
+  { "boxcryptor.com", true },
   { "bugzilla.mozilla.org", true },
   { "business.lookout.com", false },
+  { "calyxinstitute.org", false },
   { "carezone.com", false },
   { "check.torproject.org", false },
   { "chromiumcodereview.appspot.com", false },
@@ -70,6 +73,7 @@ static const nsSTSPreload kSTSPreloadList[] = {
   { "forum.linode.com", false },
   { "forum.quantifiedself.com", true },
   { "gernert-server.de", true },
+  { "getcloak.com", false },
   { "getlantern.org", false },
   { "go.xero.com", false },
   { "gocardless.com", true },
@@ -86,7 +90,6 @@ static const nsSTSPreload kSTSPreloadList[] = {
   { "lastpass.com", false },
   { "launchkey.com", true },
   { "library.linode.com", false },
-  { "lifeguard.aecom.com", false },
   { "linode.com", false },
   { "linx.net", false },
   { "lockify.com", true },
@@ -100,6 +103,7 @@ static const nsSTSPreload kSTSPreloadList[] = {
   { "lumi.do", false },
   { "luneta.nearbuysystems.com", false },
   { "mail.de", true },
+  { "mailbox.org", false },
   { "makeyourlaws.org", false },
   { "manage.zenpayroll.com", false },
   { "manager.linode.com", false },
@@ -116,9 +120,11 @@ static const nsSTSPreload kSTSPreloadList[] = {
   { "mykolab.com", true },
   { "mylookout.com", false },
   { "neg9.org", false },
+  { "neilwynne.com", false },
   { "oplop.appspot.com", true },
   { "opsmate.com", false },
   { "p.linode.com", false },
+  { "packagist.org", false },
   { "passwd.io", true },
   { "paste.linode.com", false },
   { "pastebin.linode.com", false },
@@ -154,11 +160,14 @@ static const nsSTSPreload kSTSPreloadList[] = {
   { "wiki.python.org", true },
   { "wiz.biz", true },
   { "writeapp.me", false },
+  { "www.aclu.org", false },
   { "www.apollo-auto.com", true },
   { "www.braintreepayments.com", false },
+  { "www.calyxinstitute.org", false },
   { "www.cyveillance.com", true },
   { "www.entropia.de", false },
   { "www.evernote.com", false },
+  { "www.getcloak.com", false },
   { "www.gov.uk", false },
   { "www.grc.com", false },
   { "www.heliosnet.com", true },
