@@ -10,7 +10,7 @@
 <!ENTITY status4evar.tab.popup "ಪಾಪ್-ಅಪ್">
 <!ENTITY status4evar.tab.tabs "ಟ್ಯಾಬ್ಗಳು">
 <!ENTITY status4evar.option.none "ಯಾವುದೂ ಇಲ್ಲ">
-<!ENTITY status4evar.option.nothing "Nothing">
+<!ENTITY status4evar.option.nothing "ಏನೂ ಇಲ್ಲ">
 <!ENTITY status4evar.option.toolbar "ಸ್ಥಿತಿ ಪಟ್ಟಿ">
 <!ENTITY status4evar.option.urlbar "ವಿಳಾಸ ಪಟ್ಟಿ">
 <!ENTITY status4evar.option.popup "ಪಾಪ್-ಅಪ್">
@@ -34,11 +34,11 @@
 <!ENTITY status4evar.option.no-repeat "ಮತ್ತೊಮ್ಮೆ ಬೇಡ">
 <!ENTITY status4evar.option.space "ಸ್ಪೇಸ್">
 <!ENTITY status4evar.option.round "ಗೋಲ">
-<!ENTITY status4evar.option.firefoxdefault "Pale Moon default">
-<!ENTITY status4evar.option.download.panel "Panel">
-<!ENTITY status4evar.option.download.library "Library">
-<!ENTITY status4evar.option.download.classic "Classic">
-<!ENTITY status4evar.unit.milliseconds "milliseconds">
+<!ENTITY status4evar.option.firefoxdefault "Pale Moon ಡೀಫಾಲ್ಟ್">
+<!ENTITY status4evar.option.download.panel "ಫಲಕ">
+<!ENTITY status4evar.option.download.library "ಲೈಬ್ರರಿ">
+<!ENTITY status4evar.option.download.classic "ಹಳೇದು">
+<!ENTITY status4evar.unit.milliseconds "ಮಿಲಿಸೆಕೆಂಡುಗಳು">
 <!ENTITY status4evar.unit.seconds "ಸೆಕೆಂಡುಗಳು">
 <!ENTITY status4evar.unit.px "px">
 <!ENTITY status4evar.status.general.status.caption "ಸ್ಥಿತಿ ಪಠ್ಯ">
@@ -74,7 +74,7 @@
 <!ENTITY status4evar.editor.css.image.repeat "ಪುನರಾವರ್ತನೆ">
 <!ENTITY status4evar.editor.css.image.position "ಸ್ಥಾನ">
 <!ENTITY status4evar.editor.css.image.offset "ಆಫ್ಸೆಟ್">
-<!ENTITY status4evar.download.button.action.label "Download status button action:">
+<!ENTITY status4evar.download.button.action.label "ಡೌನ್ಲೋಡ್ ಸ್ಥಿತಿ ಬಟನ್ ಕ್ರಮ:">
 <!ENTITY status4evar.download.force.label "ಯಾವಾಗಲೂ ಡೌನ್ಲೋಡ್ ಸ್ಥಿತಿ ಸೂಚಕ ತೋರಿಸಲು">
 <!ENTITY status4evar.download.label.force.label "ಯಾವಾಗಲೂ ಬಟನ್ ಪಠ್ಯ ತೋರಿಸಲು">
 <!ENTITY status4evar.download.label.label "ಡೌನ್ಲೋಡ್ ಸ್ಥಿತಿ ಸೂಚಕ ಪಠ್ಯ:">
@@ -85,8 +85,8 @@
 <!ENTITY status4evar.download.progress.min.label "ಕನಿಷ್ಠ ಪೂರ್ಣಗೊಂಡ ಡೌನ್ಲೋಡ್ ತೋರಿಸಿ">
 <!ENTITY status4evar.download.color.active.label "ಸಕ್ರಿಯ ಡೌನ್ಲೋಡ್ಗಳು ಪ್ರಗತಿಯಲ್ಲಿರುವಾಗ ಬಣ್ಣ:">
 <!ENTITY status4evar.download.color.paused.label "ವಿರಾಮಗೊಳಿಸಿದ ಡೌನ್ಲೋಡ್ಗಳ ಪ್ರಗತಿಯ ಬಣ್ಣ:">
-<!ENTITY status4evar.download.notify.animate.label "Animate button when download completes">
-<!ENTITY status4evar.download.notify.timeout.label "Highlight button when download completes:">
+<!ENTITY status4evar.download.notify.animate.label "ಡೌನ್ಲೋಡ್ ಸಂಪೂರ್ಣಗೊಂಡಾಗ ಬಟನ್ ಅನಿಮೇಟ್ ಮಾಡಿ">
+<!ENTITY status4evar.download.notify.timeout.label "ಡೌನ್ಲೋಡ್ ಸಂಪೂರ್ಣಗೊಂಡಾಗ ಬಟನ್ ಹೈಲೈಟ್ ಮಾಡಿ:">
 <!ENTITY status4evar.addonbar.borderStyle "ಪರ್ಯಾಯ ಟೂಲ್ಬಾರ್ ಅಂಚುಗಳನ್ನು ಬಳಸಿ">
 <!ENTITY status4evar.addonbar.windowGripper "ವಿಂಡೋ ಮರು ಗಾತ್ರ ಹಿಡಿಕೆ ತೋರಿಸಿ">
 <!ENTITY status4evar.addonbar.closeButton "ಮುಚ್ಚುವ ಗುಂಡಿಯನ್ನು ತೋರಿಸಿ">

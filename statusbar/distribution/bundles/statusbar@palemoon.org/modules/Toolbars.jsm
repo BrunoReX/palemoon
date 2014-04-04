@@ -16,7 +16,6 @@ const S4EToolbars =
 		{
 			let baseSet = "addonbar-closebutton"
 				    + ",status4evar-status-widget"
-				    + ",status4evar-download-button"
 				    + ",status4evar-progress-widget";
 
 			// Update the defaultSet

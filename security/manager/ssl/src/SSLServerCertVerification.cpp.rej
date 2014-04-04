@@ -1,0 +1,53 @@
+***************
+*** 1168,1201 ****
+  
+    ScopedCERTCertificate serverCert(SSL_PeerCertificate(fd));
+  
+    if (!checkSig || isServer || !socketInfo || !serverCert) {
+        PR_SetError(PR_INVALID_STATE_ERROR, 0);
+        return SECFailure;
+    }
+  
+-   // This value of "now" is used both here for OCSP stapling and later
+-   // when calling CreateCertErrorRunnable.
+-   PRTime now = PR_Now();
+-   // SSL_PeerStapledOCSPResponses will never return a non-empty response if
+-   // OCSP stapling wasn't enabled because libssl wouldn't have let the server
+-   // return a stapled OCSP response.
+-   // We don't own this pointer.
+-   const SECItemArray *csa = SSL_PeerStapledOCSPResponses(fd);
+-   // we currently only support single stapled responses
+-   if (csa && csa->len == 1) {
+-       CERTCertDBHandle *handle = CERT_GetDefaultCertDB();
+-       SECStatus cacheResult = CERT_CacheOCSPResponseFromSideChannel(
+-           handle, serverCert, now, &csa->items[0], arg);
+-       if (cacheResult != SECSuccess) {
+-           return SECFailure;
+-       }
+-   }
+- 
+    if (BlockServerCertChangeForSpdy(socketInfo, serverCert) != SECSuccess)
+      return SECFailure;
+  
+    bool onSTSThread;
+    nsresult nrv;
+    nsCOMPtr<nsIEventTarget> sts
+      = do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &nrv);
+    if (NS_SUCCEEDED(nrv)) {
+--- 1184,1199 ----
+  
+    ScopedCERTCertificate serverCert(SSL_PeerCertificate(fd));
+  
+    if (!checkSig || isServer || !socketInfo || !serverCert) {
+        PR_SetError(PR_INVALID_STATE_ERROR, 0);
+        return SECFailure;
+    }
+  
+    if (BlockServerCertChangeForSpdy(socketInfo, serverCert) != SECSuccess)
+      return SECFailure;
+  
+    bool onSTSThread;
+    nsresult nrv;
+    nsCOMPtr<nsIEventTarget> sts
+      = do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &nrv);
+    if (NS_SUCCEEDED(nrv)) {
