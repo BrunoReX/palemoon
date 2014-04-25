@@ -8,18 +8,13 @@
 
 # BrandFullNameInternal is used for some registry and file system values
 # instead of BrandFullName and typically should not be modified.
-!define BrandFullNameInternal "Mozilla Developer Preview"
-!define CompanyName           "mozilla.org"
-!define URLInfoAbout          "http://www.mozilla.org"
-!define URLUpdateInfo         "http://www.mozilla.org/projects/firefox"
+!define BrandFullNameInternal "New Moon"
+!define CompanyName           "Moonchild Productions"
+!define URLInfoAbout          "http://www.palemoon.org"
+!define URLUpdateInfo         "http://www.palemoon.org"
 
-!define URLStubDownload "http://download.mozilla.org/?product=firefox-latest&os=win&lang=${AB_CD}"
-!define URLManualDownload "https://www.mozilla.org/${AB_CD}/firefox/installer-help/?channel=release&installer_lang=${AB_CD}"
+!define URLManualDownload "http://www.palemoon.org/download-ng.shtml"
 !define Channel "unofficial"
-
-# The installer's certificate name and issuer expected by the stub installer
-!define CertNameDownload   "Mozilla Corporation"
-!define CertIssuerDownload "Thawte Code Signing CA - G2"
 
 # Dialog units are used so the UI displays correctly with the system's DPI
 # settings.

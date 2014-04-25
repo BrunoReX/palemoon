@@ -1,6 +1,35 @@
 Pale Moon: Release notes
 ========================
 
+### 24.5.0 (2014-04-25)
+
+This is a security and bugfix release, to address outstanding known issues and streamline browser identity.
+ Fixes/changes:
+
+-   Fix plugin doorhanger code for removed-node confusion.
+-   Remove Mozilla Corp specific details from search plugins, to clearly indicate the client is Pale Moon and to make sure searches are never counted towards other browser's searches by mistake by search providers.
+-   Make sure to set both "warnOnClose" and "warnOnCloseOther" prefs to false when users choose to disable this check in the popup prompt.
+-   Update branding: Remove nightly branding altogether - only have unofficial+official,  and fix the broken About dialog branding.
+-   Bugfix: Clamp level of WebGL TexImage operations to 32-bits to avoid issues on x64 architectures.
+-   Update Linux theme: feed icon
+-   Bugfix: Add Firefox Compatibility flag to unofficial branding.
+-   Workaround for several prominent websites complaining about an "outdated browser".
+
+Security fixes:
+
+-   [bug \#987003](https://bugzilla.mozilla.org/show_bug.cgi?id=987003) - Be more careful sandboxing javascript: URLs.
+-   [bug \#952022](https://bugzilla.mozilla.org/show_bug.cgi?id=952022) - Add missing detachAsmJSModule.
+-   [bug \#986843](https://bugzilla.mozilla.org/show_bug.cgi?id=986843) - Replace AutoHoldZone with AutoCompartmentRooter.
+-   [bug \#989183](https://bugzilla.mozilla.org/show_bug.cgi?id=989183) - Check for nsXBLJSClass.
+-   [bug \#980537](https://bugzilla.mozilla.org/show_bug.cgi?id=980537) - Only store FakeBackstagePass instances in mThisObjects.
+-   [bug \#986678](https://bugzilla.mozilla.org/show_bug.cgi?id=986678) - Fix type check in TryAddTypeBarrierForWrite.
+-   [bug \#966006](https://bugzilla.mozilla.org/show_bug.cgi?id=966006) - Fix security issue in DNS resolver.
+-   [bug \#944353](https://bugzilla.mozilla.org/show_bug.cgi?id=944353) - Avoid spurious decoding of corrupt images.
+-   [bug \#969226](https://bugzilla.mozilla.org/show_bug.cgi?id=969226) - Avoid buffer overflow in corrupt ICC profiles.
+-   [bug \#991471](https://bugzilla.mozilla.org/show_bug.cgi?id=991471) - Fix offset when setting host on URL.
+-   [bug \#993546](https://bugzilla.mozilla.org/show_bug.cgi?id=993546) - Don't try to malloc-free 0-size memory chunks.
+-   [bug \#992968](https://bugzilla.mozilla.org/show_bug.cgi?id=992968) - Avoid OOM problems with JIT code caching
+
 ### 24.4.2 (2014-04-02)
 
 A small bugfix release, and implementing [OCSP-stapling](https://en.wikipedia.org/wiki/OCSP_Stapling) for SSL connections.

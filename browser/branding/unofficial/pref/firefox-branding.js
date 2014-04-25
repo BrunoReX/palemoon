@@ -21,6 +21,8 @@ pref("app.update.url.details", "http://www.palemoon.org/releasenotes-ng.shtml");
 // Additional Update fixes - no SSL damnit, I don't have a cert (4.0)
 pref("app.update.cert.checkAttributes", false);
 pref("app.update.cert.requireBuiltIn", false);
+// Fix useragent for UA sniffing websites
+pref("general.useragent.compatMode.firefox", true);
 // Make sure we shortcut out of a11y to save walking unnecessary code
 pref("accessibility.force_disabled", 1);
 

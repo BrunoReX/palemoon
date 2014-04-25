@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#aboutDialogContainer {
+#aboutPMDialogContainer {
   background-image: url("chrome://branding/content/about-background.png");
   background-repeat: no-repeat;
   background-color: #000;
@@ -10,15 +10,15 @@
 }
 
 .text-link {
-  color: #fff !important;
+  color: #eef !important;
 }
 
-#rightBox {
+#PMrightBox {
   /* this margin prevents text from overlapping the planet image */
   margin-left: 280px;
   margin-right: 20px;
 }
 
-#bottomBox {
+#PMbottomBox {
   background-color: rgba(0,0,0,.7);
 }
