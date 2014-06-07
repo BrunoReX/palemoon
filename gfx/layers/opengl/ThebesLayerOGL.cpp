@@ -771,16 +771,16 @@ BasicBufferOGL::BeginPaint(ContentType aContentType,
   // Move rgnToPaint back into position so that the thebes callback
   // gets the right coordintes.
   result.mRegionToDraw.MoveBy(-offset);
+  result.mClip = CLIP_DRAW;
 
-  // If we do partial updates, we have to clip drawing to the regionToDraw.
-  // If we don't clip, background images will be fillrect'd to the region correctly,
-  // while text or lines will paint outside of the regionToDraw. This becomes apparent
-  // with concave regions. Right now the scrollbars invalidate a narrow strip of the bar
-  // although they never cover it. This leads to two draw rects, the narow strip and the actually
-  // newly exposed area. It would be wise to fix this glitch in any way to have simpler
-  // clip and draw regions.
-  gfxUtils::ClipToRegion(result.mContext, result.mRegionToDraw);
-
+  if (mTexImage->GetContentType() == gfxASurface::CONTENT_COLOR_ALPHA) {
+    result.mContext->Save();
+    gfxUtils::ClipToRegion(result.mContext, result.mRegionToDraw);
+    result.mContext->SetOperator(gfxContext::OPERATOR_CLEAR);
+    result.mContext->Paint();
+    result.mContext->Restore();
+  }
+  
   return result;
 }
 
@@ -876,7 +876,7 @@ ThebesLayerOGL::RenderLayer(int aPreviousFrameBuffer,
     } else {
       void* callbackData = mOGLManager->GetThebesLayerCallbackData();
       SetAntialiasingFlags(this, state.mContext);
-      callback(this, state.mContext, state.mRegionToDraw,
+      callback(this, state.mContext, state.mRegionToDraw, state.mClip,
                state.mRegionToInvalidate, callbackData);
       // Everything that's visible has been validated. Do this instead of just
       // OR-ing with aRegionToDraw, since that can lead to a very complex region

@@ -10,4 +10,8 @@
 # hardcoded milestones in the tree from these two files.
 #--------------------------------------------------------
 
+<<<<<<< local
 24.6.0
+=======
+24.6.0esrpre
+>>>>>>> other

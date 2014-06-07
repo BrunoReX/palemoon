@@ -677,18 +677,19 @@ ThebesLayerBuffer::BeginPaint(ThebesLayer* aLayer, ContentType aContentType,
 
   nsIntPoint topLeft;
   result.mContext = GetContextForQuadrantUpdate(drawBounds, BUFFER_BOTH, &topLeft);
+  result.mClip = CLIP_DRAW_SNAPPED;
 
   if (mode == Layer::SURFACE_COMPONENT_ALPHA) {
     MOZ_ASSERT(mBuffer && mBufferOnWhite, "Must not be using azure!");
     FillSurface(mBuffer, result.mRegionToDraw, topLeft, gfxRGBA(0.0, 0.0, 0.0, 1.0));
     FillSurface(mBufferOnWhite, result.mRegionToDraw, topLeft, gfxRGBA(1.0, 1.0, 1.0, 1.0));
-    gfxUtils::ClipToRegionSnapped(result.mContext, result.mRegionToDraw);
   } else if (contentType == gfxASurface::CONTENT_COLOR_ALPHA && !isClear) {
     if (result.mContext->IsCairo()) {
+      result.mContext->Save();
       gfxUtils::ClipToRegionSnapped(result.mContext, result.mRegionToDraw);
       result.mContext->SetOperator(gfxContext::OPERATOR_CLEAR);
       result.mContext->Paint();
-      result.mContext->SetOperator(gfxContext::OPERATOR_OVER);
+      result.mContext->Restore();
     } else {
       nsIntRegionRectIterator iter(result.mRegionToDraw);
       const nsIntRect *iterRect;
@@ -697,10 +698,7 @@ ThebesLayerBuffer::BeginPaint(ThebesLayer* aLayer, ContentType aContentType,
       }
       // Clear will do something expensive with a complex clip pushed, so clip
       // here.
-      gfxUtils::ClipToRegionSnapped(result.mContext, result.mRegionToDraw);
     }
-  } else {
-    gfxUtils::ClipToRegionSnapped(result.mContext, result.mRegionToDraw);
   }
 
   return result;

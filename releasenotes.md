@@ -1,6 +1,41 @@
 Pale Moon: Release notes
 ========================
 
+### 24.6.0 (2014-06-06)
+
+This is a major update including a rendering engine overhaul and a number of very important fixes. For details about the changes, please see the [detailed changelog on the forum](http://forum.palemoon.org/viewtopic.php?f=1&t=4768).
+ Fixes/changes:
+
+-   Allow animated personas (lightweight themes)! You will need to set a preference for this.
+-   Fix regularly occurring browser crashes with hardware acceleration enabled on DirectWrite 6.2/6.3 (Win 7 with Platform Update, Windows 8/8.1).
+-   Fix font rendering issues on DirectWrite 6.2/6.3, especially on legacy AMD hardware. (KB2670838 issues).
+-   Fix Windows version detection issues on Windows 8.1.
+-   Shuffle reported plugin installation order to confuse trackers.
+-   Clean up jumplist icons so they no longer pile up on disk on some systems (also a privacy concern).
+-   Change the sync server to a (new) Pale Moon sync server.
+-   Update the status bar code: Full-screen HTML5 video will no longer have status pop-ups overlaid.
+-   Add code to selectively ignore "autocomplete=off" on signon input fields.
+-   Linux: reduce gstreamer CPU overhead.
+-   Fix styled HTML buttons to address misaligned button contents (wrong baseline), e.g. gmail account chooser.
+-   Fix an old IonMonkey bug resulting in incorrect math results in some cases.
+-   Improve the performance of editor initialization.
+-   Update the Pale Moon icon for better display on lower color depths.
+-   Media: use a simpler way to discard superfluous audio packets.
+
+Security fixes:
+
+-   [Bug \#994907](https://bugzilla.mozilla.org/show_bug.cgi?id=994907) - imgDecoderObserver does reference counting on different threads, so should be using thread safe reference counting.
+-   [Bug \#992274](https://bugzilla.mozilla.org/show_bug.cgi?id=992274) - Tweak an edge case in line number handling.
+-   [Bug \#995603](https://bugzilla.mozilla.org/show_bug.cgi?id=995603) - Ensure mouse-enter/exit events are sent to plugins as appropriate.
+-   [Bug \#1005552](https://bugzilla.mozilla.org/show_bug.cgi?id=1005552) - Stop binding marquee event handlers + misc related fixes.
+-   [Bug \#1000185](https://bugzilla.mozilla.org/show_bug.cgi?id=1000185) - Fix several issues with SMIL.
+-   [Bug \#978811](https://bugzilla.mozilla.org/show_bug.cgi?id=978811) - Fix isFakeExitFrame to return true for entry frames.
+-   [Bug \#996715](https://bugzilla.mozilla.org/show_bug.cgi?id=996715) - IonMonkey: Remove the code that bails when determining if the second instruction in a chunk is a branch.
+-   [Bug \#967354](https://bugzilla.mozilla.org/show_bug.cgi?id=967354) - Fix incorrect usage of UpdateWebGLErrorAndClearGLError();
+
+In addition, Pale Moon also has a public Git repository now:
+ [https://github.com/MoonchildProductions/Pale-Moon](https://github.com/MoonchildProductions/Pale-Moon)
+
 ### 24.5.0 (2014-04-25)
 
 This is a security and bugfix release, to address outstanding known issues and streamline browser identity.

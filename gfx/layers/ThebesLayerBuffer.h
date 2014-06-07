@@ -12,6 +12,7 @@
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/gfx/2D.h"
 #include "Layers.h"
+#include "LayersTypes.h"
 
 namespace mozilla {
 namespace layers {
@@ -195,6 +196,7 @@ public:
     nsIntRegion mRegionToDraw;
     nsIntRegion mRegionToInvalidate;
     bool mDidSelfCopy;
+    DrawRegionClip mClip;
   };
 
   enum {

@@ -151,6 +151,12 @@ ThebesLayerD3D10::Validate(ReadbackProcessor *aReadback)
     return;
   }
 
+  if (FAILED(gfxWindowsPlatform::GetPlatform()->GetD3D10Device()->GetDeviceRemovedReason())) {
+    // Device removed, this will be discovered on the next rendering pass.
+    // Do no validate.
+    return;
+  }
+ 
   nsIntRect newTextureRect = mVisibleRegion.GetBounds();
 
   SurfaceMode mode = GetSurfaceMode();
@@ -414,40 +420,25 @@ ThebesLayerD3D10::DrawRegion(nsIntRegion &aRegion, SurfaceMode aMode)
     destinationSurface = mD2DSurface;
   }
 
-  nsRefPtr<gfxContext> context;
+// Should be available once nsregion is fixed.
+//  aRegion.SimplifyOutwardByArea(100*100);
 
-  if (mDrawTarget) {
-    context = new gfxContext(mDrawTarget);
-  } else {
-    context = new gfxContext(destinationSurface);
-  }
+  MOZ_ASSERT(mDrawTarget);
+  nsRefPtr<gfxContext> context = new gfxContext(mDrawTarget);
 
-  nsIntRegionRectIterator iter(aRegion);
   context->Translate(gfxPoint(-visibleRect.x, -visibleRect.y));
-  context->NewPath();
-  const nsIntRect *iterRect;
-  while ((iterRect = iter.Next())) {
-    context->Rectangle(gfxRect(iterRect->x, iterRect->y, iterRect->width, iterRect->height));
-    if (mDrawTarget && aMode == SURFACE_SINGLE_CHANNEL_ALPHA) {
+  if (aMode == SURFACE_SINGLE_CHANNEL_ALPHA) {
+    nsIntRegionRectIterator iter(aRegion);
+    const nsIntRect *iterRect;
+    while ((iterRect = iter.Next())) {
       mDrawTarget->ClearRect(Rect(iterRect->x, iterRect->y, iterRect->width, iterRect->height));
     }
   }
-  context->Clip();
 
-  if (!mDrawTarget && aMode == SURFACE_SINGLE_CHANNEL_ALPHA) {
-    context->SetOperator(gfxContext::OPERATOR_CLEAR);
-    context->Paint();
-    context->SetOperator(gfxContext::OPERATOR_OVER);
-  }
-
-  if (mD2DSurface) {
-    mD2DSurface->SetSubpixelAntialiasingEnabled(!(mContentFlags & CONTENT_COMPONENT_ALPHA));
-  } else if (mDrawTarget) {
-    mDrawTarget->SetPermitSubpixelAA(!(mContentFlags & CONTENT_COMPONENT_ALPHA));
-  }
+  mDrawTarget->SetPermitSubpixelAA(!(mContentFlags & CONTENT_COMPONENT_ALPHA));
 
   LayerManagerD3D10::CallbackInfo cbInfo = mD3DManager->GetCallbackInfo();
-  cbInfo.Callback(this, context, aRegion, nsIntRegion(), cbInfo.CallbackData);
+  cbInfo.Callback(this, context, aRegion, CLIP_DRAW, nsIntRegion(), cbInfo.CallbackData);
 }
 
 void
@@ -460,7 +451,6 @@ ThebesLayerD3D10::CreateNewTextures(const gfxIntSize &aSize, SurfaceMode aMode)
 
   CD3D10_TEXTURE2D_DESC desc(DXGI_FORMAT_B8G8R8A8_UNORM, aSize.width, aSize.height, 1, 1);
   desc.BindFlags = D3D10_BIND_RENDER_TARGET | D3D10_BIND_SHADER_RESOURCE;
-  desc.MiscFlags = D3D10_RESOURCE_MISC_GDI_COMPATIBLE;
   HRESULT hr;
 
   if (!mTexture) {

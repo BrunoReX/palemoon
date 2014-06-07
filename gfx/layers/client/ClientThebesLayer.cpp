@@ -89,7 +89,7 @@ ClientThebesLayer::PaintThebes()
 
       PaintBuffer(state.mContext,
                   state.mRegionToDraw, extendedDrawRegion, state.mRegionToInvalidate,
-                  state.mDidSelfCopy);
+                  state.mDidSelfCopy, state.mClip);
       MOZ_LAYERS_LOG_IF_SHADOWABLE(this, ("Layer::Mutated(%p) PaintThebes", this));
       Mutated();
     } else {
@@ -129,7 +129,7 @@ ClientThebesLayer::PaintBuffer(gfxContext* aContext,
                                const nsIntRegion& aRegionToDraw,
                                const nsIntRegion& aExtendedRegionToDraw,
                                const nsIntRegion& aRegionToInvalidate,
-                               bool aDidSelfCopy)
+                               bool aDidSelfCopy, DrawRegionClip aClip)
 {
   ContentClientRemote* contentClientRemote = static_cast<ContentClientRemote*>(mContentClient.get());
   MOZ_ASSERT(contentClientRemote->GetIPDLActor());
@@ -144,7 +144,8 @@ ClientThebesLayer::PaintBuffer(gfxContext* aContext,
   }
   ClientManager()->GetThebesLayerCallback()(this, 
                                             aContext, 
-                                            aExtendedRegionToDraw, 
+                                            aExtendedRegionToDraw,
+                                            aClip,
                                             aRegionToInvalidate,
                                             ClientManager()->GetThebesLayerCallbackData());
 

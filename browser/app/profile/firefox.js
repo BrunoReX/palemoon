@@ -211,6 +211,7 @@ pref("xpinstall.whitelist.add.36", "getpersonas.com");
 pref("xpinstall.whitelist.add.180", "marketplace.firefox.com");
 
 pref("lightweightThemes.update.enabled", true);
+pref("lightweightThemes.animation.enabled", false);
 
 pref("keyword.enabled", true);
 

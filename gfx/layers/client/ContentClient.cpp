@@ -793,19 +793,14 @@ ContentClientIncremental::BeginPaintBuffer(ThebesLayer* aLayer,
   }
   result.mContext->Translate(-gfxPoint(drawBounds.x, drawBounds.y));
 
-  // If we do partial updates, we have to clip drawing to the regionToDraw.
-  // If we don't clip, background images will be fillrect'd to the region correctly,
-  // while text or lines will paint outside of the regionToDraw. This becomes apparent
-  // with concave regions. Right now the scrollbars invalidate a narrow strip of the bar
-  // although they never cover it. This leads to two draw rects, the narow strip and the actually
-  // newly exposed area. It would be wise to fix this glitch in any way to have simpler
-  // clip and draw regions.
-  gfxUtils::ClipToRegion(result.mContext, result.mRegionToDraw);
-
+  result.mClip = CLIP_DRAW;
+  
   if (mContentType == gfxASurface::CONTENT_COLOR_ALPHA) {
+    result.mContext->Save();
+    gfxUtils::ClipToRegion(result.mContext, result.mRegionToDraw); 
     result.mContext->SetOperator(gfxContext::OPERATOR_CLEAR);
     result.mContext->Paint();
-    result.mContext->SetOperator(gfxContext::OPERATOR_OVER);
+    result.mContext->Restore();
   }
 
   return result;

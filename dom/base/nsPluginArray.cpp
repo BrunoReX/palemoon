@@ -244,6 +244,21 @@ nsPluginArray::Refresh(bool aReloadDocuments)
   return res;
 }
 
+template <class T> inline
+void ShuffleArray(T* array, size_t length)
+{
+  if (length < 2)
+    return;
+
+  // Durstenfeld shuffle
+  for (size_t i = length - 1; i > 0; i--) {
+    size_t j = rand() % (i + 1);
+    T temp = array[j];
+    array[j] = array[i];
+    array[i] = temp;
+  }
+}
+
 nsresult
 nsPluginArray::GetPlugins()
 {
@@ -266,6 +281,8 @@ nsPluginArray::GetPlugins()
         NS_IF_ADDREF(wrapper);
         mPluginArray[i] = wrapper;
       }
+
+      ShuffleArray(mPluginArray, mPluginCount);
     } else {
       /* XXX this code is all broken. If GetPlugins fails, there's no contract
        *     explaining what should happen. Instead of deleting elements in an

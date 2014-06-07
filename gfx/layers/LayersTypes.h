@@ -52,6 +52,12 @@ enum BufferMode {
   BUFFER_BUFFERED
 };
 
+enum DrawRegionClip {
+  CLIP_DRAW,
+  CLIP_DRAW_SNAPPED,
+  CLIP_NONE,
+};
+
 // The kinds of mask layer a shader can support
 // We rely on the items in this enum being sequential
 enum MaskType {

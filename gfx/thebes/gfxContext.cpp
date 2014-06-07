@@ -1493,9 +1493,13 @@ gfxContext::PushGroup(gfxASurface::gfxContentType content)
   if (mCairo) {
     cairo_push_group_with_content(mCairo, (cairo_content_t) content);
   } else {
+    DrawTarget *oldDT = mDT;
     PushNewDT(content);
 
-    PushClipsToDT(mDT);
+    if (oldDT != mDT) {
+      // See explanation in PushGroupAndCopyBackground.
+      PushClipsToDT(mDT);
+    }
     mDT->SetTransform(GetDTTransform());
   }
 }
@@ -1568,17 +1572,22 @@ gfxContext::PushGroupAndCopyBackground(gfxASurface::gfxContentType content)
 
       PushNewDT(gfxASurface::CONTENT_COLOR);
 
-      Point offset = CurrentState().deviceOffset - oldDeviceOffset;
-      Rect surfRect(0, 0, Float(mDT->GetSize().width), Float(mDT->GetSize().height));
-      Rect sourceRect = surfRect;
-      sourceRect.x += offset.x;
-      sourceRect.y += offset.y;
+      if (mDT != oldDT) {
+        // PushNewDT can fail for reasons unknown to us (presumably OOM), in
+        // that case the code below will mess things up as it would be
+        // executing on the old DT. See bug 805406.
+        Point offset = CurrentState().deviceOffset - oldDeviceOffset;
+        Rect surfRect(0, 0, Float(mDT->GetSize().width), Float(mDT->GetSize().height));
+        Rect sourceRect = surfRect;
+        sourceRect.x += offset.x;
+        sourceRect.y += offset.y;
 
-      mDT->SetTransform(Matrix());
-      mDT->DrawSurface(source, surfRect, sourceRect);
-      mDT->SetOpaqueRect(oldDT->GetOpaqueRect());
+        mDT->SetTransform(Matrix());
+        mDT->DrawSurface(source, surfRect, sourceRect);
+        mDT->SetOpaqueRect(oldDT->GetOpaqueRect());
 
-      PushClipsToDT(mDT);
+        PushClipsToDT(mDT);
+      }
       mDT->SetTransform(GetDTTransform());
       return;
     }
@@ -2235,6 +2244,14 @@ gfxContext::PushNewDT(gfxASurface::gfxContentType content)
                                   gfxPlatform::GetPlatform()->Optimal2DFormatForContent(content));
 
   Save();
+
+  if (!newDT) {
+    // See bug 805406
+    // We explicitly place this null-check -after- the save, so that pushes and
+    // pops will still be balanced. Reducing the rendering artifacts and
+    // hopefully the risk of crashes occurring in the future.
+    return;
+  }
 
   CurrentState().drawTarget = newDT;
   CurrentState().deviceOffset = clipBounds.TopLeft();
