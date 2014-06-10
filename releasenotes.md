@@ -1,6 +1,16 @@
 Pale Moon: Release notes
 ========================
 
+### 24.6.1 (2014-06-08)
+
+A quick point release update mainly to address startup crashes.
+ Fixes/changes:
+
+-   Update to address startup crashes if users previously changed the setting for Azure for Content
+-   Update for texture handling to restore GDI compatibility (should fix some graphics glitches)
+-   Fix to handle invalid PDF plugin overlay state
+-   Misc. additional security fixes ported over from Firefox (bug \#s 991981, 995679, 999651, 1009952, 1011007)
+
 ### 24.6.0 (2014-06-06)
 
 This is a major update including a rendering engine overhaul and a number of very important fixes. For details about the changes, please see the [detailed changelog on the forum](http://forum.palemoon.org/viewtopic.php?f=1&t=4768).
