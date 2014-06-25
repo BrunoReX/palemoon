@@ -9,8 +9,8 @@
 # (https://github.com/warner/python-versioneer)
 
 # these strings will be replaced by git during git-archive
-git_refnames = "$Format:%d$"
-git_full = "$Format:%H$"
+git_refnames = " (tag: 24.6.2_Release, 24.6_RelBranch)"
+git_full = "34ef8a2a92ecb8a760d83d46ba42d5f984880490"
 
 
 import subprocess

@@ -1,6 +1,20 @@
 Pale Moon: Release notes
 ========================
 
+### 24.6.2 (2014-06-16)
+
+A point release to address some further outstanding issues with the overhauled rendering engine.
+ Fixes/changes:
+
+-   Automate rendering back-end selection and use cairo as appropriate.
+    This should fix start-up problems on all types of graphics cards regardless of vendor.
+-   Fix font subpixel rendering in menus when on cairo backend (D2D off)
+-   Cairo: Prevent falling back to padding when not strictly needed.
+    Performance regression fix if D2D isn't used.
+-   Azure: Use correct device offsets.
+-   Prevent crashes due to the allocation of source surfaces to errored surfaces
+    This prevents some miscellaneous browser crashes occurring with cairo on azure.
+
 ### 24.6.1 (2014-06-08)
 
 A quick point release update mainly to address startup crashes.
