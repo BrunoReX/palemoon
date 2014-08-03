@@ -2560,6 +2560,10 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
   -moz-image-region: rect(0, 16px, 16px, 0);
 }
 
+.tab-close-button:-moz-lwtheme-brighttext {
+  list-style-image: url("chrome://global/skin/icons/close-inverted.png");
+}
+
 .tab-close-button:hover {
   -moz-image-region: rect(0, 32px, 16px, 16px);
 }
@@ -2572,6 +2576,10 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
   .tab-close-button {
     list-style-image: url("chrome://global/skin/icons/close@2x.png");
     -moz-image-region: rect(0, 32px, 32px, 0);
+  }
+  
+  .tab-close-button:-moz-lwtheme-brighttext {
+    list-style-image: url("chrome://global/skin/icons/close-inverted@2x.png");
   }
 
   .tab-close-button:hover {
@@ -3683,9 +3691,11 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
   font-size: 120%;
 }
 
+%ifdef MOZ_DEVTOOLS
 %include ../shared/devtools/responsivedesign.inc.css
 %include ../shared/devtools/highlighter.inc.css
 %include ../shared/devtools/commandline.inc.css
+%endif
 %include ../shared/plugin-doorhanger.inc.css
 
 /* On mac, the popup notification contents are indented by default and so
@@ -3697,7 +3707,7 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
 }
 
 
-
+%ifdef MOZ_DEVTOOLS
 .gclitoolbar-input-node > .textbox-input-box > html|*.textbox-input::-moz-selection {
   color: hsl(210,11%,16%);
 }
@@ -3718,6 +3728,7 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
   background-image: linear-gradient(#B4211B, #8A1915);
   border-radius: 1px;
 }
+%endif
 
 /* === social toolbar button === */
 

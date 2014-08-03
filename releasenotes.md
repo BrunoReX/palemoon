@@ -1,6 +1,62 @@
 Pale Moon: Release notes
 ========================
 
+### 24.7.0 (2014-07-29)
+
+This is a large update to address a good number of different things across the board.
+
+-   Fixed some performance issues with the new rendering engine on Windows. Rendering should be faster for all objects on hardware-accelerated layers now.
+    The new (24.6) rendering engine had some compromises in terms of performance, to work around some font rendering issues in input boxes. The input box issue has been solved, and the optimized code reinstated to give better performance on hardware-accelerated surfaces.
+-   Font rendering on Direct2D will no longer fall back to greyscale in some situations, preserving ClearType.
+-   CSS outlines will now properly outline the object, and not the overflow area (e.g. box shadow).
+    Previously, using the CSS "outline" keyword to draw outlines around objects would also consider the visual spillover area like shadows part of the "object". This has now been fixed and outlines will now be drawn around the actual objects only.
+-   The delay for hiding the default status has been increased from 10 to 30 seconds to keep it on screen sufficiently long but not permanently.
+    Recently, the default behavior was changed from always showing the default status to hiding it after a delay. This delay was a bit too short.
+-   Queries for "can play type" on WebM videos now get an HTML5-compliant response ("maybe" instead of "yes" as per the specification when a codec is not included in the request).
+-   Pale Moon's gecko rendering engine and Firefox compatibility version now properly follows the minor version of Pale Moon again instead of always returning .0 - this should help UA sniffing websites to more easily detect Pale Moon or adapt to further-developed gecko 24 versions.
+    Pale Moon will now identify as Gecko v24.7, and if the compatibility flag is enabled, also as Firefox/24.7 - this was the behavior before v24.0 and has bee restored.
+-   When using dark/black personas (lightweight themes), the tab close buttons would be almost invisible. They have been lightened a little to make them clearer.
+-   Linux: the click behavior on the address bar has been unified with that on Windows, aiming for current-day desktop-clipboard use (select-when-clicked). This is configurable with a preference.
+    The old behavior (catering to people preferring the primary unix buffer instead of the clipboard) can be restored by setting the following two preferences in about:config:
+    browser.urlbar.clickSelectsAll -\> false
+    browser.urlbar.doubleClickSelectsAll -\> true
+-   "In-content" preferences (preferences displayed in a tab instead of the normal dialog box) has been removed because of redundancy and incompleteness.
+    The in-content preferences (about:preferences) page has never actually followed the developments in Pale Moon's Options dialog box, and has been completely removed in this version.
+-   Checking for updates from the about box now always puts the user in control and never downloads anything directly from the about box. It will pop up the larger update window when an update is found.
+    Some people complained about the update behavior from the about box and the fact that pale Moon would directly download updates from there if they were found. This has now been changed to provide a button to open the toolkit updater (large window) from where updates can be performed, instead. this allows anyone to only download updates when they explicitly choose to do so.
+-   Google SafeBrowsing, which is defunct, has been removed from the browser. privacy fix
+    Google SafeBrowsing no longer works in Pale Moon, and still having it in the browser and enabled caused a potential privacy issue by sending the domain check to Google. Considering the limited use of the service to begin with and defunct nature, removal was the only logical option.
+-   Made the building of the Web Developer tools optional when compiling Pale Moon through --disable-devtools.
+-   The Atom-optimized version no longer ships with the Web Developer tools to slim down the browser for limited platforms where these tools are considered generally unneeded.
+-   Fixed domain highlighting in the address bar. It should no longer randomly lose this formatting when switching tabs or otherwise updating the browser UI.
+-   Fixed missing click-to-play overlay on some zoom levels for plugins embedded in an iframe.
+-   Fixed large delays in print enumeration on Windows, especially when printing to file: ports.
+-   Updated the list of known domain suffixes.
+-   Updated site-specific user-agent strings to prevent incorrect complaints from websites (google.com, aol.com, etc.) that use poor detection scripts.
+-   Added granular referer control. Be careful limiting referers as websites may refuse to service you if an unexpected referer is found.
+    You can now control how much of the referer (if any) is sent to a website visited by setting the following preferences:
+    -   network.http.sendRefererHeader (default 2): 0=don't send any referers, 1=send only on clicks, 2=send on image requests as well
+    -   network.http.referer.spoofSource (default false): false=real referer, true=spoof referer (use target URI as referer)
+    -   network.http.referer.trimmingPolicy (default 0): 0=send full URI, 1=send scheme+host+port+path, 2=send scheme+host+port
+    -   network.http.referer.XOriginPolicy (default 0): Cross-origin referer policy. 0=always send, 1=send if base domains match, 2=send if hosts match
+-   Added gr locale to the status bar options.
+-   Disabled HQ image downscaling. This is a workaround for the broken Mozilla HQ downscaling back-end causing constant invalidations and redrawing if 2 downscaled images with the same source were in view.
+-   Updated the NSS library to 3.16.2 RTM to address a few critical SSL issues. security fix
+-   There was a possibility to lose the source frame for raster images if images had to be discarded in low-memory situations. This has been fixed. security fix
+-   Made refcounting logic around PostTimerEvent more explicit. security fix
+-   Prevented an invalid pointer state in docloader. security fix
+-   Added proper refcounting of font faces. security fix
+
+For the Android version:
+-   Android: lots of branding updates to make it more release-ready.
+-   Android: explicitly set the Pale Moon Sync server in preferences.
+-   Android: IonMonkey (ARM): guarded against branches being out of range and bail out if so. security fix
+-   Android: enabled Firefox compatibility mode on Android to allow the installation of extensions from AMO.
+-   Android: added a "Quit" option to the app menu to properly immediately close the browser.
+-   Android: IonMonkey (ARM): prevented a performance issue due to clobbering the primary scratch register.
+-   Android: enabled mobile-specific optimizations to increase performance on mobile devices.
+-   Android: enabled AES-128 and AES-256 in addition to RC4 for Sync.
+
 ### 24.6.2 (2014-06-16)
 
 A point release to address some further outstanding issues with the overhauled rendering engine.
