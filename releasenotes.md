@@ -1,6 +1,15 @@
 Pale Moon: Release notes
 ========================
 
+### 24.7.1 (2014-08-06)
+
+This is a bugfix release for some outstanding issues in 24.7.0.
+ Fixes/changes:
+
+-   Fixed a text rendering issue with the new back-end on overdraw layers when hardware acceleration is in use on Windows. This may also solve some additional small issues in the user interface that weren't present before 24.7.0.
+-   Fixed the use of Google Maps.
+-   If you previously used the workaround in 24.7, then please remove the user-set preference (right-click -> reset).
+
 ### 24.7.0 (2014-07-29)
 
 This is a large update to address a good number of different things across the board.
