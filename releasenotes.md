@@ -1,6 +1,17 @@
 Pale Moon: Release notes
 ========================
 
+### 24.7.2 (2014-09-11)
+
+This is a small bugfix and security update.
+ Fixes/changes:
+
+-   Use (i) icon for error console informational messages instead of (?).
+-   Properly derive and insert the host of a URL. security fix
+-   Avoid negative audio ratios. security fix
+-   Release XPCOM timer immediately after firing to prevent a race condition.
+-   Add is-object check to IonBuilder::makeCallHelper. security fix
+
 ### 24.7.1 (2014-08-06)
 
 This is a bugfix release for some outstanding issues in 24.7.0.
