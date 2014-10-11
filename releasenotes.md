@@ -1,6 +1,92 @@
 Pale Moon: Release notes
 ========================
 
+### 25.0.0 (2014-10-10)
+
+Fixes/changes:
+
+- Stop supporting Windows XP. As mentioned a few times before, Windows XP has reached the end of its life (back in April), and Pale Moon's support for Windows XP (and any other NT 5.x based operating system) has now ended. An exception to this is the specialized Atom build because of limited operating system availability on netbooks and the like. More details on the [dedicated page for this change](http://www.palemoon.org/PM_end_of_WinXP_support.shtml).
+-   Change of the browser's GUID (Globally Unique Identifier) to properly differentiate from Firefox and solve a number of development issues that were preventing Pale Moon from moving forward.
+    The new GUID is {8de7fcbb-c55c-4fbe-bfc5-fc555c87dbc4}
+    This change will impact extension compatibility for extensions that hard-code the Firefox GUID in them. This includes a few widely-used extensions like AdBlock Plus. The developers of these problematic extensions have been contacted, and [necessary information](https://forum.palemoon.org/viewtopic.php?f=1&t=5440) was posted almost 2 months ago that would allow extension developers to update their extensions for Pale Moon. Unfortunately many have not responded, resulting in the extensions still being incompatible with Pale Moon at the time of this writing. More details and a list of currently known incompatible add-ons are [listed on the new Pale Moon add-ons site](https://addons.palemoon.org/firefox/incompatible/). You may also want to visit the following [forum thread](https://forum.palemoon.org/viewtopic.php?f=44&t=5883) for updates and compatibility reports.
+-   Allow extensions with both Pale Moon GUID and Firefox GUID to be installed natively (dual-ID system).
+    Pale Moon GUID blocks will have preference over Firefox (compatibility) blocks.
+    This means Pale Moon will not only accept extensions written for Pale Moon specifically as a target application, but also extensions that were written for Firefox. If an extension targets both applications, Pale Moon will use the information supplied in the Pale Moon application information to determine compatibility.
+-   Disconnect of Pale Moon's "Firefox compatibility" version from Pale Moon's application version to maintain Firefox 24.\* extension compatibility regardless of Pale Moon version.
+    This will allow Pale Moon to continue offering compatibility with Firefox 24.\*-compatible add-ons while Pale Moon's own version number increases, without causing potential confusion for add-ons (e.g. an extension that is only compatible with Firefox 25 and later will not install on Pale Moon 25).
+-   Disable Firefox Compatibility mode by default. This will stop Pale Moon from advertising itself as a "version of Firefox" which has been the cause of a good number of recent annoyances with websites thinking Pale Moon was "Firefox 24.0" and deemed "too old" as a result.
+    Pale Moon will no longer have a Firefox/xx.xx indicator in its UserAgent string. This may cause some websites to possibly warn, complain or even completely block you. You should contact the site's owners and request support for Pale Moon.
+    If all else fails, Pale Moon will allow you to override the UserAgent on a per-site basis if you absolutely must visit the site and they absolutely won't cater to your freedom of browser choice. You do this by creating new preferences in about:config to present custom UserAgent strings to the problematic websites. The preferences will have the general format of: general.useragent.override.example.com (for the domain example.com) and contain a full UserAgent string like "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:28.0) Gecko/20100101 Firefox/28.0" (as example to pretend to be Firefox 28.0). You do not need any add-ons for this functionality, it is built into the browser.
+    Some websites will also display a little different as a result, since Pale Moon will fall into an "unknown" category for sites with limited/naive detection scripts (and that includes some big players like Google). It is recommended that you contact website owners and ask them to find a solution for this problem.
+-   Use the alternative sync implementation on a new server.
+    As current sync users have noticed, the Pale Moon sync server has been quite unstable since it was put in service. The main reason for these problems has been the unstable and very demanding Mozilla Labs implementation of a Weave/Sync server in the Python programming language. An alternative solution written in a different language (PHP) has been found and adapted to work with Pale Moon.
+    Unfortunately, current Pale Moon sync accounts cannot be ported over, so you will have to create a new account when updating to v25.
+    The previous server implementation has already been shut down due to continued issues, and will be retired on the very short term to free up infrastructure and reduce expenses. The alternative sync implementation is Sync 1.1 compatible, like before. Pale Moon will still also be able to sync with the Mozilla "run your own Sync 1.1 server" setup for small (company) installations, or use the existing Sync 1.1 plugins for certain private cloud setups.
+-   Stop building the WebApp runtime by default.
+    The use of "Web Applications" started from the command-line is such a niche feature that it has no business being in Pale Moon's main-line builds.
+    If you need the WebApp runtime for your specific organization and want to use Pale Moon, you can build Pale Moon from source with the feature enabled.
+-   By default, do not sync add-ons.
+    Syncing between different devices will likely not want you to sync the add-ons in use. There's a reason you're using different devices, after all.
+    If you are using Sync to synchronize between different desktops or laptops where you would want the same add-ons, you can simply enable the synchronization of add-ons in Pale Moon Sync settings (for each individual device you want this on).
+-   Un-prefix CSS box-sizing.
+    You can now use box-sizing:border-box, box-sizing:padding-box and box-sizing:content-box to switch box-sizing mode on elements using CSS. Previously, you had to use the Mozilla-specific prefixed version to achieve this (-moz-box-sizing).
+-   Implement image-orientation in CSS.
+    You can now use image-orientation: {angle} [flip] in CSS to rotate images in 90 degree steps and optionally flip them.
+-   Improve bookmark menu item-dragging.
+    Dragging bookmarks in the bookmarks menu is now more convenient (allow diagonal dragging, prevent tooltips from interfering, etc.).
+    (Fixes bugs 225434, 419911 and 555474)
+-   Move the option to "use the classic downloads window" from status bar preferences to the main options window.
+    This way, it's easier for people to find and it's in a much more logical place. The classic downloads window will not go away any time soon in Pale Moon, and the option to use it should be easy to find for users.
+-   Update branding images for official/unofficial logo, and some about: pages.
+-   Add a new type of "blank new tab" page with logo-styling.
+    This logo page will be the default setting (instead of about:blank) and will follow the background color of your overall chosen Windows theme to prevent hard contrast on e.g. dark themes.
+-   Add Opus audio to WebM.
+    Pale Moon will now support the decoding of Opus audio streams in WebM videos.
+-   Add VP9 codec to WebM on both desktop and Android/ARM.
+    Pale Moon has updated its media back-end and now supports the recent Google VP9 bitstream codec for WebM videos.
+-   Allow absolute-in-relative positioning in table and CSS table-cell elements in accordance with the CSS2 specification.
+    Pale Moon now supports absolute CSS positioning of elements inside a relatively-positions table cell element (either in an actual table or in a CSS-styled table cell). In previous versions web developers had to wrap their elements in a DIV to achieve the same result.
+-   Allow the user to override the use of accessibility colors in the browser with browser.display.ignore\_accessibility\_theme
+    If using a high-contrast theme, Pale Moon by default also applies these high-contrast colors to the page content, in some cases (depending on the website design) rendering things unreadable because of "black on black" or similar color issues. By switching this preference, Pale Moon will no longer use high-contrast colors for page content, while otherwise using it for the user interface.
+-   Improve the display of tabs when lightweight themes (personas) are in use for both light and dark themes.
+    A long-standing niggle of people using lightweight themes (AKA personas) has been the use of a grey base color for tabs. Pale Moon's theming has been adjusted to provide an improved display of tabs on both light and dark personas.
+-   Enable cache compression by default to more efficiently use disk cache.
+    Pale Moon 25 will apply a balanced level of compression to cached files by default, to save on disk space and disk writes, and allow more items to be stored in the cache while having minimal impact on processor use. Note that this may prevent some "cache explorers" from being able to show you cached item contents since they are now compressed.
+-   When shutting down the browser while you still have downloads in progress, Pale Moon will now by default warn you that the downloads will be cancelled.
+    The previous default setting to "automatically pause and resume" downloads is has been deprecated in favor of cancelling downloads. For small files, pausing/resuming is not applicable most of the time, and almost all large downloads will have trouble resuming after a browser restart. It was therefore decided that it would be better to warn the user that downloads are still in progress and to cancel the downloads if the user so chooses, when closing the browser, or otherwise keep it open until downloads complete. This should prevent unwanted "forgotten" downloads in progress from being interrupted and needing a re-download.
+-   Added language packs for Acholi, Assamese, Kashubian, Pulaar Fulfulde, Armenian, Khmer, Ligure, Mongolian, and Swahili.
+    This brings the total number of alternative languages for Pale Moon to no less than 90! Note that a number of previously complete language packs were not updated in time for this release and have reverted to an incomplete (but "in progress") state, and will be updated as they are completed by volunteer translators.
+
+Bug/regression fixes:
+
+-   Prevent error in removeobserver() for the padlock code when closing a window
+-   Hang fix: Release XPCOM timer immediately after firing to prevent a race condition. (CVE-2014-1553)
+-   Android & any ARM processor: Always use integers for audio instead of floats.
+-   Properly apply the use of high contrast themes on Windows 8/8.1
+-   Prevent the accumulation of hidden about:blank windows in some situations.
+-   Android: prevent deadlocks due to invalidations when using plugins (Flash)
+    Flash and other plugins are not widely supported on the Android platform. YMMV (Your Mileage May Vary) and it may not may not work, depending on Android version, device, processor, plugin type, page content, etc.).
+-   Re-enable high-quality downscaling of particularly large images (selective HQ downscaling) and improve fast image scaling method (use Lanczos instead of Hamming).
+    Downscaling particularly large images in the browser now uses a fast, better quality scaling method for smaller downscale factors and will switch to the two-stage HQ downscaling method if scaling down beyond the usable limit of the fast method.
+-   Hang/DoS fix: Avoid uninterruptable infinite loops in IonMonkey in some situations. (CVE-2014-1548)
+-   Android: improve the handling of zooming to input fields
+    On tablets, auto-zooming to form input fields will no longer be done and the related preferences now actually work ![;)](./images/smilies/icon_e_wink.gif "Wink")
+
+Security fixes:
+
+-   Properly derive/insert the host of a URL
+-   Avoid negative audio ratios (can lead to crashes) (CVE-2014-1565)
+-   Avoid some root hazards in the style parser
+-   Add is-object check to IonBuilder::makeCallHelper (CVE-2014-1562)
+-   Clear the jumplist icon cache when history is cleared (privacy fix)
+-   Crash fix on Windows (JS JIT) (CVE-2014-1554)
+-   Prevent buffer overrun in text directionality component (CVE-2014-1567)
+-   Update NSS to 3.16.2.1-RTM (CVE-2014-1568)
+    This fixes the "forged RSA signature" potential vulnerability that a lot of buzz was made about recently.
+
+Release notes for version 24 releases
+============================
+
 ### 24.7.2 (2014-09-11)
 
 This is a small bugfix and security update.
