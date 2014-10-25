@@ -1,6 +1,18 @@
 Pale Moon: Release notes
 ========================
 
+### 25.0.1 (2014-10-15)
+
+This is a small update to address an important Jetpack extension compatibility issue and includes a number of security fixes.
+ Fixes/changes:
+
+-   Update of the add-on SDK to add missing "Pale Moon" engine entries to lists. This should fix extension compatibility issues for jetpack extensions that otherwise already work with the new GUID.
+-   About box release notes link corrected
+-   Fix for VP9 decoder vulnerability security fix
+-   Fix for direct access to raw connection sockets in http security fix
+-   Fix for unsafe conversion to JSON of data through the alarm dom element security fix
+-   Update of NSS to 3.16.2.2-RTM security fix
+
 ### 25.0.0 (2014-10-10)
 
 Fixes/changes:
