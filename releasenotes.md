@@ -1,6 +1,21 @@
 Pale Moon: Release notes
 ========================
 
+### 25.0.2 (2014-10-24)
+
+This is a small update to address a number of teething problems with the new milestone release.
+ Fixes/changes:
+
+-   Added a "Firefox compatibility mode" selection in Options -\> Advanced.
+     This mode is enabled by default (reluctantly so), because too many websites (including some very big players who, themselves, promote an Open Web...) still use very poor browser detection methods based on arbitrary User Agent string comparisons, not catering to alternative browsers, and the resulting user experience being poor (being presented with mobile site layouts, broken pages, or even being flat-out refused service because someone exercises freedom of choice for web browser used). This should alleviate most, if not all, issues with browser-discriminating websites.
+-   Improved active tab display on particularly dark personas.
+     People using "black" personas/lightweight themes should now have a lot less difficulty distinguishing the active tab.
+-   Disabled SSL 3.0 by default (to put a muzzle on the [POODLE](https://en.wikipedia.org/wiki/POODLE)).
+     Please note that this may cause issues with some poorly configured web servers (usually ones with a hopelessly broken security setup that do not support TLS 1.2 or secure (re)negotiation of the protocol).
+-   Fixed add-on update issue (that was preventing update checking through addons.palemoon.org).
+-   Fixed the redundant redundancy in asking redundantly if the browser would be allowed to ask to install an extension when not on addons.mozilla.org.
+-   Fixed the internal UA-sniffing insanity that broke devtools in a few different and colorful ways.
+
 ### 25.0.1 (2014-10-15)
 
 This is a small update to address an important Jetpack extension compatibility issue and includes a number of security fixes.
